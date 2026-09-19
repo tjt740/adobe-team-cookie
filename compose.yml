@@ -1,0 +1,27 @@
+name: adobe-team-cookie
+services:
+  app:
+    image: adobe-team-cookie:latest
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "9500:9500"
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/app.db
+    volumes:
+      - ./data:/app/data
+    mem_limit: 512m
+    shm_size: 128m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9500/api/health', timeout=5)"]
+      interval: 20s
+      timeout: 6s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

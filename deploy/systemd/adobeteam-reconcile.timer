@@ -1,0 +1,10 @@
+[Unit]
+Description=AdobeTeam 每30分钟交付对账
+
+[Timer]
+OnBootSec=8min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

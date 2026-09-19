@@ -1,0 +1,15 @@
+{
+  "name": "adobeteam-cloak-capture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture:adobe": "node scripts/capture-adobe.mjs"
+  },
+  "dependencies": {
+    "cloakbrowser": "0.4.11",
+    "mmdb-lib": "^3.0.3",
+    "playwright-core": "1.61.1"
+  },
+  "packageManager": "pnpm@11.13.1"
+}

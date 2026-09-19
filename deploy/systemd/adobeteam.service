@@ -1,0 +1,14 @@
+[Unit]
+Description=AdobeTeam FastAPI backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/adobeteam/backend
+EnvironmentFile=/opt/adobeteam/backend/.env
+ExecStart=/opt/adobeteam/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

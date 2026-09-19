@@ -1,0 +1,8 @@
+[Unit]
+Description=AdobeTeam balance self-heal (every 10min)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/adobeteam/backend
+ExecStart=/opt/adobeteam/backend/.venv/bin/python /opt/adobeteam/autopilot.py selfheal

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AdobeTeam autopilot every 4h
+
+[Timer]
+OnCalendar=*-*-* 00/4:00:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

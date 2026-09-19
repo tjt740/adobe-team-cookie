@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AdobeTeam balance self-heal every 10 min
+
+[Timer]
+OnCalendar=*:0/10
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

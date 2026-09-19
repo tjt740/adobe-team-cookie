@@ -1,0 +1,8 @@
+[Unit]
+Description=AdobeTeam autopilot (pool reconcile, dry-run)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/adobeteam/backend
+ExecStart=/opt/adobeteam/backend/.venv/bin/python /opt/adobeteam/autopilot.py

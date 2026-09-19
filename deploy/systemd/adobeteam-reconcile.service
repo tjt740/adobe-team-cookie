@@ -1,0 +1,10 @@
+[Unit]
+Description=AdobeTeam 交付对账(删 Sub2 找不到的僵尸子号,踢母号+删本地→自愈补新号)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/adobeteam/backend
+Environment=AGE_HOURS=2
+Environment=ZOMBIE_CAP=15
+ExecStart=/opt/adobeteam/backend/.venv/bin/python /opt/adobeteam/reconcile_zombies.py execute

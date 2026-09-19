@@ -1,0 +1,8 @@
+[Unit]
+Description=AdobeTeam 指标快照(写 metric_history)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/adobeteam/backend
+ExecStart=/opt/adobeteam/backend/.venv/bin/python /opt/adobeteam/metric_snapshot.py

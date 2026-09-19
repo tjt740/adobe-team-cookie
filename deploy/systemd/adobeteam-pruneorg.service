@@ -1,0 +1,8 @@
+[Unit]
+Description=AdobeTeam prune Deleted-Org admin accounts (daily)
+After=network.target adobeteam.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/adobeteam/backend
+ExecStart=/opt/adobeteam/backend/.venv/bin/python /opt/adobeteam/prune_dead_orgs.py execute

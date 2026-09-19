@@ -1,0 +1,10 @@
+[Unit]
+Description=AdobeTeam 每15分钟采集指标快照
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

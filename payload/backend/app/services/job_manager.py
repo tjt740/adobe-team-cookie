@@ -1,0 +1,381 @@
+"""后台任务管理器。
+
+任务运行态保存在内存,同时把任务摘要和日志写入 SQLite,便于服务重启后
+继续查看历史日志。运行中的任务仍由单实例进程内线程执行。
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from typing import Any, Callable, Optional
+
+from sqlalchemy import text
+
+from app.db.session import engine
+
+
+def _json_dumps(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except TypeError:
+        return json.dumps(str(value), ensure_ascii=False)
+
+
+def _json_loads(raw: str | None, default: Any) -> Any:
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except Exception:
+        return default
+
+
+class Job:
+    def __init__(
+        self,
+        job_id: int,
+        job_type: str,
+        meta: dict[str, Any],
+        *,
+        persist_cb: Callable[["Job"], None] | None = None,
+    ):
+        self.id = job_id
+        self.type = job_type
+        self.meta = meta
+        self.status = "running"  # running / done / error
+        self.created_at = int(time.time())
+        self.finished_at: int | None = None
+        self.logs: list[str] = []
+        self.target = int(meta.get("target") or 0)
+        self.success = 0
+        self.fail = 0
+        self.result: Any = None
+        self.error = ""
+        self.extra: dict[str, Any] = {}
+        self._cancel = threading.Event()
+        self._lock = threading.Lock()
+        self._persist_cb = persist_cb
+
+    # ---- 供 worker 调用 ----
+    def log(self, msg: str) -> None:
+        with self._lock:
+            self.logs.append(f"{time.strftime('%H:%M:%S')} {msg}")
+            if len(self.logs) > 1000:
+                self.logs = self.logs[-1000:]
+        self.persist()
+
+    def bump(self, *, success: int = 0, fail: int = 0) -> None:
+        with self._lock:
+            self.success += success
+            self.fail += fail
+        self.persist()
+
+    def set_extra(self, key: str, value: Any) -> None:
+        with self._lock:
+            self.extra[key] = value
+        self.persist()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancel.is_set()
+
+    def cancel(self) -> None:
+        self._cancel.set()
+        with self._lock:
+            if self.status == "running":
+                self.status = "cancelled"
+                self.finished_at = int(time.time())
+                self.logs.append(f"{time.strftime('%H:%M:%S')} 已请求停止任务")
+        self.persist()
+
+    def clear_logs(self) -> None:
+        with self._lock:
+            self.logs.clear()
+        self.persist()
+
+    def persist(self) -> None:
+        if self._persist_cb:
+            self._persist_cb(self)
+
+    def to_dict(self, *, log_offset: int = 0) -> dict[str, Any]:
+        with self._lock:
+            logs = self.logs[log_offset:] if log_offset > 0 else self.logs
+            return {
+                "id": self.id,
+                "type": self.type,
+                "status": self.status,
+                "target": self.target,
+                "success": self.success,
+                "fail": self.fail,
+                "result": self.result,
+                "error": self.error,
+                "created_at": self.created_at,
+                "finished_at": self.finished_at,
+                "log_total": len(self.logs),
+                "logs": logs,
+                "meta": self.meta,
+                "extra": dict(self.extra),
+            }
+
+    @classmethod
+    def from_record(cls, row: dict[str, Any]) -> "Job":
+        job = cls(
+            int(row["id"]),
+            str(row["type"]),
+            _json_loads(row.get("meta_json"), {}),
+            persist_cb=None,
+        )
+        job.status = str(row.get("status") or "")
+        job.target = int(row.get("target") or 0)
+        job.success = int(row.get("success") or 0)
+        job.fail = int(row.get("fail") or 0)
+        job.result = _json_loads(row.get("result_json"), None)
+        job.error = str(row.get("error") or "")
+        job.created_at = int(row.get("created_at") or 0)
+        finished = row.get("finished_at")
+        job.finished_at = int(finished) if finished else None
+        job.logs = list(_json_loads(row.get("logs_json"), []))
+        job.extra = dict(_json_loads(row.get("extra_json"), {}))
+        return job
+
+
+class JobManager:
+    def __init__(self) -> None:
+        self._jobs: dict[int, Job] = {}
+        self._counter = 0
+        self._lock = threading.Lock()
+        self._storage_ready = False
+
+    def _ensure_storage(self) -> None:
+        if self._storage_ready:
+            return
+        with self._lock:
+            if self._storage_ready:
+                return
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS job_records (
+                        id INTEGER PRIMARY KEY,
+                        type VARCHAR(80) NOT NULL,
+                        status VARCHAR(32) NOT NULL,
+                        target INTEGER DEFAULT 0,
+                        success INTEGER DEFAULT 0,
+                        fail INTEGER DEFAULT 0,
+                        result_json TEXT,
+                        error TEXT DEFAULT '',
+                        created_at INTEGER,
+                        finished_at INTEGER,
+                        meta_json TEXT,
+                        extra_json TEXT,
+                        logs_json TEXT,
+                        deleted INTEGER DEFAULT 0
+                    )
+                """))
+                max_id = conn.execute(
+                    text("SELECT max(id) FROM job_records")
+                ).scalar()
+                self._counter = max(self._counter, int(max_id or 0))
+            self._storage_ready = True
+
+    def _persist_job(self, job: Job) -> None:
+        self._ensure_storage()
+        data = job.to_dict()
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO job_records (
+                        id, type, status, target, success, fail, result_json,
+                        error, created_at, finished_at, meta_json, extra_json,
+                        logs_json, deleted
+                    )
+                    VALUES (
+                        :id, :type, :status, :target, :success, :fail,
+                        :result_json, :error, :created_at, :finished_at,
+                        :meta_json, :extra_json, :logs_json, 0
+                    )
+                    ON CONFLICT(id) DO UPDATE SET
+                        type=excluded.type,
+                        status=excluded.status,
+                        target=excluded.target,
+                        success=excluded.success,
+                        fail=excluded.fail,
+                        result_json=excluded.result_json,
+                        error=excluded.error,
+                        created_at=excluded.created_at,
+                        finished_at=excluded.finished_at,
+                        meta_json=excluded.meta_json,
+                        extra_json=excluded.extra_json,
+                        logs_json=excluded.logs_json,
+                        deleted=0
+                """),
+                {
+                    "id": data["id"],
+                    "type": data["type"],
+                    "status": data["status"],
+                    "target": data["target"],
+                    "success": data["success"],
+                    "fail": data["fail"],
+                    "result_json": _json_dumps(data["result"]),
+                    "error": data["error"],
+                    "created_at": data["created_at"],
+                    "finished_at": data["finished_at"],
+                    "meta_json": _json_dumps(data["meta"]),
+                    "extra_json": _json_dumps(data["extra"]),
+                    "logs_json": _json_dumps(data["logs"]),
+                },
+            )
+
+    def _get_record(self, job_id: int) -> Optional[Job]:
+        self._ensure_storage()
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT * FROM job_records WHERE id=:id AND deleted=0"),
+                {"id": job_id},
+            ).mappings().first()
+        return Job.from_record(dict(row)) if row else None
+
+    def start(
+        self, job_type: str, worker: Callable[[Job], None], *, meta: dict | None = None
+    ) -> Job:
+        self._ensure_storage()
+        with self._lock:
+            self._counter += 1
+            job = Job(self._counter, job_type, meta or {}, persist_cb=self._persist_job)
+            self._jobs[job.id] = job
+            # 防止无限增长:仅保留最近 50 个任务
+            if len(self._jobs) > 50:
+                for k in sorted(self._jobs)[:-50]:
+                    old = self._jobs.get(k)
+                    if old and old.status != "running":
+                        self._jobs.pop(k, None)
+            job.persist()
+
+        def _runner() -> None:
+            try:
+                worker(job)
+                job.status = "done" if job.status == "running" else job.status
+            except Exception as e:  # noqa: BLE001
+                job.status = "error"
+                job.error = str(e)[:500]
+                job.log(f"任务异常:{e}")
+            finally:
+                job.finished_at = int(time.time())
+                job.persist()
+
+        threading.Thread(target=_runner, name=f"job-{job.id}", daemon=True).start()
+        return job
+
+    def get(self, job_id: int) -> Optional[Job]:
+        return self._jobs.get(job_id) or self._get_record(job_id)
+
+    def list_recent(self, limit: int = 30) -> list[Job]:
+        self._ensure_storage()
+        with self._lock:
+            running_or_memory = {jid: job for jid, job in self._jobs.items()}
+        with engine.begin() as conn:
+            rows = list(conn.execute(
+                text("""
+                    SELECT * FROM job_records
+                    WHERE deleted=0
+                    ORDER BY id DESC
+                    LIMIT :limit
+                """),
+                {"limit": max(1, int(limit))},
+            ).mappings())
+        jobs: list[Job] = []
+        seen: set[int] = set()
+        for row in rows:
+            jid = int(row["id"])
+            seen.add(jid)
+            jobs.append(running_or_memory.get(jid) or Job.from_record(dict(row)))
+        for jid, job in running_or_memory.items():
+            if jid not in seen:
+                jobs.append(job)
+        jobs.sort(key=lambda j: j.id, reverse=True)
+        return jobs[:limit]
+
+    def find_active(self, job_type: str, admin_id: int) -> Optional[Job]:
+        for job in self._jobs.values():
+            if (
+                job.type == job_type
+                and job.status == "running"
+                and job.meta.get("admin_id") == admin_id
+            ):
+                return job
+        return None
+
+    def clear_logs(self, job_id: int) -> bool:
+        job = self._jobs.get(job_id)
+        if job:
+            job.clear_logs()
+            return True
+        self._ensure_storage()
+        with engine.begin() as conn:
+            res = conn.execute(
+                text("UPDATE job_records SET logs_json='[]' WHERE id=:id AND deleted=0"),
+                {"id": job_id},
+            )
+        return bool(res.rowcount)
+
+    def cancel(self, job_id: int) -> tuple[bool, str]:
+        job = self._jobs.get(job_id)
+        if not job:
+            rec = self._get_record(job_id)
+            if not rec:
+                return False, "任务不存在"
+            if rec.status == "running":
+                rec.status = "cancelled"
+                rec.finished_at = int(time.time())
+                rec.logs.append(f"{time.strftime('%H:%M:%S')} 服务重启后标记为已停止")
+                rec._persist_cb = self._persist_job
+                rec.persist()
+                return True, "任务已标记为停止"
+            return False, "任务不在运行中"
+        if job.status != "running":
+            return False, "任务不在运行中"
+        job.cancel()
+        return True, "已请求停止任务"
+
+    def delete_many(self, job_ids: list[int]) -> tuple[int, list[int]]:
+        """删除任务。进行中的任务会跳过并返回其 ID。"""
+        deleted = 0
+        deleted_ids: set[int] = set()
+        skipped_running: list[int] = []
+        with self._lock:
+            for jid in job_ids:
+                job = self._jobs.get(jid)
+                if not job:
+                    continue
+                if job.status == "running":
+                    skipped_running.append(jid)
+                    continue
+                self._jobs.pop(jid, None)
+                deleted += 1
+                deleted_ids.add(jid)
+        self._ensure_storage()
+        with engine.begin() as conn:
+            for jid in job_ids:
+                if jid in skipped_running:
+                    continue
+                row = conn.execute(
+                    text("SELECT status FROM job_records WHERE id=:id AND deleted=0"),
+                    {"id": jid},
+                ).first()
+                if not row:
+                    continue
+                if str(row[0]) == "running":
+                    skipped_running.append(jid)
+                    continue
+                res = conn.execute(
+                    text("UPDATE job_records SET deleted=1 WHERE id=:id"),
+                    {"id": jid},
+                )
+                if res.rowcount and jid not in deleted_ids:
+                    deleted += 1
+                    deleted_ids.add(jid)
+        return deleted, skipped_running
+
+
+JOBS = JobManager()
