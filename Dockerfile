@@ -2,8 +2,9 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app/backend
 COPY payload/backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
-    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+RUN pip install --no-cache-dir -r requirements.txt
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
