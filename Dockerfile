@@ -3,6 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PLAYWRIGHT_BROWSERS_PATH=/ms-pl
 WORKDIR /app/backend
 COPY payload/backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
