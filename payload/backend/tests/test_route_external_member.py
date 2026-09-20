@@ -53,3 +53,44 @@ def test_batch_delete(client, db):
     mid = db.query(ExternalMember).first().id
     r = client.request("DELETE", "/api/external/members/batch-delete", json={"ids": [mid]})
     assert r.status_code == 200 and r.json()["success"] is True
+
+
+def test_single_member_can_relogin_as_background_job(client, db, monkeypatch):
+    from app.services import external_login
+
+    member = ExternalMember(email="retry@ex.com", login_status="login_failed")
+    db.add(member)
+    db.commit()
+    started = {}
+
+    def start(job_type, worker, *, meta):
+        started.update(type=job_type, worker=worker, meta=meta)
+        return _FakeJob()
+
+    monkeypatch.setattr(JOBS, "start", start)
+    response = client.post("/api/external/members/batch-login", json={"ids": [member.id]})
+    assert response.status_code == 200
+    assert response.json()["id"] == 999
+    assert started == {
+        "type": "external_login", "worker": external_login.batch_login_worker,
+        "meta": {"member_ids": [member.id], "target": 1},
+    }
+
+
+def test_legacy_single_login_failure_is_visible_in_error_logs(client, db, monkeypatch):
+    from app.services import external_login, log_store
+
+    member = ExternalMember(email="legacy@ex.com")
+    db.add(member)
+    db.commit()
+    log_store.STORE.clear()
+
+    def fail(member_id, *, log):
+        log("✗ 登录失败:factor_unavailable")
+        return {"ok": False, "code": "login_failed", "message": "factor_unavailable"}
+
+    monkeypatch.setattr(external_login, "login_and_store", fail)
+    response = client.post(f"/api/external/members/{member.id}/login")
+    assert response.status_code == 200 and response.json()["ok"] is False
+    logs = client.get("/api/logs", params={"level": "ERROR", "keyword": "external_login"}).json()
+    assert any("factor_unavailable" in row["message"] for row in logs["items"])

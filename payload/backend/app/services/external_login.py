@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from app.crud import external_member as crud
 from app.crud import setting as setting_crud
 from app.db.session import SessionLocal
-from app.services import firefly, proxy_pool
+from app.services import firefly, log_store, proxy_pool
 from app.services.job_manager import Job
 
 SUBSCRIPTION_MIN = 1000.0
@@ -33,6 +33,12 @@ FORCE_CODE_LOGIN = os.environ.get("FIREFLY_FORCE_CODE_LOGIN", "").lower() in ("1
 # 那一段(收码本身要等到 otp_timeout),换个出口也只是再干等一轮;而
 # /external/cookie 对接契约只给 5 分钟同步等待,翻倍会直接超时。
 RETRY_MAX_ELAPSED = 120.0
+
+
+def log_login(message: str) -> None:
+    """单号与批量登录共享系统日志,失败不能混在 INFO 里。"""
+    level = "ERROR" if message.startswith("✗") else "INFO"
+    log_store.STORE.add(level, "external_login", message)
 
 
 def _is_captcha_error(err: str) -> bool:
@@ -66,6 +72,7 @@ def _classify(err: str) -> str:
 def _login_with_proxy_retry(
     *, email: str, refresh_token: str, client_id: str, mail_url: str,
     proxy_raw: str, lf, adobe_password: str = "",
+    on_credentials=None,
 ) -> tuple[dict | None, Exception | None]:
     """跑协议登录,网络/代理失败时换一个出口 IP 再试。返回 ``(rec, last_exc)``。
 
@@ -74,6 +81,14 @@ def _login_with_proxy_retry(
     """
     used = ""
     last_exc: Exception | None = None
+
+    def update_credentials(**values):
+        nonlocal refresh_token, adobe_password
+        refresh_token = values.get("refresh_token") or refresh_token
+        adobe_password = values.get("adobe_password") or adobe_password
+        if on_credentials:
+            on_credentials(**values)
+
     for attempt in range(MAX_NETWORK_RETRIES + 1):
         proxy = proxy_pool.random_proxy(proxy_raw, exclude=used)
         if attempt == 0:
@@ -90,6 +105,7 @@ def _login_with_proxy_retry(
                 adobe_password=adobe_password,
                 force_code_login=FORCE_CODE_LOGIN,
                 log=lambda mm: lf(f"[{email}] {mm}"),
+                on_credentials=update_credentials,
             )
         except Exception as e:  # noqa: BLE001
             last_exc = e
@@ -134,6 +150,7 @@ def login_and_store(member_id: int, *, log=None) -> dict:
     rec, exc = _login_with_proxy_retry(
         email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
         adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
+        on_credentials=lambda **values: _save_credentials(member_id, **values),
     )
     if exc is not None:
         code = _classify(str(exc))
@@ -148,6 +165,7 @@ def login_and_store(member_id: int, *, log=None) -> dict:
 
     cookie = rec.get("cookie") or ""
     if not cookie:
+        lf(f"✗ [{email}] 登录成功但未取得 cookie")
         _save_failure(member_id, "login_failed", "登录成功但未取得 cookie")
         return {"ok": False, "cookie": "", "credits_available": rec.get("credits"),
                 "credits_total": rec.get("credits_total"), "code": "login_failed",
@@ -155,14 +173,30 @@ def login_and_store(member_id: int, *, log=None) -> dict:
 
     available = rec.get("credits")
     total = rec.get("credits_total")
-    sub_ok = isinstance(total, (int, float)) and total >= SUBSCRIPTION_MIN
+    sub_ok = total >= SUBSCRIPTION_MIN if isinstance(total, (int, float)) else None
     _save_success(member_id, rec, sub_ok)
-    lf(f"✓ [{email}] 登录成功,额度 {available}/{total},订阅={'正常' if sub_ok else '掉'}")
+    subscription = "未能查询" if sub_ok is None else ("正常" if sub_ok else "掉")
+    lf(f"✓ [{email}] 登录成功,额度 {available}/{total},订阅={subscription}")
     return {"ok": True, "cookie": cookie, "credits_available": available,
             "credits_total": total, "code": "", "message": ""}
 
 
-def _save_success(member_id: int, rec: dict, sub_ok: bool) -> None:
+def _save_credentials(member_id: int, *, refresh_token: str = "", adobe_password: str = "") -> None:
+    db = SessionLocal()
+    try:
+        member = crud.get(db, member_id)
+        if not member:
+            return
+        if refresh_token:
+            member.refresh_token = refresh_token
+        if adobe_password:
+            member.adobe_password = adobe_password
+        db.commit()
+    finally:
+        db.close()
+
+
+def _save_success(member_id: int, rec: dict, sub_ok: bool | None) -> None:
     db = SessionLocal()
     try:
         m = crud.get(db, member_id)
@@ -175,19 +209,18 @@ def _save_success(member_id: int, rec: dict, sub_ok: bool) -> None:
         m.credits_total = rec.get("credits_total")
         m.first_login_done = True
         m.login_status = "ok"
-        m.subscription_ok = bool(sub_ok)
-        m.message = "登录成功"
+        if sub_ok is not None:
+            m.subscription_ok = sub_ok
+        m.message = "登录成功" if sub_ok is not None else "登录成功,额度暂未能查询"
         m.last_login_at = datetime.now(timezone.utc)
         m.updated_at = datetime.now(timezone.utc)
         rotated = rec.get("rotated_refresh_token") or ""
         if rotated:
             m.refresh_token = rotated
-        # 自己补全注册的号:把我们设的那个密码记下来。已有值不覆盖 ——
-        # 导入行第 5 段给的是这个号自己的 Adobe 密码,比我们设的更权威。
-        if not (m.adobe_password or "").strip():
-            set_pw = (rec.get("set_password") or "").strip()
-            if set_pw:
-                m.adobe_password = set_pw
+        # 本次实际设置成功的密码才是权威值;已补全的账号不会返回 set_password。
+        set_pw = (rec.get("set_password") or "").strip()
+        if set_pw:
+            m.adobe_password = set_pw
         db.commit()
     finally:
         db.close()
@@ -208,33 +241,37 @@ def _save_failure(member_id: int, code: str, message: str) -> None:
 
 
 def batch_login_worker(job: Job) -> None:
+    def _log(message: str) -> None:
+        job.log(message)
+        log_login(message)
+
     member_ids = [int(x) for x in (job.meta.get("member_ids") or [])]
     job.target = len(member_ids)
     if not member_ids:
-        job.log("没有可登录的外部子号")
+        _log("没有可登录的外部子号")
         return
     db = SessionLocal()
     try:
         concurrency = max(1, int(setting_crud.get_settings(db).concurrency or 1))
     finally:
         db.close()
-    job.log(f"开始批量登录 {len(member_ids)} 个,并发 {min(concurrency, len(member_ids))}")
+    _log(f"任务 #{job.id}:开始登录 {len(member_ids)} 个外部子号,并发 {min(concurrency, len(member_ids))}")
 
     def _do(mid: int) -> None:
         if job.cancelled:
             return
         try:
-            res = login_and_store(mid, log=job.log)
+            res = login_and_store(mid, log=_log)
             job.bump(success=1) if res["ok"] else job.bump(fail=1)
         except Exception as e:  # noqa: BLE001
             # login_and_store 内部已兜底大部分异常;这里再兜底一层,
             # 避免个别账号在 DB 层等处抛出的异常经 ex.map 逃逸,
             # 导致整批任务被中止(JobManager 把整个 job 标记为 error)。
             job.bump(fail=1)
-            job.log(f"✗ [id={mid}] 批量登录异常:{str(e)[:200]}")
+            _log(f"✗ [id={mid}] 批量登录异常:{str(e)[:200]}")
 
     with ThreadPoolExecutor(max_workers=min(concurrency, len(member_ids))) as ex:
         for _ in ex.map(_do, member_ids):
             pass
     job.result = {"total": len(member_ids), "success": job.success, "fail": job.fail}
-    job.log(f"=== 完成:成功 {job.success} / 失败 {job.fail} ===")
+    _log(f"任务 #{job.id} 完成:成功 {job.success} / 失败 {job.fail}")

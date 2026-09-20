@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import random
+import secrets
+import string
 import time
 from typing import Any, Callable, Optional
 from urllib.parse import urlencode
@@ -31,8 +33,13 @@ from app.services.adobe_protocol.admin_member_protocol import (
 LogFn = Callable[[str], None]
 _AUTH_HOST = _p.AUTH_HOST
 
-# 被邀请子号首次登录需"补全账号":统一设置的密码(可按需修改)
-COMPLETE_PASSWORD = "CHANGE_ME_PASSWORD"
+def _new_sub_password() -> str:
+    """每个首次补全的账号使用独立密码,交由 Adobe 的密码预检确认。"""
+    groups = (string.ascii_uppercase, string.ascii_lowercase, string.digits, "!@#$%")
+    chars = [secrets.choice(group) for group in groups]
+    chars.extend(secrets.choice("".join(groups)) for _ in range(16))
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
 
 _FIRST_NAMES = [
     "Daniel", "Michael", "James", "David", "John", "Robert", "William", "Joseph",
@@ -244,7 +251,7 @@ def _retry_complete_after_arkose(auth: "AdminAuth", payload: dict[str, Any],
 
 
 def complete_sub_account(
-    auth: "AdminAuth", email: str, lf: LogFn, password: str = COMPLETE_PASSWORD,
+    auth: "AdminAuth", email: str, lf: LogFn, password: str | None = None,
     *, country: str = "", locale: str = "",
     poll: Optional[Callable] = None, otp_timeout: int = 180,
 ) -> str:
@@ -275,6 +282,7 @@ def complete_sub_account(
     ) or not data.get("firstName")
 
     if incomplete:
+        password = password or _new_sub_password()
         if not country or not locale:
             cfg_country, cfg_locale = _register_region()
             country = country or cfg_country
@@ -283,7 +291,7 @@ def complete_sub_account(
         dob = _random_dob()
         lf(f"账号未补全,自动补全资料(姓名 {first} {last} / 生日 {dob['year']} / "
            f"地区 {country} / 设置密码)…")
-        # 密码合规 / 泄露校验(best-effort,失败不阻断)。
+        # 密码预检请求失败不阻断,但明确拒绝时不能继续提交同一无效密码。
         # 这两个接口就是 Adobe 用来回答「这个密码能不能用」的 —— 以前调完把响应
         # 直接丢了,于是 PUT v4 回 SERVICE_ERROR "Error validating password policy
         # in CS" 时完全无从判断是 Adobe 抽风还是这个密码被拉黑。现在把状态码和
@@ -294,14 +302,20 @@ def complete_sub_account(
             ("泄露", "/signin/v1/passwords/leak_verification",
              {"username": email, "password": password}),
         ):
+            valid = None
             try:
                 pr = auth.client.post(
                     f"{_AUTH_HOST}{path}", headers=auth.headers(), json=body, timeout=15
                 )
                 lf(f"密码{label}校验 status={pr.status_code} "
                    f"body={(pr.text or '')[:160]}")
+                if pr.status_code == 200:
+                    result = pr.json()
+                    valid = result.get("valid") if isinstance(result, dict) else None
             except Exception as e:  # noqa: BLE001
                 lf(f"密码{label}校验请求异常:{str(e)[:120]}")
+            if valid is False:
+                raise AdminError(f"Adobe 密码{label}校验未通过,未提交账号资料")
 
         account = {
             "email": email,

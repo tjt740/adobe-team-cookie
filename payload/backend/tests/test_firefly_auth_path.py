@@ -19,13 +19,14 @@ import app.services.firefly as ff
 @pytest.fixture
 def spy(monkeypatch):
     """记录走了哪条路,并把真正发 HTTP 的收尾段短路掉。"""
-    calls = {"code_login": 0, "pwd_login": 0, "code_reason": ""}
+    calls = {"code_login": 0, "pwd_login": 0, "code_reason": "", "sessions": []}
 
     def _fake_browser_code_login(auth, email, lf, *, poll=None, otp_timeout=180):
         calls["code_login"] += 1
         auth.susi_token = "susi.from.code"
 
     def _fake_finish(auth, a2, email, lf, cap):
+        calls["sessions"].append(a2)
         return "FIREFLY_TOKEN"
 
     monkeypatch.setattr(ff._adm, "_browser_code_login", _fake_browser_code_login)
@@ -73,6 +74,54 @@ def _pwd_tried(auth) -> bool:
     return any("credential=password" in u for u in auth.client.posts)
 
 
+@pytest.mark.parametrize("password,force_code", [("", False), ("Wrong1!", False), ("", True)])
+def test_verified_otp_session_is_used_without_authenticating_again(spy, monkeypatch, password, force_code):
+    auth = _auth(_FakeResp(401, {"errorCode": "invalid_authentication"}))
+    auth.susi_token = "verified.otp.session"
+
+    def unexpected_auth(*args, **kwargs):
+        pytest.fail("A verified session must not be discarded for a new login")
+
+    monkeypatch.setattr(ff, "AdminAuth", unexpected_auth)
+    result = ff._acquire_firefly_token(
+        auth, "reuse@ex.com", lambda _: None, password=password, force_code_login=force_code,
+    )
+    assert result == "FIREFLY_TOKEN"
+    assert spy["sessions"] == [auth]
+    assert spy["code_login"] == 0
+    assert not _pwd_tried(auth)
+
+
+def test_expired_existing_session_can_reauthenticate(spy, monkeypatch):
+    auth = _auth(_FakeResp(200, {"token": "fresh-session"}))
+    auth.susi_token = "expired-session"
+    sessions = []
+
+    def finish(original, current, *args):
+        sessions.append(current)
+        if current is original:
+            raise ff._adm.AdminError("会话已失效")
+        return "FIREFLY_TOKEN"
+
+    monkeypatch.setattr(ff, "_finish_firefly_token", finish)
+    assert ff._acquire_firefly_token(auth, "retry@ex.com", lambda _: None, password="Known1!") == "FIREFLY_TOKEN"
+    assert sessions[0] is auth and sessions[1] is not auth
+    assert _pwd_tried(auth)
+
+
+def test_exchange_network_error_does_not_request_another_code(spy, monkeypatch):
+    auth = _auth(_FakeResp())
+    auth.susi_token = "verified-session"
+
+    def fail(*args):
+        raise TimeoutError("connection timeout")
+
+    monkeypatch.setattr(ff, "_finish_firefly_token", fail)
+    with pytest.raises(TimeoutError):
+        ff._acquire_firefly_token(auth, "timeout@ex.com", lambda _: None)
+    assert spy["code_login"] == 0
+
+
 def test_no_password_goes_straight_to_code_login(spy, monkeypatch):
     """库里没存密码 → 不猜密码,直接验证码登录。"""
     auth = _auth(_FakeResp(401, {"errorCode": "invalid_authentication"}))
@@ -116,6 +165,61 @@ def test_password_rejected_falls_back_to_code_login(spy):
     assert _pwd_tried(auth)
     assert spy["code_login"] == 1
     assert any("密码登录被拒" in m for m in logs)
+
+
+class _StatefulClient(_Client):
+    """Adobe 拒绝缺少 Sunbreak 认证状态的密码请求。"""
+
+    def __init__(self, *, state_ok=True):
+        super().__init__(_FakeResp(200, {"token": "susi.tok"}))
+        self.authorized = False
+        self.state_ok = state_ok
+        self.password_headers = None
+
+    def get(self, url, **kw):
+        if "/ims/authorize/v1?" in url:
+            assert "client_id=SunbreakWebUI1" in url
+            self.authorized = True
+        return super().get(url, **kw)
+
+    def post(self, url, **kw):
+        if "/authenticationstate?" in url:
+            assert self.authorized
+            response = _FakeResp(200 if self.state_ok else 400)
+            response.headers = {
+                "x-ims-authentication-state-encrypted": "sunbreak-state",
+                "x-identity-verification-token": "sunbreak-identity",
+            }
+            return response
+        if "credential=password" in url:
+            self.password_headers = kw["headers"]
+            if self.password_headers.get("X-IMS-Authentication-State-Encrypted") != "sunbreak-state":
+                return _FakeResp(400, {"errorCode": "invalid_auth_session"})
+        return super().post(url, **kw)
+
+
+def test_password_login_initializes_sunbreak_session(spy):
+    client = _StatefulClient()
+    auth = ff.AdminAuth(client)
+    # 前一步验证码属于另一个客户端,不能依赖它的状态。
+    auth.auth_state_encrypted = "old-clio-state"
+    token = ff._acquire_firefly_token(
+        auth, "state@ex.com", lambda _: None, password="Known1!",
+    )
+    assert token == "FIREFLY_TOKEN"
+    assert client.authorized
+    assert client.password_headers["X-Identity-Verification-Token"] == "sunbreak-identity"
+    assert spy["code_login"] == 0
+
+
+def test_password_session_failure_stops_before_password_or_resending_code(spy):
+    client = _StatefulClient(state_ok=False)
+    with pytest.raises(ff._adm.AdminError, match="无法建立密码登录认证会话"):
+        ff._acquire_firefly_token(
+            ff.AdminAuth(client), "state@ex.com", lambda _: None, password="Known1!",
+        )
+    assert client.password_headers is None
+    assert spy["code_login"] == 0
 
 
 # ---- 密码从库里取,不再硬编码 ----

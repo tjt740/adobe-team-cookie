@@ -485,7 +485,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
                            poll=None, password: str = "",
                            otp_timeout: int = 180,
                            force_code_login: bool = False) -> str:
-    """走 SunbreakWebUI1 密码登录链建立 type2e 企业 IMS 会话,再让 clio 铸 type2e firefly token。
+    """优先沿用已验证的登录会话;会话失效时才重新认证。
 
     浏览器实测、纯 HTTP 可复刻的正确链:
       密码登录(必要时邮箱 MFA) -> accounts/me 激活企业资料 link -> filtered_profiles 取企业 guid
@@ -494,6 +494,20 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
     企业 account_id 记到 auth._enterprise_account_id 供 fetch_credits(x-account-id)使用。
     """
     poll = poll or _p.poll_otp
+    if auth.susi_token:
+        def capture_existing(r):
+            auth.auth_state_encrypted = r.headers.get(
+                "x-ims-authentication-state-encrypted", auth.auth_state_encrypted)
+            auth.identity_verification_token = r.headers.get(
+                "x-identity-verification-token", auth.identity_verification_token)
+
+        lf("firefly:沿用已验证的登录会话,切换账号资料并获取 token")
+        try:
+            return _finish_firefly_token(auth, auth, email, lf, capture_existing)
+        except _adm.AdminError as exc:
+            # 首次激活企业资料可能作废补全会话;仅此时需要重新认证。
+            lf(f"firefly:已有会话无法完成 token 交换,重新认证:{str(exc)[:200]}")
+
     a2 = AdminAuth(auth.client, client_id=SUNBREAK_CLIENT_ID,
                    scope=SUNBREAK_SCOPE, redirect=SUNBREAK_REDIRECT)
 
@@ -520,6 +534,14 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         code_login("强制" if force_code_login else "没有该号的 Adobe 密码")
         return _finish_firefly_token(auth, a2, email, lf, cap)
 
+    # a2 是新的 Sunbreak 客户端,不能只共享 cookie 就直接提交密码。
+    # 必须先建立这个客户端的认证状态,否则 Adobe 返回 invalid_auth_session,
+    # 随后无谓地再次发验证码还可能触发 factor_unavailable。
+    a2.authorize(email, "en_US")
+    _adm._probe_auth_methods(a2, email)
+    if not a2.start_email_mfa(email):
+        raise _adm.AdminError("firefly type2e:无法建立密码登录认证会话")
+
     def pwd_login():
         r = a2.client.post(
             f"{_p.AUTH_HOST}/signin/v2/tokens?credential=password",
@@ -543,7 +565,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
             low = (body or "").lower()
             hint = "(疑似频控,过一会儿再试)" if st == 429 or "too many" in low or "rate" in low or "throttl" in low else ""
             raise _adm.AdminError(f"type2e MFA 发码失败 status={st}: {body}{hint}")
-        code = poll(email, timeout=180)
+        code = poll(email, timeout=otp_timeout)
         if not a2.verify_email_challenge(code):
             raise _adm.AdminError("type2e MFA 验证失败")
         r, jd = pwd_login()
@@ -685,7 +707,7 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
     except Exception as e:  # noqa: BLE001
         lf(f"firefly type2e:ims/tokens 异常:{e}")
 
-    # fromSusi(SunbreakWebUI1)-> 建立 type2e IMS 会话 cookie
+    # fromSusi 使用已验证会话所属客户端,建立 IMS 会话 cookie。
     try:
         a2.from_susi_token(None)
     except Exception as e:  # noqa: BLE001
@@ -736,6 +758,7 @@ def register_account(
     account_id: str = "", adobe_password: str = "",
     force_code_login: bool = False,
     log: Optional[LogFn] = None,
+    on_credentials: Optional[Callable[..., None]] = None,
 ) -> dict[str, Any]:
     """子账号自助登录(免密码验证码)→ 拿 firefly token + cookie + credits。
 
@@ -746,10 +769,19 @@ def register_account(
         raise _adm.AdminError("子号缺少 Refresh Token / Client ID 或取信配置,无法收验证码登录")
 
     # 显式传入收码器(不改全局),保证并发拉号时各子号互不干扰
-    poller, holder = make_otp_poller(
+    poll_codes, holder = make_otp_poller(
         refresh_token=refresh_token, client_id=client_id,
         mail_url=mail_url, proxy_url=proxy_url, timeout=otp_timeout, log=lf,
     )
+
+    def poller(*args, **kwargs):
+        try:
+            return poll_codes(*args, **kwargs)
+        finally:
+            # 邮箱令牌已经轮换时,后面的 Adobe 登录即使失败也不能丢掉新令牌。
+            if on_credentials and holder.rotated:
+                on_credentials(refresh_token=holder.refresh_token)
+
     client = _p.HttpClient(proxy=proxy_url)
     try:
         auth = AdminAuth(
@@ -766,6 +798,8 @@ def register_account(
         set_password = _adm.complete_sub_account(
             auth, email, lf, poll=poller, otp_timeout=otp_timeout
         )
+        if set_password and on_credentials:
+            on_credentials(adobe_password=set_password)
         # 拿哪个密码去登:本次刚设的 > 库里存的 > 没有(走验证码)。
         # 不再无条件用 COMPLETE_PASSWORD —— 已补全的号密码未必是我们设的。
         pwd = set_password or (adobe_password or "").strip()

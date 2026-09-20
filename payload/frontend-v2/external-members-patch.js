@@ -4,7 +4,6 @@
 (function () {
   "use strict";
   var TK = "okad_token";
-  var token = localStorage.getItem(TK) || "";
   var NAV_ID = "extm-nav", FAB_ID = "extm-fab";
   var st = { rows: [], sel: new Set(), statusF: "", subF: "", q: "", busy: false, open: false, posBound: false };
 
@@ -61,7 +60,7 @@
 
   function api(path, opts) {
     opts = opts || {};
-    if (!token) token = localStorage.getItem(TK) || "";
+    var token = localStorage.getItem(TK) || "";
     var ctrl = new AbortController();
     var to = setTimeout(function () { ctrl.abort(); }, opts.timeout || 30000);
     return fetch("/api/external" + path, {
@@ -83,7 +82,7 @@
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function el(id) { return document.getElementById(id); }
-  function toast(type, m) { var a = window.$message; if (a && typeof a[type] === "function") a[type](m); else if (type === "error") console.error("[extm]", m); }
+  function toast(type, m) { opMsg(m, type === "error" ? "err" : (type === "success" ? "ok" : "mut")); var a = window.$message; if (a && typeof a[type] === "function") a[type](m); }
   function opMsg(t, c) { var e = el("extm-op"); if (e) { e.className = "extm-msg" + (c ? " " + c : ""); e.textContent = t || ""; } }
   function fmtTime(s) { if (!s) return "—"; var d = new Date(s); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
 
@@ -108,7 +107,7 @@
       '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span></div>' +
       '<div class="extm-card"><div class="hd">批量导入 <span class="tip">每行一个,格式:邮箱----密码----ClientID----RefreshToken[----Adobe密码](兼容 | 分隔)</span></div>' +
         '<div class="bd">' +
-          '<textarea id="extm-import" class="extm-ta" placeholder="user@example.com----邮箱密码----ClientID(UUID)----M.RefreshToken\n带 Adobe 密码则再加一段:…----M.RefreshToken----AdobePwd\n不带则首登后自动存我们设的默认密码"></textarea>' +
+          '<textarea id="extm-import" class="extm-ta" placeholder="user@example.com----邮箱密码----ClientID(UUID)----M.RefreshToken\n带 Adobe 密码则再加一段:…----M.RefreshToken----AdobePwd\n首次补全账号时会生成并保存独立密码"></textarea>' +
           '<div class="extm-row">' +
             '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
             '<button class="extm-btn" id="extm-do-import">批量导入</button>' +
@@ -183,7 +182,8 @@
         '<td><input type="checkbox" class="extm-rowck" data-id="' + r.id + '"></td>' +
         '<td><span class="mono">' + esc(r.email) + "</span>" + cap + "</td>" +
         "<td>" + creditCell(r) + "</td>" +
-        "<td>" + statusPill(r.login_status) + "</td>" +
+        "<td>" + statusPill(r.login_status) +
+          (r.message ? '<div style="max-width:320px;white-space:normal;overflow-wrap:anywhere;font-size:12px;margin-top:4px">' + esc(r.message) + '</div>' : '') + "</td>" +
         "<td>" + subPill(r) + "</td>" +
         '<td class="cr">' + esc(fmtTime(r.last_login_at)) + "</td>" +
         '<td><button class="extm-btn o sm" data-login="' + r.id + '">重登</button> ' +
@@ -220,10 +220,12 @@
   }
 
   function reloginOne(id, btn) {
-    if (btn) { btn.disabled = true; btn.textContent = "登录中…"; }
+    if (btn) { btn.disabled = true; btn.textContent = "提交中…"; }
     st.busy = true;
-    api("/members/" + id + "/login", { method: "POST", timeout: 290000 }).then(function (r) {
-      toast(r.ok ? "success" : "error", r.ok ? "登录成功" : ((r.code || "失败") + " " + (r.message || "")));
+    opMsg("正在提交重登任务…", "mut");
+    // 复用批量登录的后台任务接口,单号重登也有持久化日志和任务编号。
+    api("/members/batch-login", { method: "POST", body: { ids: [id] } }).then(function (r) {
+      toast("success", "已提交重登任务 #" + r.id + ",请在「任务列表」查看进度和日志,完成后刷新账号列表");
     }).catch(function (e) { toast("error", e.message); }).finally(function () { st.busy = false; load(); });
   }
 

@@ -21,7 +21,7 @@ class ExternalMember(Base):
     # 导入的微软邮箱凭据(收 Adobe 验证码用):邮箱----密码----ClientID----RefreshToken
     mail_password: Mapped[str] = mapped_column(String(255), default="")
     # 这个号的 Adobe 账号密码。导入行带第 5 段就用那一段;自己补全注册的号
-    # 则在首登成功后写入我们设的默认密码(adobe_admin.COMPLETE_PASSWORD)。
+    # 则在补全成功后立即写入本次实际设置的密码。
     adobe_password: Mapped[str] = mapped_column(String(255), default="")
     client_id: Mapped[str] = mapped_column(String(255), default="")
     refresh_token: Mapped[str] = mapped_column(Text, default="")

@@ -257,9 +257,31 @@ def test_is_service_error_classification():
 def test_password_precheck_responses_are_logged():
     client = FakeClient()
     logs, lf = _logs()
-    complete_sub_account(StubAuth(client), "a@ex.com", lf,
-                         country="SG", locale="en_US")
+    password = complete_sub_account(StubAuth(client), "a@ex.com", lf,
+                                    country="SG", locale="en_US")
     assert any("密码合规校验 status=" in m for m in logs), "合规校验响应没记"
     assert any("密码泄露校验 status=" in m for m in logs), "泄露校验响应没记"
     # 密码明文不能进日志
-    assert not any(adm.COMPLETE_PASSWORD in m for m in logs)
+    assert password and not any(password in m for m in logs)
+
+
+def test_default_completion_password_is_unique_and_submitted():
+    passwords = []
+    for _ in range(2):
+        client = FakeClient()
+        password = complete_sub_account(StubAuth(client), "new@ex.com", lambda _: None,
+                                        country="SG", locale="en_US")
+        assert password == client.puts[0]["json"]["account"]["password"]
+        assert len(password) == 20
+        assert all(any(check(c) for c in password) for check in (str.isupper, str.islower, str.isdigit))
+        passwords.append(password)
+    assert passwords[0] != passwords[1]
+
+
+def test_rejected_password_is_not_submitted():
+    client = FakeClient()
+    client.post = lambda *args, **kwargs: FakeResp(200, {"valid": False})
+    with pytest.raises(AdminError, match="密码合规校验未通过"):
+        complete_sub_account(StubAuth(client), "new@ex.com", lambda _: None,
+                             password="Rejected", country="SG", locale="en_US")
+    assert not client.puts

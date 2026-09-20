@@ -147,6 +147,26 @@ def test_batch_login_worker_empty_member_ids(monkeypatch, SessionLocal):
     assert job.result is None
 
 
+def test_batch_login_failure_is_in_job_and_system_logs(db, monkeypatch, SessionLocal):
+    from app.services import log_store
+
+    member = _seed(db, email="logs@ex.com")
+    monkeypatch.setattr(el, "SessionLocal", SessionLocal)
+    log_store.STORE.clear()
+
+    def fail(member_id, *, log):
+        log("✗ 登录失败:factor_unavailable")
+        return {"ok": False}
+
+    monkeypatch.setattr(el, "login_and_store", fail)
+    job = Job(42, "external_login", {"member_ids": [member.id]})
+    el.batch_login_worker(job)
+    assert job.fail == 1
+    assert any("factor_unavailable" in line for line in job.logs)
+    errors, _ = log_store.STORE.list(level="ERROR", keyword="external_login")
+    assert any("factor_unavailable" in row["message"] for row in errors)
+
+
 def _proxy_settings(raw: str):
     return lambda db: SimpleNamespace(proxy_enabled=True, proxy_url=raw, concurrency=1)
 
@@ -292,3 +312,48 @@ def test_is_network_error_excludes_captcha():
     assert el._is_network_error("补全账号请求异常:Read timed out") is True
     assert el._is_network_error("captcha timeout") is False
     assert el._is_network_error("补全账号 Arkose 失败: captcha timeout") is False
+
+
+def test_credentials_survive_later_login_failure(db, monkeypatch, SessionLocal):
+    member = _seed(db, email="credentials@ex.com", adobe_password="Old1!")
+    monkeypatch.setattr(el, "SessionLocal", SessionLocal)
+
+    def fail(**kwargs):
+        kwargs["on_credentials"](refresh_token="M.rotated", adobe_password="New2!")
+        raise RuntimeError("token exchange failed")
+
+    monkeypatch.setattr(el.firefly, "register_account", fail)
+    assert el.login_and_store(member.id)["ok"] is False
+    db.refresh(member)
+    assert member.refresh_token == "M.rotated"
+    assert member.adobe_password == "New2!"
+
+
+def test_network_retry_uses_rotated_credentials(db, monkeypatch, SessionLocal):
+    member = _seed(db, email="retry-credentials@ex.com")
+    monkeypatch.setattr(el, "SessionLocal", SessionLocal)
+    attempts = []
+
+    def register(**kwargs):
+        attempts.append((kwargs["refresh_token"], kwargs["adobe_password"]))
+        if len(attempts) == 1:
+            kwargs["on_credentials"](refresh_token="M.rotated", adobe_password="Generated2!")
+            raise TimeoutError("connection timeout")
+        return {"cookie": "fresh=1", "credits": 1, "credits_total": 1}
+
+    monkeypatch.setattr(el.firefly, "register_account", register)
+    assert el.login_and_store(member.id)["ok"]
+    assert attempts[1] == ("M.rotated", "Generated2!")
+
+
+def test_unavailable_credits_do_not_mark_existing_subscription_as_lost(db, monkeypatch, SessionLocal):
+    member = _seed(db, email="credits@ex.com", subscription_ok=True)
+    monkeypatch.setattr(el, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(el.firefly, "register_account", lambda **kw: {"cookie": "fresh=1"})
+    logs = []
+    assert el.login_and_store(member.id, log=logs.append)["ok"]
+    db.refresh(member)
+    assert member.subscription_ok is True
+    assert member.login_status == "ok"
+    assert "额度暂未能查询" in member.message
+    assert any("订阅=未能查询" in msg for msg in logs)

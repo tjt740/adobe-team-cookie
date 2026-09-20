@@ -99,13 +99,13 @@ def test_first_login_stores_the_password_we_set(db, monkeypatch, SessionLocal):
     assert m.adobe_password == "CHANGE_ME_PASSWORD"
 
 
-def test_first_login_does_not_overwrite_imported_password(db, monkeypatch, SessionLocal):
-    """导入行给过密码的,不能被我们设的默认密码盖掉 —— 那才是这个号真正的密码。"""
+def test_actual_new_password_replaces_imported_password(db, monkeypatch, SessionLocal):
+    """本次确实设置了新密码时,落库必须与 Adobe 上的实际密码一致。"""
     m = _seed(db, email="p2@ex.com", adobe_password="Imported9!")
-    _login(monkeypatch, SessionLocal, dict(_OK, set_password="CHANGE_ME_PASSWORD"))
+    _login(monkeypatch, SessionLocal, dict(_OK, set_password="Generated9!"))
     assert el.login_and_store(m.id)["ok"] is True
     db.refresh(m)
-    assert m.adobe_password == "Imported9!"
+    assert m.adobe_password == "Generated9!"
 
 
 def test_login_of_already_complete_account_stores_nothing(db, monkeypatch, SessionLocal):

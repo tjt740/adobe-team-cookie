@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, MessageResult, Page
 from app.schemas.external_member import ExternalImportRequest, ExternalMemberOut
-from app.services import external_login, log_store
+from app.services import external_login
 from app.services.job_manager import JOBS
 
 router = APIRouter(
@@ -72,10 +72,9 @@ def login_one(member_id: int, db: Session = Depends(get_db)) -> dict:
     m = crud.get(db, member_id)
     if not m:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="条目不存在")
-    email = m.email
     # 把重登过程写进「日志管理」,失败时能看到具体到哪一步、为什么
     return external_login.login_and_store(
-        member_id, log=lambda msg: log_store.STORE.add("INFO", "external_login", f"[{email}] {msg}")
+        member_id, log=external_login.log_login
     )
 
 
