@@ -105,6 +105,7 @@ class Job:
             return {
                 "id": self.id,
                 "type": self.type,
+                "operator": self.meta.get("operator") or "",
                 "status": self.status,
                 "target": self.target,
                 "success": self.success,
@@ -295,6 +296,42 @@ class JobManager:
                 jobs.append(job)
         jobs.sort(key=lambda j: j.id, reverse=True)
         return jobs[:limit]
+
+    def external_member_jobs(self, member_ids: list[int], *, limit: int = 1) -> dict[int, list[dict]]:
+        """按账号查持久化历史,不受全局最近 30 条限制;列表不加载日志原文。"""
+        if not member_ids:
+            return {}
+        self._ensure_storage()
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                WITH ranked AS (
+                    SELECT j.id, j.type, j.status, j.target, j.success, j.fail,
+                           j.error, j.created_at, j.finished_at,
+                           json_extract(j.meta_json, '$.operator') AS operator,
+                           json_array_length(j.logs_json) AS log_total,
+                           CAST(m.value AS INTEGER) AS member_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY m.value ORDER BY j.id DESC
+                           ) AS position
+                    FROM job_records AS j, json_each(j.meta_json, '$.member_ids') AS m
+                    JOIN external_members AS e ON e.id=m.value
+                    WHERE j.deleted=0 AND j.type='external_login'
+                      AND m.value IN (SELECT value FROM json_each(:member_ids))
+                      AND j.created_at >= CAST(strftime('%s', e.created_at) AS INTEGER)
+                      AND (json_type(j.meta_json, '$.member_emails') IS NULL
+                           OR json_extract(j.meta_json, '$.member_emails."' || e.id || '"')=e.email)
+                )
+                SELECT * FROM ranked WHERE position <= :limit ORDER BY id DESC
+            """), {"member_ids": _json_dumps(list(set(member_ids))), "limit": max(1, min(100, limit))}).mappings().all()
+        out: dict[int, list[dict]] = {}
+        for row in rows:
+            data = Job.from_record(dict(row)).to_dict()
+            data["operator"] = row["operator"] or ""
+            data["log_total"] = int(row["log_total"] or 0)
+            # Summary responses have no credentials, metadata or log bodies.
+            data.pop("meta", None)
+            out.setdefault(int(row["member_id"]), []).append(data)
+        return out
 
     def find_active(self, job_type: str, admin_id: int) -> Optional[Job]:
         for job in self._jobs.values():

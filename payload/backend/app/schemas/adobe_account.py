@@ -225,6 +225,7 @@ class CleanupMembersRequest(BaseModel):
 class JobStatusOut(BaseModel):
     id: int
     type: str
+    operator: str = ""
     status: str
     target: int = 0
     success: int = 0

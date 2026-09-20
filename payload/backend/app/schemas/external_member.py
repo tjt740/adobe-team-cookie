@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.adobe_account import JobStatusOut
+
 
 class ExternalMemberOut(BaseModel):
     """列表项(不含 cookie/token 等敏感原文)。"""
@@ -20,6 +22,8 @@ class ExternalMemberOut(BaseModel):
     last_login_at: datetime | None = None
     message: str = ""
     created_at: datetime
+    operator: str = ""
+    latest_job: JobStatusOut | None = None
 
 
 class ExternalImportRequest(BaseModel):

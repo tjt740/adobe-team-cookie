@@ -54,6 +54,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "mail_url": "TEXT DEFAULT ''",
     },
     "external_members": {
+        "operator": "VARCHAR(255) DEFAULT ''",
         "mail_password": "VARCHAR(255) DEFAULT ''",
         "adobe_password": "VARCHAR(255) DEFAULT ''",
         "client_id": "VARCHAR(255) DEFAULT ''",

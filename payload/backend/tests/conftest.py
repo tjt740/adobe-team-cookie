@@ -41,11 +41,17 @@ def db(SessionLocal):
 
 
 @pytest.fixture
-def client(SessionLocal):
+def client(SessionLocal, engine, monkeypatch):
     """TestClient(app) 不进入 lifespan(不触发真实 init_db),仅覆盖依赖。"""
     from app.api.deps import get_current_user
     from app.main import app
     from app.models.user import User
+    from app.services import job_manager
+
+    monkeypatch.setattr(job_manager, "engine", engine)
+    monkeypatch.setattr(job_manager.JOBS, "_jobs", {})
+    monkeypatch.setattr(job_manager.JOBS, "_counter", 0)
+    monkeypatch.setattr(job_manager.JOBS, "_storage_ready", False)
 
     def _override_db():
         s = SessionLocal()

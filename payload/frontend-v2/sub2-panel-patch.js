@@ -21,14 +21,14 @@
   "use strict";
   var TK = "okad_token";
   var token = localStorage.getItem(TK) || "";
-  var NAV_ID = "sub2-nav-mng", FAB_ID = "sub2-fab-mng", PANEL_ID = "sub2-panel";
+  var NAV_ID = "sub2-nav-mng", PANEL_ID = "sub2-panel";
   var st = {
     all: [], view: [], page: 1, size: 20, sel: new Set(), cfg: null, groups: [],
-    busy: false, q: "", statusF: "", sortKey: "", sortDir: 1, siderRO: null,
+    busy: false, q: "", statusF: "", sortKey: "", sortDir: 1,
   };
 
   var CSS = [
-    '#' + PANEL_ID + '{position:fixed;top:0;right:0;bottom:0;left:220px;z-index:2000;display:none;background:#f5f7fa;color:#333639;font:14px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}',
+    '#' + PANEL_ID + '{position:fixed;top:0;right:0;bottom:0;left:220px;z-index:1000;display:none;background:#f5f7fa;color:#333639;font:14px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}',
     '#' + PANEL_ID + '.on{display:flex;flex-direction:column}',
     '#' + PANEL_ID + ' *{box-sizing:border-box}',
     '.s2-top{display:flex;align-items:center;gap:12px;height:56px;padding:0 24px;background:#fff;border-bottom:1px solid #efeff5;flex:none}',
@@ -193,7 +193,7 @@
   }
 
   function wire() {
-    el("s2-close").onclick = closePanel;
+    el("s2-close").onclick = window.OKAD_NAV.close;
     el("s2-reload").onclick = function () { if (!st.busy) { loadAll(); loadStats(); } };
     el("s2-cfghd").onclick = function () { el("s2-cfg").classList.toggle("collapsed"); };
     el("s2-save").onclick = saveConfig; el("s2-test").onclick = testConn; el("s2-loadg").onclick = loadGroups;
@@ -386,47 +386,20 @@
   }
 
   // ---------- open/close ----------
-  function siderW() { var s = document.querySelector(".n-layout-sider"); return s ? s.offsetWidth : 220; }
+  function positionPanel() {
+    var pnl = el(PANEL_ID), r = window.OKAD_NAV.rect();
+    if (pnl) { pnl.style.left = r.left + "px"; pnl.style.top = r.top + "px"; }
+  }
   function openPanel() {
-    if (!token) token = localStorage.getItem(TK) || "";
+    token = localStorage.getItem(TK) || "";
     injectStyle(); buildPanel();
-    var pnl = el(PANEL_ID); pnl.style.left = siderW() + "px"; pnl.classList.add("on");
+    positionPanel(); el(PANEL_ID).classList.add("on");
     st.page = 1; st.sel.clear(); st.q = ""; st.statusF = "";
-    var sider = document.querySelector(".n-layout-sider");
-    if (sider && window.ResizeObserver && !st.siderRO) { st.siderRO = new ResizeObserver(function () { var p = el(PANEL_ID); if (p && p.classList.contains("on")) p.style.left = siderW() + "px"; }); st.siderRO.observe(sider); }
     loadConfig().then(loadStats); loadAll();
   }
   function closePanel() { var p = el(PANEL_ID); if (p) p.classList.remove("on"); }
-
-  // ---------- entry ----------
-  function onLogin() { var p = location.pathname.replace(/\/+$/, ""); return p === "" || p === "/login"; }
-  function relabel(node, label) { var hdr = node.querySelector(".n-menu-item-content-header"); if (hdr) { hdr.textContent = label; return true; } var done = false; (function walk(n) { Array.prototype.forEach.call(n.childNodes, function (c) { if (done) return; if (c.nodeType === 3 && c.textContent.trim()) { c.textContent = label; done = true; } else if (c.childNodes && c.childNodes.length) walk(c); }); })(node); return done; }
-  function injectNav() {
-    if (el(NAV_ID)) return true;
-    var menu = document.querySelector(".n-menu"); if (!menu) return false;
-    var items = menu.querySelectorAll(".n-menu-item"); if (!items.length) return false;
-    var clone = items[items.length - 1].cloneNode(true); clone.id = NAV_ID;
-    Array.prototype.forEach.call(clone.querySelectorAll("*"), function (x) { if (x.className && typeof x.className === "string") x.className = x.className.replace(/n-menu-item-content--[a-z-]+/g, "").trim(); });
-    if (!relabel(clone, "Sub2 管理")) return false;
-    var ic = clone.querySelector(".n-menu-item-content__icon"); if (ic) ic.innerHTML = '<span style="font-size:17px">⬢</span>';
-    clone.style.cursor = "pointer";
-    clone.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); openPanel(); }, true);
-    menu.appendChild(clone);
-    var f = el(FAB_ID); if (f) f.remove();
-    return true;
-  }
-  function fab() { if (el(FAB_ID) || el(NAV_ID)) return; if (!document.body) return; var a = document.createElement("div"); a.id = FAB_ID; a.className = "s2-fab"; a.innerHTML = '<span>⬢</span><span>Sub2 管理</span>'; a.onclick = openPanel; document.body.appendChild(a); }
-  function ensure() {
-    injectStyle();
-    if (onLogin()) { closePanel(); var a = el(NAV_ID); if (a) a.remove(); var b = el(FAB_ID); if (b) b.remove(); return; }
-    if (injectNav()) { if (mo) { mo.disconnect(); mo = null; } }
-    else fab();
-  }
-  // 点其它侧边栏菜单时收起面板
-  document.addEventListener("click", function (e) { var p = el(PANEL_ID); if (!p || !p.classList.contains("on")) return; var mi = e.target.closest && e.target.closest(".n-menu-item"); if (mi && mi.id !== NAV_ID) closePanel(); }, true);
-
-  var mo = new MutationObserver(function () { ensure(); });
-  mo.observe(document.documentElement, { childList: true, subtree: true });
-  document.addEventListener("DOMContentLoaded", ensure);
-  setTimeout(ensure, 600); setTimeout(ensure, 1800); setTimeout(ensure, 3600);
+  window.OKAD_NAV.register({
+    id: NAV_ID, panel: PANEL_ID, label: "Sub2 管理", icon: "sub2",
+    open: openPanel, close: closePanel, layout: positionPanel
+  });
 })();

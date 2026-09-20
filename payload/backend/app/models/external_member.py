@@ -41,6 +41,7 @@ class ExternalMember(Base):
     subscription_ok: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     message: Mapped[str] = mapped_column(String(500), default="")
+    operator: Mapped[str] = mapped_column(String(255), default="")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)

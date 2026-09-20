@@ -100,6 +100,8 @@
     var pool = isPool();
     var trs = document.querySelectorAll(".n-data-table-tbody .n-data-table-tr, tbody tr");
     trs.forEach(function (tr) {
+      // 外部子号有独立的账号/任务表,不能按日志里的邮箱给整个详情打库存标签。
+      if (tr.closest("#extm-embed")) return;
       var found = emailCellOf(tr);
       if (!found) return;
       if (found.cell.querySelector("[" + PILL + "]")) return;       // 本格已打标
