@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "9500:9500"
+      - "${APP_BIND_HOST:-0.0.0.0}:${APP_HOST_PORT:-9500}:9500"
     env_file: .env
     environment:
       DATABASE_URL: sqlite:////app/data/app.db

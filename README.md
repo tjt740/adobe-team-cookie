@@ -4,7 +4,7 @@ Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 
 
 ## 当前生产部署
 
-- 地址：http://47.106.176.71:9500
+- 地址：https://47.106.176.71:9500（HTTP 自动跳转 HTTPS）
 - 目录：`/home/admin/adobe-team-cookie`
 - 运行方式：Docker Compose，开机自动恢复
 - 数据库：`data/app.db`，升级保留
@@ -13,7 +13,7 @@ Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 
 ```bash
 python3 deploy/init-env.py
 docker compose up -d --build
-curl --fail http://127.0.0.1:9500/api/health
+curl --fail https://47.106.176.71:9500/api/health
 ```
 
 若服务器无法访问 Docker Hub，可在构建机执行 `docker build --platform linux/amd64 -t adobe-team-cookie:latest .`，通过 `docker save` / `docker load` 传输，再执行 `docker compose up -d --no-build`。
