@@ -433,8 +433,6 @@
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
       if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，展开账号行查看进度和日志';
       opMsg(msg, r.failed ? 'err' : 'ok'); ta.value = ''; await load(true);
-      var first = st.rows.find(function (row) { return row.latest_job && (r.job_ids || [r.job_id]).includes(row.latest_job.id); });
-      if (first) { st.expanded.add(first.id); detailState(first.id).selected = first.latest_job.id; renderRows(); await refreshDetail(first.id, true); }
     } catch (e) { opMsg(e.message, 'err'); }
     finally { setLoading(btn, false, '批量导入'); }
   }
