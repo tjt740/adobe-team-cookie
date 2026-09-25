@@ -125,12 +125,19 @@ def export_cookies(
     *,
     login_status: str | None = None,
     subscription_ok: bool | None = None,
+    keyword: str = "",
+    ids: list[int] | None = None,
 ) -> list[dict]:
     stmt = select(ExternalMember).where(ExternalMember.cookie != "")
+    if ids is not None:
+        stmt = stmt.where(ExternalMember.id.in_(ids))
     if login_status:
         stmt = stmt.where(ExternalMember.login_status == login_status)
     if subscription_ok is not None:
         stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
     rows = db.scalars(stmt.order_by(ExternalMember.id.desc())).all()
     return [{"cookie": r.cookie} for r in rows if (r.cookie or "").strip()]
 

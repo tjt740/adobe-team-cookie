@@ -113,10 +113,11 @@ def upsert(
 def ensure_admin_self_rows(db: Session) -> None:
     """为每个母号(adobe_accounts)在号池里建立/同步一条镜像行(is_admin=True)。
 
-    幂等:已存在则补齐缺失的收码凭据;不存在则创建。这样母号本身也能在
+    幂等:已存在则补齐缺失的收码凭据;不存在则创建。用户主动从号池删除的母号除外。
+    这样母号本身也能在
     号池里协议拉取「前端生成 token」(与管理控制台的 admin_token 不同)。
     """
-    accounts = list(db.scalars(select(AdobeAccount)))
+    accounts = list(db.scalars(select(AdobeAccount).where(AdobeAccount.pool_hidden.is_not(True))))
     changed = False
     for acc in accounts:
         row = db.scalar(

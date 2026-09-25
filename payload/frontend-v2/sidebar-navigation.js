@@ -24,6 +24,7 @@
     .okad-panel-active .n-layout-sider { z-index:1100; }
     .okad-panel-active .n-layout-toggle-button { z-index:1101; }
     .okad-panel-active .header-title { display:none; }
+    .okad-panel-active .n-layout-content.content { visibility:hidden; }
     .okad-page-title { font-size:18px;font-weight:600;color:var(--text); }
     #okad-nav-tooltip { position:fixed;z-index:4000;padding:7px 11px;border-radius:6px;background:#262a30;color:#fff;font:14px/1.5 system-ui,sans-serif;box-shadow:0 3px 12px #0002;pointer-events:none;white-space:nowrap; }
   `;

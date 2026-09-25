@@ -16,6 +16,7 @@ from app.services import adobe_admin as _adm
 from app.services.adobe_otp import make_otp_poller
 from app.services.adobe_protocol import admin_member_protocol as _p
 from app.services.adobe_protocol.admin_member_protocol import AdminAuth
+from app.services.account_profile import build_profile_snapshot
 
 try:
     from curl_cffi import requests as _cffi
@@ -603,6 +604,13 @@ def _pick_enterprise_profile(
     这里的 accounts/me 是纯 GET:不切资料、不换 token、不动会话状态。
     取证日志一并保留 —— 缺了它们,上面这些结论当初根本查不出来。
     """
+    a2._available_profiles = [
+        {"profile_id": p.get("userId") or "", "name": p.get("description") or "",
+         "kind": "personal" if p.get("description") == "Personal Account" else "unknown",
+         "status": "disabled" if p.get("disabled") else "active"}
+        for p in (fps or []) if isinstance(p, dict)
+    ]
+    a2._profiles_complete = False
     try:
         raw = json.dumps(fps or [], ensure_ascii=False)
         lf(f"firefly 取证:filteredProfiles 共 {len(fps or [])} 条 {raw[:1000]}")
@@ -614,6 +622,13 @@ def _pick_enterprise_profile(
             headers=a2.headers(), timeout=15)
         data = r.json() if r.status_code == 200 else {}
         links = ((data.get("profileData") or {}).get("links")) or []
+        a2._profiles_complete = r.status_code == 200
+        a2._available_profiles.extend(
+            {"profile_id": lk.get("entitlementAccountUserId") or "",
+             "name": lk.get("description") or "", "kind": "organization",
+             "status": lk.get("status") or "active"}
+            for lk in links if isinstance(lk, dict) and lk.get("entitlementAccountUserId")
+        )
         lf(f"firefly 取证:accounts/me status={r.status_code} "
            f"企业资料 link 共 {len(links)} 条")
         for i, lk in enumerate(links):
@@ -672,6 +687,7 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
         # filtered_profiles 只回 session-forward(个人)那条;真正带额度的具名企业
         # 资料要去 accounts/me 拿。拿得到就用企业的,拿不到才退回个人。
         org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps)
+        a2._profiles_complete = a2._profiles_complete and r.status_code == 200
         if org_guid:
             lf(f"firefly type2e:选择企业资料「{org_desc or '-'}」guid={org_guid}")
             ent_guid = org_guid
@@ -741,6 +757,8 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
         "check_user_id": data.get("userId") or ent_guid,
         "check_owner_org": data.get("ownerOrg") or "",
         "check_client_id": data.get("client_id") or CLIO_CLIENT_ID,
+        "available_profiles": getattr(a2, "_available_profiles", []),
+        "profiles_complete": getattr(a2, "_profiles_complete", False),
         "token_claims": _token_diagnostics(tok3),
     }
     try:
@@ -877,12 +895,18 @@ def register_account(
         credits = credits_detail["available"] if credits_detail else None
         credits_total = credits_detail["total"] if credits_detail else None
         expires_at = extract_jwt_expiry(token)
+        try:
+            account_profile = build_profile_snapshot(context, credits_account_id)
+        except (TypeError, ValueError):
+            account_profile = None
+            lf("账号配置资料格式异常，本次不更新展示资料")
 
         return {
             "access_token": token,
             "cookie": cookie,
             "credits": credits,
             "credits_total": credits_total,
+            "account_profile": account_profile,
             "expires_at": expires_at,
             "display_name": info.get("display_name") or "",
             "user_id": user_id,

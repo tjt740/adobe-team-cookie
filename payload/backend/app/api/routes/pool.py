@@ -14,7 +14,7 @@ from fastapi.responses import Response
 import requests
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import capture_job_request, get_current_user
 from app.crud import adobe_account as adobe_crud
 from app.crud import adobe_member as member_crud
 from app.crud import setting as setting_crud
@@ -40,14 +40,14 @@ from app.schemas.common import (
     Page,
 )
 from app.services import adobe_admin, firefly_arp, firefly_image, pool_login, proxy_pool
-from app.services import mail_test
+from app.services import mail_test, pool_sub2
 from app.services.adobe_otp import _extract_adobe_otp, _strip_html
 from app.services.job_manager import JOBS
 
 router = APIRouter(
     prefix="/pool",
     tags=["号池管理"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(capture_job_request)],
 )
 
 
@@ -431,6 +431,15 @@ def test_image(
     return TestImageResult(**res)
 
 
+@router.post("/login-push-sub2", response_model=JobStatusOut, summary="勾选号池账号获取 Cookie 并推送 Sub2")
+def login_push_sub2(payload: BatchIds, db: Session = Depends(get_db)) -> JobStatusOut:
+    try:
+        job = pool_sub2.start(db, payload.ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return JobStatusOut(**job.to_dict())
+
+
 @router.post("/batch-login", response_model=JobStatusOut, summary="批量协议登录刷新Token")
 def batch_login(payload: BatchIds, db: Session = Depends(get_db)) -> JobStatusOut:
     members = member_crud.get_many(db, payload.ids)
@@ -534,7 +543,9 @@ def batch_delete(payload: BatchIds, db: Session = Depends(get_db)) -> MessageRes
         if admin is None:
             admin = adobe_crud.get(db, m.admin_id)
             admin_cache[m.admin_id] = admin
-        # 母号镜像行不属于自己组织,跳过组织移除(删除后下次列表会自动重建)
+        # 删除母号在号池中的镜像，同时记录不再自动重建；保留母号管理记录。
+        if m.is_admin and admin:
+            admin.pool_hidden = True
         if not m.is_admin and admin and admin.admin_token and admin.org_id:
             try:
                 adobe_admin.remove_member(
@@ -547,6 +558,8 @@ def batch_delete(payload: BatchIds, db: Session = Depends(get_db)) -> MessageRes
         db.delete(m)
         removed += 1
 
+    # Session 禁用了 autoflush，先执行删除，再查询剩余成员数量。
+    db.flush()
     # 更新各母号成员计数
     for admin_id, admin in admin_cache.items():
         if admin:

@@ -49,6 +49,41 @@ def test_export(client, db):
     assert r.json() == [{"cookie": "k=v"}]
 
 
+def test_export_selected_excludes_unselected_and_empty_cookies(client, db):
+    members = [
+        ExternalMember(email="selected@ex.com", cookie="selected=1"),
+        ExternalMember(email="unselected@ex.com", cookie="unselected=1"),
+        ExternalMember(email="empty@ex.com", cookie=""),
+        ExternalMember(email="whitespace@ex.com", cookie="   "),
+    ]
+    db.add_all(members)
+    db.commit()
+    ids = [members[0].id, members[0].id, members[2].id, members[3].id, 999999]
+    response = client.post("/api/external/members/export", json={"ids": ids})
+    assert response.status_code == 200
+    assert response.json() == [{"cookie": "selected=1"}]
+    for ids in ([], [999999], [members[2].id]):
+        response = client.post("/api/external/members/export", json={"ids": ids})
+        assert response.status_code == 200 and response.json() == []
+    assert client.post("/api/external/members/export", json={}).status_code == 422
+
+
+def test_export_all_respects_the_same_filters_as_listing(client, db):
+    db.add_all([
+        ExternalMember(email="match@ex.com", cookie="email=1", login_status="ok", subscription_ok=True),
+        ExternalMember(email="message@ex.com", message="match", cookie="message=1", login_status="ok", subscription_ok=True),
+        ExternalMember(email="other@ex.com", cookie="other=1", login_status="ok", subscription_ok=True),
+        ExternalMember(email="match-failed@ex.com", cookie="failed=1", login_status="login_failed", subscription_ok=True),
+        ExternalMember(email="match-unsubscribed@ex.com", cookie="unsubscribed=1", login_status="ok", subscription_ok=False),
+    ])
+    db.commit()
+    response = client.get("/api/external/members/export", params={
+        "keyword": "match", "login_status": "ok", "subscription_ok": "true",
+    })
+    assert response.status_code == 200
+    assert response.json() == [{"cookie": "message=1"}, {"cookie": "email=1"}]
+
+
 def test_batch_delete(client, db):
     db.add(ExternalMember(email="d@ex.com"))
     db.commit()

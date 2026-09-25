@@ -987,6 +987,29 @@
     const anchorButton = bulkDelete || bulkBuild;
     if (!anchorButton || !anchorButton.parentElement) return;
 
+    const workspace = document.getElementById('adobe-workspace');
+    if (workspace) {
+      let menu = workspace.querySelector('.ws-maintenance-menu');
+      if (!menu) {
+        menu = document.createElement('details');
+        menu.className = 'ws-maintenance-menu';
+        menu.innerHTML = '<summary>更多批量操作 ▾</summary><div></div>';
+        workspace.querySelector('.ws-entity-batch').appendChild(menu);
+      }
+      const body = menu.querySelector('div');
+      if (!document.getElementById(IMPORT_POOL_BUTTON_ID)) {
+        const btn = makeDangerJobButton(IMPORT_POOL_BUTTON_ID, text.importPoolButton, false);
+        btn.addEventListener('click', () => { menu.open = false; handleImportPool(btn); });
+        body.appendChild(btn);
+      }
+      if (!document.getElementById(SELECTED_ALL_BUTTON_ID)) {
+        const btn = makeDangerJobButton(SELECTED_ALL_BUTTON_ID, text.selectedAllButton, true);
+        btn.addEventListener('click', () => { menu.open = false; handleSelectedAllChildren(btn); });
+        body.appendChild(btn);
+      }
+      return;
+    }
+
     let anchor = anchorButton.parentElement;
     if (!document.getElementById(IMPORT_POOL_BUTTON_ID)) {
       const importBtn = makeDangerJobButton(IMPORT_POOL_BUTTON_ID, text.importPoolButton, false);

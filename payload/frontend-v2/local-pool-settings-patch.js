@@ -60,10 +60,15 @@
   }
 
   function findMount() {
-    var app = document.getElementById("app");
-    if (!app) return null;
-    var cards = Array.from(app.querySelectorAll(".n-card"));
-    return cards[cards.length - 1] || app.querySelector("main") || app.firstElementChild || app;
+    // Wait for the actual settings view; never append cards beside the app shell.
+    var content = document.querySelector("#app .n-layout-content.content");
+    if (!content) return null;
+    var base = Array.prototype.find.call(content.querySelectorAll(".n-card"), function (card) {
+      var title = card.querySelector(".n-card-header__main");
+      return title && title.textContent.trim() === "修改管理员密码";
+    });
+    if (!base) return null;
+    return base;
   }
 
   function installStyles() {

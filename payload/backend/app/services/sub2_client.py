@@ -162,8 +162,9 @@ def list_existing(cfg: dict, platform: str = "", max_pages: int = 200, page_size
         if len(items) < page_size:
             break
         page += 1
-    return {"ok": True, "account_ids": account_ids, "emails": emails,
-            "count": len(account_ids), "truncated": truncated}
+    return {"ok": not truncated, "account_ids": account_ids, "emails": emails,
+            "count": fetched, "truncated": truncated,
+            "message": "账号列表不完整，已停止推送" if truncated else ""}
 
 
 def list_accounts_full(cfg: dict, platform: str = "", max_pages: int = 200, page_size: int = 100) -> dict:
@@ -272,13 +273,29 @@ def list_accounts_page(cfg: dict, platform: str = "", page: int = 1, size: int =
             "credits_used": extra.get("adobe_credits_used"),
             "credits_until": extra.get("adobe_credits_available_until"),
             "fails": extra.get("adobe_consecutive_failures"),
-            "has_token": cs.get("has_token"),
+            "has_token": cs.get("has_token", cs.get("has_access_token")),
         })
     return {"ok": True, "items": out, "total": total}
 
 
 def batch_refresh(cfg: dict, account_ids: list, balance: bool = False) -> dict:
     """调 Sub2 自己的批量刷新(cookie 刷新 token / 刷额度)。"""
+    if cfg.get("platform") == "adobe":
+        path = "/admin/accounts/usage/batch" if balance else "/admin/accounts/batch-refresh"
+        body = {"account_ids": account_ids}
+        if balance:
+            body["force"] = True
+        code, result = _native_request(cfg, path, body)
+        if code != 200:
+            return {"ok": False, "code": code, "message": f"刷新失败 HTTP {code}"}
+        if balance:
+            usage = result.get("usage") or {}
+            failed = sum(1 for aid in account_ids if not isinstance(usage.get(str(aid)), dict)
+                         or usage[str(aid)].get("error") or usage[str(aid)].get("error_code"))
+        else:
+            failed = int(result.get("failed", len(account_ids)))
+        return {"ok": failed == 0, "code": code, "result": result,
+                "message": f"刷新成功 {len(account_ids) - failed} · 失败 {failed}"}
     base = api_base(cfg.get("base_url", ""))
     token = cfg.get("admin_token", "")
     path = "balance-refresh-batch" if balance else "token-refresh-batch"
@@ -316,6 +333,8 @@ def import_tokens(cfg: dict, items: list[dict]) -> dict:
     只有带 cookie 的子号能这样导入;无 cookie 的(仅 device_token)会被跳过并计入 skipped。
     返回 {code, result, message},result 尽量归一为 AdobeImportResult 结构(含 skipped)。
     """
+    if cfg.get("platform") == "adobe":
+        return _import_native_cookies(cfg, items)
     base = api_base(cfg.get("base_url", ""))
     token = cfg.get("admin_token", "")
     url = f"{base}/admin/accounts/adobe/import-cookie"
@@ -361,3 +380,48 @@ def import_tokens(cfg: dict, items: list[dict]) -> dict:
     if isinstance(result, dict):
         result.setdefault("skipped", skipped)
     return {"code": code, "result": result, "message": (data.get("message") if isinstance(data, dict) else "")}
+
+
+def _native_request(cfg: dict, path: str, body: dict) -> tuple[int, dict]:
+    """新版 Sub2API 的通用账号接口；不把凭据或原始响应写到错误信息。"""
+    try:
+        code, raw = _request("POST", api_base(cfg.get("base_url", "")) + path,
+                             cfg.get("admin_token", ""), body=body, timeout=180)
+        parsed = json.loads(raw)
+        data = parsed.get("data", parsed) if isinstance(parsed, dict) else None
+        if not isinstance(data, dict):
+            return 502, {}
+        return code, data
+    except Exception:
+        return 502, {}
+
+
+def _import_native_cookies(cfg: dict, items: list[dict]) -> dict:
+    if not cfg.get("group_ids"):
+        return {"code": 400, "result": {}, "message": "请先选择 Adobe 推送分组"}
+    result = {"created": 0, "failed": 0, "skipped": 0, "items": []}
+    for index, item in enumerate(items):
+        cookie = (item.get("cookie") or "").strip()
+        if not cookie:
+            result["skipped"] += 1
+            result["items"].append({"index": index, "status": "skipped"})
+            continue
+        credentials = {"cookie": cookie}
+        # Existing local tokens may belong to Express/iOS. Let Firefly exchange
+        # the cookie itself, exactly as the native Sub2 account form does.
+        for key in ("email", "arp_session_id"):
+            if item.get(key):
+                credentials[key] = item[key]
+        body = {
+            "platform": "adobe", "type": "oauth",
+            "name": item.get("email") or item.get("name") or f"adobe-{item.get('id', index)}",
+            "credentials": credentials, "group_ids": cfg["group_ids"],
+            "concurrency": int(cfg.get("concurrency") or 10), "priority": 0,
+            "rate_multiplier": _safe_float(cfg.get("rate_multiplier"), 1.0),
+        }
+        code, data = _native_request(cfg, "/admin/accounts", body)
+        created = code in (200, 201) and isinstance(data.get("id"), int)
+        result["created" if created else "failed"] += 1
+        result["items"].append({"index": index, "status": "created" if created else "failed"})
+    return {"code": 200 if not result["failed"] else 502, "result": result,
+            "message": f"创建 {result['created']} · 失败 {result['failed']} · 跳过 {result['skipped']}"}

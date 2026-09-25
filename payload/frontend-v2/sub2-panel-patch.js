@@ -24,7 +24,7 @@
   var NAV_ID = "sub2-nav-mng", PANEL_ID = "sub2-panel";
   var st = {
     all: [], view: [], page: 1, size: 20, sel: new Set(), cfg: null, groups: [],
-    busy: false, q: "", statusF: "", sortKey: "", sortDir: 1,
+    busy: false, q: "", statusF: "", sortKey: "", sortDir: 1, usage: {},
   };
 
   var CSS = [
@@ -142,7 +142,7 @@
             '<div class="s2-grid">' +
               '<div class="s2-f" style="grid-column:1/-1"><label>Sub2API 地址</label><input class="s2-in" id="s2-base" placeholder="http://主机(自动补 /api/v1)"></div>' +
               '<div class="s2-f" style="grid-column:1/-1"><label>管理员 Token(留空=不改)</label><input class="s2-in" id="s2-token" placeholder="粘贴 admin key"></div>' +
-              '<div class="s2-f"><label>平台</label><select class="s2-in" id="s2-plat"><option value="adobe_gemini">Adobe-Gemini</option><option value="adobe_gpt">Adobe-GPT</option></select></div>' +
+              '<div class="s2-f"><label>平台</label><select class="s2-in" id="s2-plat"><option value="adobe">Adobe Firefly</option><option value="adobe_gemini">Adobe-Gemini（旧版）</option><option value="adobe_gpt">Adobe-GPT（旧版）</option></select></div>' +
               '<div class="s2-f"><label>协议</label><select class="s2-in" id="s2-proto"><option value="default">默认 / 18 slot</option><option value="fi_free">FI无消耗</option></select></div>' +
             '</div>' +
             '<div class="s2-f" style="margin-top:12px"><label>推送绑定分组(点选)</label><div class="s2-chips" id="s2-groups"></div><input class="s2-in" id="s2-gids" placeholder="或手填 26,32" style="margin-top:7px;height:30px;max-width:240px;font-size:12px"></div>' +
@@ -150,11 +150,11 @@
             '<div style="display:flex;gap:10px;align-items:center;margin-top:16px"><button class="s2-btn" id="s2-save">保存</button><button class="s2-btn o" id="s2-test">测试连接</button><button class="s2-btn dft" id="s2-loadg">加载分组</button><span class="s2-msg" id="s2-cfgmsg"></span></div>' +
           '</div></div>' +
         '<div class="s2-card">' +
-          '<div class="s2-tools">' +
+          '<div class="s2-overview">' +
             '<div class="s2-stats"><div class="s2-stbox"><b id="s2-st-total">–</b><div class="l">Sub2 账号</div></div>' +
               '<div class="s2-stbox"><b id="s2-st-active" style="color:#18a058">–</b><div class="l">正常</div></div>' +
               '<div class="s2-stbox"><b id="s2-st-new" style="color:#2080f0">–</b><div class="l">号池新可用</div></div></div>' +
-            '<div class="sp"></div>' +
+            '</div><div class="s2-tools">' +
             '<label class="s2-sw" style="font-size:13px"><input type="checkbox" id="s2-selall"><span class="t"></span>全选本页</label>' +
             '<button class="s2-btn dft sm" id="s2-selall2">全选筛选结果</button>' +
             '<span class="cnt">已选 <b id="s2-seln">0</b> <a id="s2-selclr" style="color:#909399;cursor:pointer">清空</a></span>' +
@@ -219,6 +219,7 @@
   // ---------- config ----------
   function loadConfig() {
     return api("/config").then(function (c) {
+      if (!st.cfg || st.cfg.base_url !== c.base_url || st.cfg.platform !== c.platform) st.usage = {};
       st.cfg = c;
       el("s2-base").value = c.base_url || ""; el("s2-plat").value = c.platform || "adobe_gemini"; el("s2-proto").value = c.protocol || "default";
       el("s2-gids").value = c.group_ids || ""; el("s2-en").checked = !!c.enabled; el("s2-auto").checked = !!c.auto_push;
@@ -230,11 +231,12 @@
     }).catch(function (e) { setMsg("s2-cfgmsg", e.message, "err"); });
   }
   function readCfg() { var b = { base_url: el("s2-base").value.trim(), platform: el("s2-plat").value, protocol: el("s2-proto").value, group_ids: el("s2-gids").value.trim(), enabled: el("s2-en").checked, auto_push: el("s2-auto").checked }; var tk = el("s2-token").value.trim(); if (tk) b.admin_token = tk; return b; }
-  function saveConfig() { setMsg("s2-cfgmsg", "保存中…"); return api("/config", { method: "PUT", body: readCfg() }).then(function (r) { el("s2-token").value = ""; if (r && r.ok === false) { setMsg("s2-cfgmsg", r.message || "保存失败", "err"); return; } setMsg("s2-cfgmsg", "已保存", "ok"); loadConfig(); loadAll(); loadStats(); }).catch(function (e) { setMsg("s2-cfgmsg", e.message, "err"); }); }
+  function saveConfig() { setMsg("s2-cfgmsg", "保存中…"); return api("/config", { method: "PUT", body: readCfg() }).then(function (r) { el("s2-token").value = ""; if (r && r.ok === false) { setMsg("s2-cfgmsg", r.message || "保存失败", "err"); return; } setMsg("s2-cfgmsg", "已保存", "ok"); window.dispatchEvent(new Event("okad:sub2-config-changed")); loadConfig(); loadAll(); loadStats(); }).catch(function (e) { setMsg("s2-cfgmsg", e.message, "err"); }); }
   function testConn() { setMsg("s2-cfgmsg", "测试中…"); setConn("", "测试中"); api("/test", { method: "POST" }).then(function (r) { setMsg("s2-cfgmsg", r.message, r.ok ? "ok" : "err"); setConn(r.ok ? "ok" : "bad", r.ok ? "已连接" : "未连接"); }).catch(function (e) { setMsg("s2-cfgmsg", e.message, "err"); setConn("bad", "未连接"); }); }
   function parseGids() { return (el("s2-gids").value || "").replace(/，/g, ",").split(",").map(function (s) { return s.trim(); }).filter(function (s) { return /^\d+$/.test(s); }); }
   function renderGroups() {
     var box = el("s2-groups"); if (!box) return; var plat = el("s2-plat").value, sel = new Set(parseGids());
+    el("s2-proto").closest('.s2-f').style.display = plat === 'adobe' ? 'none' : '';
     if (!st.groups.length) { box.innerHTML = '<span style="font-size:12px;color:#c0c4cc">保存令牌后点「加载分组」</span>'; return; }
     var list = st.groups.filter(function (g) { return !g.platform || g.platform === plat; });
     box.innerHTML = ""; list.forEach(function (g) { var c = document.createElement("span"); c.className = "s2-chip" + (sel.has(String(g.id)) ? " on" : ""); c.innerHTML = esc(g.name || g.id) + '<span class="i">#' + g.id + '</span>'; c.onclick = function () { var cur = new Set(parseGids()); var k = String(g.id); cur.has(k) ? cur.delete(k) : cur.add(k); el("s2-gids").value = Array.from(cur).join(","); renderGroups(); }; box.appendChild(c); });
@@ -300,6 +302,8 @@
   }
   function creditsCell(a) {
     var av = a.credits_avail, tot = a.credits_total;
+    var usage = st.usage[a.id], credit = usage && usage.adobe_credit;
+    if (credit) { tot = credit.usage_limit; av = credit.available != null ? credit.available : Math.max(0, tot - credit.current_usage); }
     if (av == null && tot == null) return '<span style="color:#c0c4cc">-</span>';
     var color = (av != null && av <= 0) ? "#d03050" : ((av != null && tot && av < tot * 0.15) ? "#f0a020" : "#18a058");
     var s = '<span style="color:' + color + ';font-variant-numeric:tabular-nums;font-weight:600">' + (av == null ? "?" : av) + '</span>';
@@ -307,7 +311,7 @@
     return s;
   }
   function statusPill(a) { if (!statusBad(a)) return '<span class="s2-pill ok">正常</span>'; if (a.error) return '<span class="s2-pill bad" title="' + esc(a.error) + '">' + esc(a.status || "异常") + '</span>'; return '<span class="s2-pill warn">' + esc(a.status || "未知") + '</span>'; }
-  function fmtExp(ts) { if (!ts) return "-"; try { var n = Number(ts); var d = new Date(String(ts).length <= 10 ? n * 1000 : n); if (isNaN(d.getTime())) return "-"; var cls = d.getTime() < Date.now() ? "color:#d03050" : "color:#909399"; return '<span style="' + cls + '">' + (d.getFullYear() % 100) + "-" + (d.getMonth() + 1) + "-" + d.getDate() + '</span>'; } catch (e) { return "-"; } }
+  function fmtExp(ts) { if (!ts) return "-"; try { var n = Number(ts); var d = new Date(isNaN(n) ? ts : (String(ts).length <= 10 ? n * 1000 : n)); if (isNaN(d.getTime())) return "-"; var cls = d.getTime() < Date.now() ? "color:#d03050" : "color:#909399"; return '<span style="' + cls + '">' + (d.getFullYear() % 100) + "-" + (d.getMonth() + 1) + "-" + d.getDate() + '</span>'; } catch (e) { return "-"; } }
 
   function renderTable() {
     var b = el("s2-tbody"); var rows = curPageItems();
@@ -355,6 +359,7 @@
   function doRefresh(ids, bal) {
     setMsg("s2-opmsg", (bal ? "刷额度" : "刷新 token") + "中(" + ids.length + " 个)…"); setBusy(true);
     api("/batch-refresh", { method: "POST", body: { account_ids: ids, balance: !!bal }, timeout: 280000 }).then(function (r) {
+      if (bal && r.result && r.result.usage) Object.assign(st.usage, r.result.usage);
       setMsg("s2-opmsg", r.ok ? ((bal ? "额度" : "token") + "刷新完成") : ("失败:" + (r.message || "")), r.ok ? "ok" : "err");
       setBusy(false); loadAll();
     }).catch(function (e) { setBusy(false); setMsg("s2-opmsg", e.message, "err"); });

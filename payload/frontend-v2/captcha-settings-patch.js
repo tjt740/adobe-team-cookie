@@ -111,11 +111,17 @@
   }
 
   function findMount() {
-    var app = document.getElementById("app"); if (!app) return null;
-    var after = document.getElementById("okad-external-apikey") || document.getElementById("okad-local-pool-settings");
+    // Wait for the actual settings view; never append cards beside the app shell.
+    var content = document.querySelector("#app .n-layout-content.content");
+    if (!content) return null;
+    var base = Array.prototype.find.call(content.querySelectorAll(".n-card"), function (card) {
+      var title = card.querySelector(".n-card-header__main");
+      return title && title.textContent.trim() === "修改管理员密码";
+    });
+    if (!base) return null;
+    var after = content.querySelector("#okad-external-apikey") || content.querySelector("#okad-local-pool-settings");
     if (after) return after;
-    var cards = Array.prototype.slice.call(app.querySelectorAll(".n-card"));
-    return cards[cards.length - 1] || app.querySelector("main") || app.firstElementChild || app;
+    return base;
   }
 
   function install() {

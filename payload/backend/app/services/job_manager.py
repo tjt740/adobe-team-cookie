@@ -14,6 +14,7 @@ from typing import Any, Callable, Optional
 from sqlalchemy import text
 
 from app.db.session import engine
+from app.services.job_provenance import capture_meta, describe
 
 
 def _json_dumps(value: Any) -> str:
@@ -30,6 +31,13 @@ def _json_loads(raw: str | None, default: Any) -> Any:
         return json.loads(raw)
     except Exception:
         return default
+
+
+ACTIVE_STATUSES = {"running", "pausing", "paused", "cancelling"}
+
+
+class JobCancelled(BaseException):
+    """Cooperative termination, not a login/network failure to retry."""
 
 
 class Job:
@@ -56,10 +64,15 @@ class Job:
         self.extra: dict[str, Any] = {}
         self._cancel = threading.Event()
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._persist_lock = threading.Lock()
+        self._pause_requested = False
+        self._active_items = 0
         self._persist_cb = persist_cb
 
     # ---- 供 worker 调用 ----
     def log(self, msg: str) -> None:
+        self.check_cancelled()
         with self._lock:
             self.logs.append(f"{time.strftime('%H:%M:%S')} {msg}")
             if len(self.logs) > 1000:
@@ -77,18 +90,74 @@ class Job:
             self.extra[key] = value
         self.persist()
 
+    def record_item(self, item_id: int, **fields: Any) -> None:
+        """Keep per-account results under the same lock as counters during concurrency."""
+        with self._lock:
+            items = [dict(item) for item in self.extra.get('items', [])]
+            item = next((item for item in items if item.get('id') == item_id), None)
+            if item is None:
+                item = {'id': item_id}
+                items.append(item)
+            item.update(fields)
+            self.extra['items'] = items
+        self.persist()
+
     @property
     def cancelled(self) -> bool:
         return self._cancel.is_set()
 
-    def cancel(self) -> None:
-        self._cancel.set()
-        with self._lock:
-            if self.status == "running":
-                self.status = "cancelled"
-                self.finished_at = int(time.time())
-                self.logs.append(f"{time.strftime('%H:%M:%S')} 已请求停止任务")
+    def check_cancelled(self) -> None:
+        if self.cancelled:
+            raise JobCancelled()
+
+    def begin_item(self) -> bool:
+        with self._condition:
+            while self._pause_requested and not self.cancelled:
+                self._condition.wait()
+            if self.cancelled:
+                return False
+            self._active_items += 1
+            return True
+
+    def end_item(self) -> None:
+        with self._condition:
+            self._active_items -= 1
+            if self._pause_requested and not self._active_items and not self.cancelled:
+                self.status = "paused"
+                self.logs.append(f"{time.strftime('%H:%M:%S')} 已暂停，等待继续或终止")
         self.persist()
+
+    def pause(self) -> bool:
+        with self._condition:
+            if self.type != "external_login" or self.status != "running":
+                return False
+            self._pause_requested = True
+            self.status = "pausing" if self._active_items else "paused"
+            self.logs.append(f"{time.strftime('%H:%M:%S')} 已请求暂停，当前账号完成后暂停后续账号")
+        self.persist()
+        return True
+
+    def resume(self) -> bool:
+        with self._condition:
+            if self.status not in {"paused", "pausing"}:
+                return False
+            self._pause_requested = False
+            self.status = "running"
+            self.logs.append(f"{time.strftime('%H:%M:%S')} 已继续任务")
+            self._condition.notify_all()
+        self.persist()
+        return True
+
+    def cancel(self) -> bool:
+        with self._condition:
+            if self.status not in ACTIVE_STATUSES or self.cancelled:
+                return False
+            self._cancel.set()
+            self.status = "cancelling"
+            self.logs.append(f"{time.strftime('%H:%M:%S')} 已请求终止，等待当前请求退出")
+            self._condition.notify_all()
+        self.persist()
+        return True
 
     def clear_logs(self) -> None:
         with self._lock:
@@ -97,7 +166,8 @@ class Job:
 
     def persist(self) -> None:
         if self._persist_cb:
-            self._persist_cb(self)
+            with self._persist_lock:
+                self._persist_cb(self)
 
     def to_dict(self, *, log_offset: int = 0) -> dict[str, Any]:
         with self._lock:
@@ -118,6 +188,7 @@ class Job:
                 "logs": logs,
                 "meta": self.meta,
                 "extra": dict(self.extra),
+                "trace": describe(self.type, self.meta, self.extra),
             }
 
     @classmethod
@@ -240,6 +311,7 @@ class JobManager:
     def start(
         self, job_type: str, worker: Callable[[Job], None], *, meta: dict | None = None
     ) -> Job:
+        meta = capture_meta(job_type, meta)
         self._ensure_storage()
         with self._lock:
             self._counter += 1
@@ -249,20 +321,31 @@ class JobManager:
             if len(self._jobs) > 50:
                 for k in sorted(self._jobs)[:-50]:
                     old = self._jobs.get(k)
-                    if old and old.status != "running":
+                    if old and old.status not in ACTIVE_STATUSES:
                         self._jobs.pop(k, None)
             job.persist()
 
         def _runner() -> None:
             try:
                 worker(job)
-                job.status = "done" if job.status == "running" else job.status
-            except Exception as e:  # noqa: BLE001
-                job.status = "error"
-                job.error = str(e)[:500]
-                job.log(f"任务异常:{e}")
+                with job._lock:
+                    if job.status in ACTIVE_STATUSES and not job.cancelled:
+                        job.status = "done"
+            except JobCancelled:
+                pass
+            except Exception as e:
+                with job._lock:
+                    if not job.cancelled:
+                        job.status = "error"
+                        job.error = str(e)[:500]
+                        job.logs.append(f"{time.strftime('%H:%M:%S')} 任务异常:{e}")
             finally:
-                job.finished_at = int(time.time())
+                with job._condition:
+                    if job.cancelled:
+                        job.status = "cancelled"
+                        job.logs.append(f"{time.strftime('%H:%M:%S')} 任务已终止，已完成的结果和日志已保留")
+                    job.finished_at = int(time.time())
+                    job._condition.notify_all()
                 job.persist()
 
         threading.Thread(target=_runner, name=f"job-{job.id}", daemon=True).start()
@@ -270,6 +353,17 @@ class JobManager:
 
     def get(self, job_id: int) -> Optional[Job]:
         return self._jobs.get(job_id) or self._get_record(job_id)
+
+    def recover_interrupted(self, job_type: str) -> None:
+        """Startup only: make interrupted tasks retryable without replaying writes."""
+        self._ensure_storage()
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE job_records SET status='error', finished_at=:now,
+                    error='服务已重启，任务中断；已保存的数据保留，请重新勾选重试'
+                WHERE type=:job_type AND deleted=0
+                    AND status IN ('running','pausing','paused','cancelling')
+            """), {'now': int(time.time()), 'job_type': job_type})
 
     def list_recent(self, limit: int = 30) -> list[Job]:
         self._ensure_storage()
@@ -337,7 +431,7 @@ class JobManager:
         for job in self._jobs.values():
             if (
                 job.type == job_type
-                and job.status == "running"
+                and job.status in ACTIVE_STATUSES
                 and job.meta.get("admin_id") == admin_id
             ):
                 return job
@@ -362,7 +456,7 @@ class JobManager:
             rec = self._get_record(job_id)
             if not rec:
                 return False, "任务不存在"
-            if rec.status == "running":
+            if rec.status in ACTIVE_STATUSES:
                 rec.status = "cancelled"
                 rec.finished_at = int(time.time())
                 rec.logs.append(f"{time.strftime('%H:%M:%S')} 服务重启后标记为已停止")
@@ -370,10 +464,21 @@ class JobManager:
                 rec.persist()
                 return True, "任务已标记为停止"
             return False, "任务不在运行中"
-        if job.status != "running":
-            return False, "任务不在运行中"
-        job.cancel()
-        return True, "已请求停止任务"
+        if not job.cancel():
+            return False, "任务已结束或正在终止"
+        return True, "已请求终止任务，等待当前请求退出"
+
+    def pause(self, job_id: int) -> tuple[bool, str]:
+        job = self._jobs.get(job_id)
+        if not job:
+            return False, "任务不存在或服务已重启，无法暂停历史任务"
+        return (True, "已请求暂停，当前账号完成后暂停后续账号") if job.pause() else (False, "仅运行中的外部子号登录任务支持暂停")
+
+    def resume(self, job_id: int) -> tuple[bool, str]:
+        job = self._jobs.get(job_id)
+        if not job:
+            return False, "服务已重启，无法继续历史任务，请终止后重新提交"
+        return (True, "已继续任务") if job.resume() else (False, "任务不在暂停状态")
 
     def delete_many(self, job_ids: list[int]) -> tuple[int, list[int]]:
         """删除任务。进行中的任务会跳过并返回其 ID。"""
@@ -385,7 +490,7 @@ class JobManager:
                 job = self._jobs.get(jid)
                 if not job:
                     continue
-                if job.status == "running":
+                if job.status in ACTIVE_STATUSES:
                     skipped_running.append(jid)
                     continue
                 self._jobs.pop(jid, None)
@@ -402,7 +507,7 @@ class JobManager:
                 ).first()
                 if not row:
                     continue
-                if str(row[0]) == "running":
+                if str(row[0]) in ACTIVE_STATUSES:
                     skipped_running.append(jid)
                     continue
                 res = conn.execute(

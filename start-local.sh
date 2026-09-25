@@ -9,4 +9,4 @@ if [ ! -x .venv/bin/python ]; then
   exit 1
 fi
 
-exec .venv/bin/python -m uvicorn run_local:app --host 127.0.0.1 --port "${ADOBETEAM_PORT:-18080}"
+exec .venv/bin/python "$PROJECT_DIR/deploy/mihomo/local.py"
