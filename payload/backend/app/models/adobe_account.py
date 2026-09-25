@@ -37,6 +37,8 @@ class AdobeAccount(Base):
     product_name: Mapped[str] = mapped_column(String(255), default="")
     license_group_id: Mapped[str] = mapped_column(String(255), default="")
     member_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 删除号池中的母号镜像后，不再在读取号池时自动重建；母号管理记录仍保留。
+    pool_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # ---- 收邮件(OTP)健康度 ----

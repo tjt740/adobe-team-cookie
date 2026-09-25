@@ -176,7 +176,7 @@ def _candidates(db: Session, existing: dict, limit: int | None,
     ex_ids = existing.get("account_ids", set())
     ex_em = existing.get("emails", set())
     plat_map: dict[int, str] | None = None
-    if platform:
+    if platform and platform != "adobe":
         plat_map = {a.id: (a.platform or DEFAULT_PLATFORM) for a in db.scalars(select(AdobeAccount))}
     q = (
         select(AdobeMember)
@@ -216,6 +216,7 @@ def _member_item(m: AdobeMember) -> dict:
         "id": m.id, "name": m.display_name or m.email, "email": m.email,
         "access_token": m.access_token, "device_token": m.device_token,
         "device_id": m.device_id, "cookie": m.cookie,
+        "arp_session_id": m.arp_session_id,
         "credits": m.credits, "expires_at": m.expires_at,
     }
 

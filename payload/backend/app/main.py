@@ -15,6 +15,7 @@ from app.api.routes import adobe_account, auth, dashboard, email, external_cooki
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.services import log_store
+from app.api.routes import clash
 
 
 @asynccontextmanager
@@ -22,6 +23,10 @@ async def lifespan(app: FastAPI):
     # 启动时建表并创建默认管理员
     log_store.install()
     init_db()
+    from app.services.job_manager import JOBS
+    JOBS.recover_interrupted('pool_cookie_sub2')
+    from app.services import external_sub2
+    external_sub2.resume_pending()
     log_store.STORE.add("INFO", "system", "服务启动完成")
     yield
 
@@ -50,6 +55,9 @@ async def _on_http_exception(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def _on_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith(settings.API_PREFIX + "/settings/clash"):
+        # Validation errors may otherwise echo a private subscription in input.
+        return JSONResponse(status_code=422, content={"detail": "请检查订阅链接或节点参数"})
     log_store.STORE.add(
         "WARNING", "validation",
         f"{request.method} {request.url.path} -> 422: {exc.errors()}",
@@ -74,6 +82,7 @@ app.include_router(adobe_account.router, prefix=settings.API_PREFIX)
 app.include_router(email.router, prefix=settings.API_PREFIX)
 app.include_router(pool.router, prefix=settings.API_PREFIX)
 app.include_router(setting.router, prefix=settings.API_PREFIX)
+app.include_router(clash.router, prefix=settings.API_PREFIX)
 app.include_router(log_route.router, prefix=settings.API_PREFIX)
 app.include_router(sub2.router, prefix=settings.API_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_PREFIX)

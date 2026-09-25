@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.adobe_account import JobStatusOut
+from app.schemas.account_profile import AccountProfile
 
 
 class ExternalMemberOut(BaseModel):
@@ -13,6 +14,7 @@ class ExternalMemberOut(BaseModel):
     email: str
     credits_available: float | None = None
     credits_total: float | None = None
+    account_profile: AccountProfile | None = None
     login_status: str = "never"
     subscription_ok: bool = False
     first_login_done: bool = False
@@ -24,6 +26,10 @@ class ExternalMemberOut(BaseModel):
     created_at: datetime
     operator: str = ""
     latest_job: JobStatusOut | None = None
+    sub2_status: str = "not_pushed"
+    sub2_message: str = ""
+    sub2_account_id: int | None = None
+    sub2_synced_at: str | None = None
 
 
 class ExternalImportRequest(BaseModel):

@@ -1,0 +1,26 @@
+name: adobe-team-cookie-proxy
+services:
+  mihomo:
+    image: adobe-mihomo:v1.19.31
+    restart: unless-stopped
+    user: "${MIHOMO_UID:-1000}:${MIHOMO_GID:-1000}"
+    working_dir: /config
+    command: ["-d", "/config"]
+    volumes:
+      - ../../.local/mihomo:/config
+    networks:
+      app:
+        aliases: [mihomo]
+    mem_limit: 128m
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+networks:
+  app:
+    external: true
+    name: adobe-team-cookie_default

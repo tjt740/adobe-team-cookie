@@ -61,6 +61,9 @@
   }
 
   function emailCellOf(tr) {
+    var account = tr.querySelector('[data-pool-email]');
+    if (account) return {cell: tr.querySelector('[data-pool-stock]') || account.parentElement,
+      email: account.getAttribute('data-pool-email').toLowerCase()};
     var cells = tr.querySelectorAll("td, .n-data-table-td");
     for (var i = 0; i < cells.length; i++) {
       var m = (cells[i].textContent || "").trim().match(EMAIL_RE);
@@ -127,6 +130,11 @@
   history.pushState = function () { var r = _push.apply(this, arguments); schedule(); return r; };
   history.replaceState = function () { var r = _replace.apply(this, arguments); schedule(); return r; };
   window.addEventListener("popstate", schedule);
+  window.addEventListener("okad:sub2-stock-changed", function () {
+    cache.at = 0;
+    clearPills();
+    schedule();
+  });
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", schedule);
   else schedule();

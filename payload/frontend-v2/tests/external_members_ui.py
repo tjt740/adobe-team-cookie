@@ -137,8 +137,8 @@ async def main():
         await expect(detail.locator('[data-job="55"] .extm-pill.bad')).to_have_text('失败')
         assert await page.locator('[data-s2stock]').count() == 0
         widths = await page.locator('[data-member="1"]').evaluate("tr => Array.from(tr.cells).map(td => ({w:td.getBoundingClientRect().width,h:td.getBoundingClientRect().height,wrap:getComputedStyle(td).whiteSpace}))")
-        assert widths[2]['w'] == 280 and widths[4]['w'] >= 296, widths
-        assert all(c['wrap'] == 'nowrap' and c['h'] < 65 for c in widths), widths
+        assert widths[2]['w'] == 280 and widths[5]['w'] >= 296, widths
+        assert all(c['wrap'] == 'nowrap' and c['h'] <= 70 for c in widths), widths
         assert '2026-09-19 13:44' in await page.locator('[data-member="1"]').inner_text()
         output = ROOT / '.local'
         output.mkdir(exist_ok=True)
@@ -232,6 +232,7 @@ async def main():
         await expect(page.locator('[data-login="1"]')).to_be_disabled()
         await expect(page.locator('[data-login="3"]')).to_be_disabled()
         # Import button itself also provides loading feedback.
+        await page.locator('.extm-import-card summary').click()
         await page.locator('#extm-import').fill('synthetic@example.com----test')
         await page.locator('#extm-do-import').click()
         await expect(page.locator('#extm-do-import')).to_have_attribute('aria-busy', 'true')

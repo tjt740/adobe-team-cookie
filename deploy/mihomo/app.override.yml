@@ -1,0 +1,9 @@
+# Optional overlay for installations with the private Mihomo sidecar.
+# Applied automatically via compose.override.yml on the configured server.
+services:
+  app:
+    environment:
+      MIHOMO_CONFIG_PATH: /app/mihomo/config.yaml
+      MIHOMO_CONTROL_URL: http://mihomo:9090
+    volumes:
+      - ./.local/mihomo:/app/mihomo

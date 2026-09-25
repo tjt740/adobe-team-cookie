@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import capture_job_request, get_current_user
 from app.crud import adobe_account as crud
 from app.crud import adobe_member as member_crud
 from app.crud import email as email_crud
@@ -49,7 +49,7 @@ from app.services.mail_test import test_receive_email
 router = APIRouter(
     prefix="/adobe-accounts",
     tags=["Adobe账号管理"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(capture_job_request)],
 )
 
 
@@ -1000,6 +1000,18 @@ def cancel_job(job_id: int) -> MessageResult:
     ok, message = JOBS.cancel(job_id)
     if not ok and message == "任务不存在":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
+    return MessageResult(success=ok, message=message)
+
+
+@router.post("/jobs/{job_id}/pause", response_model=MessageResult, summary="暂停外部子号登录任务")
+def pause_job(job_id: int) -> MessageResult:
+    ok, message = JOBS.pause(job_id)
+    return MessageResult(success=ok, message=message)
+
+
+@router.post("/jobs/{job_id}/resume", response_model=MessageResult, summary="继续外部子号登录任务")
+def resume_job(job_id: int) -> MessageResult:
+    ok, message = JOBS.resume(job_id)
     return MessageResult(success=ok, message=message)
 
 

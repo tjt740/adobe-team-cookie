@@ -226,6 +226,7 @@ class JobStatusOut(BaseModel):
     id: int
     type: str
     operator: str = ""
+    trace: dict = Field(default_factory=dict)
     status: str
     target: int = 0
     success: int = 0

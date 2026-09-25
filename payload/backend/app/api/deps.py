@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -32,3 +32,19 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+async def capture_job_request(request: Request, user: User = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    from app.services.job_provenance import FILTERS, request_context
+    filters = {}
+    if request.url.path.endswith('/pool/batch-login-filter') and request.method == 'POST':
+        body = await request.json()
+        if isinstance(body, dict):
+            filters = {key: body[key] for key in FILTERS if key in body}
+    token = request_context.set({'operator': user.username, 'endpoint': request.url.path,
+                                 'filters': filters, 'db': db})
+    try:
+        yield
+    finally:
+        request_context.reset(token)

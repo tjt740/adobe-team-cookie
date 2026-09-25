@@ -92,6 +92,7 @@
   function install() {
     setStatus(getStatus());
     if (!isPoolPage()) return;
+    if (document.getElementById('pool-workspace')) return;
     if (document.getElementById(SELECT_ID)) return;
     const bar = findFilterBar();
     if (!bar) return;

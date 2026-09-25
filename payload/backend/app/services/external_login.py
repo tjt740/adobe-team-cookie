@@ -16,7 +16,8 @@ from app.crud import external_member as crud
 from app.crud import setting as setting_crud
 from app.db.session import SessionLocal
 from app.services import firefly, log_store, proxy_pool
-from app.services.job_manager import Job
+from app.services.job_manager import Job, JobCancelled
+from app.schemas.account_profile import AccountProfile
 
 SUBSCRIPTION_MIN = 1000.0
 
@@ -126,7 +127,7 @@ def _login_with_proxy_retry(
     return None, last_exc
 
 
-def login_and_store(member_id: int, *, log=None) -> dict:
+def login_and_store(member_id: int, *, log=None, check_cancelled=None) -> dict:
     lf = log if callable(log) else (lambda _m: None)
     db = SessionLocal()
     try:
@@ -152,6 +153,8 @@ def login_and_store(member_id: int, *, log=None) -> dict:
         adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
         on_credentials=lambda **values: _save_credentials(member_id, **values),
     )
+    if check_cancelled:
+        check_cancelled()
     if exc is not None:
         code = _classify(str(exc))
         detail = f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -177,6 +180,12 @@ def login_and_store(member_id: int, *, log=None) -> dict:
     _save_success(member_id, rec, sub_ok)
     subscription = "未能查询" if sub_ok is None else ("正常" if sub_ok else "掉")
     lf(f"✓ [{email}] 登录成功,额度 {available}/{total},订阅={subscription}")
+    # Local login stays successful even if the optional downstream sync fails.
+    try:
+        from app.services import external_sub2
+        external_sub2.after_login(member_id, session_factory=SessionLocal)
+    except Exception:
+        log_store.STORE.add("WARNING", "external_sub2", f"外部子号 #{member_id} 登录成功，Sub2 同步未能提交，请手动重试")
     return {"ok": True, "cookie": cookie, "credits_available": available,
             "credits_total": total, "code": "", "message": ""}
 
@@ -207,6 +216,10 @@ def _save_success(member_id: int, rec: dict, sub_ok: bool | None) -> None:
         m.expires_at = rec.get("expires_at")
         m.credits_available = rec.get("credits")
         m.credits_total = rec.get("credits_total")
+        # A successful new session supersedes the old profile snapshot, even if
+        # metadata could not be fetched this time. Login failures retain it.
+        profile = rec.get("account_profile")
+        m.account_profile = AccountProfile.model_validate(profile).model_dump(mode="json") if profile else None
         m.first_login_done = True
         m.login_status = "ok"
         if sub_ok is not None:
@@ -246,6 +259,8 @@ def batch_login_worker(job: Job) -> None:
         log_login(message)
 
     member_ids = [int(x) for x in (job.meta.get("member_ids") or [])]
+    job.set_extra('items', [{'id': mid, 'email': (job.meta.get('member_emails') or {}).get(str(mid), ''),
+                             'status': 'pending', 'message': '等待登录'} for mid in member_ids])
     job.target = len(member_ids)
     if not member_ids:
         _log("没有可登录的外部子号")
@@ -258,17 +273,26 @@ def batch_login_worker(job: Job) -> None:
     _log(f"任务 #{job.id}:开始登录 {len(member_ids)} 个外部子号,并发 {min(concurrency, len(member_ids))}")
 
     def _do(mid: int) -> None:
-        if job.cancelled:
+        if not job.begin_item():
             return
         try:
-            res = login_and_store(mid, log=_log)
+            job.record_item(mid, status='running', message='正在登录')
+            res = login_and_store(mid, log=_log, check_cancelled=job.check_cancelled)
             job.bump(success=1) if res["ok"] else job.bump(fail=1)
+            job.record_item(mid, status='done' if res['ok'] else 'failed',
+                            message=res.get('message') or ('登录成功' if res['ok'] else '登录失败，请查看执行记录'))
+        except JobCancelled:
+            job.record_item(mid, status='cancelled', message='本次登录已终止')
+            return
         except Exception as e:  # noqa: BLE001
             # login_and_store 内部已兜底大部分异常;这里再兜底一层,
             # 避免个别账号在 DB 层等处抛出的异常经 ex.map 逃逸,
             # 导致整批任务被中止(JobManager 把整个 job 标记为 error)。
             job.bump(fail=1)
+            job.record_item(mid, status='failed', message='登录异常，请查看执行记录')
             _log(f"✗ [id={mid}] 批量登录异常:{str(e)[:200]}")
+        finally:
+            job.end_item()
 
     with ThreadPoolExecutor(max_workers=min(concurrency, len(member_ids))) as ex:
         for _ in ex.map(_do, member_ids):

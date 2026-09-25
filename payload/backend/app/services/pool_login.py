@@ -276,7 +276,16 @@ def _run_round(payloads: list[dict], proxy_raw: str, concurrency: int, job: Job)
     def _do(p: dict) -> bool:
         if job.cancelled:
             return False
-        return _login_one(p, proxy_raw, job)
+        job.record_item(p['id'], email=p['email'], status='running', message='正在刷新登录凭证')
+        try:
+            ok = _login_one(p, proxy_raw, job)
+            job.record_item(p['id'], status='done' if ok else 'failed',
+                            message='已获取 Token' if ok else '本轮登录失败，请查看执行记录')
+            return ok
+        except BaseException:
+            job.record_item(p['id'], status='cancelled' if job.cancelled else 'failed',
+                            message='已终止' if job.cancelled else '登录异常，请查看执行记录')
+            raise
 
     with ThreadPoolExecutor(max_workers=min(concurrency, len(payloads))) as ex:
         for _ in ex.map(_do, payloads):
@@ -285,6 +294,8 @@ def _run_round(payloads: list[dict], proxy_raw: str, concurrency: int, job: Job)
 
 def pool_login_batch_worker(job: Job) -> None:
     all_member_ids = [int(x) for x in (job.meta.get("member_ids") or [])]
+    job.set_extra('items', [{'id': mid, 'email': (job.meta.get('member_emails') or {}).get(str(mid), ''),
+                             'status': 'pending', 'message': '等待登录'} for mid in all_member_ids])
     auto_retry = bool(job.meta.get("auto_retry", True))
     max_retries = max(0, int(job.meta.get("max_retries") if job.meta.get("max_retries") is not None else 2))
 

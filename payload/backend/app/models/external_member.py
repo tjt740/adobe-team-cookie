@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -9,8 +9,8 @@ from app.db.session import Base
 class ExternalMember(Base):
     """外部导入的独立企业子号。
 
-    与 adobe_members 隔离:不参与母号/组织编排,也不被 autopilot / sub2 /
-    member_cleanup 等自动化扫描。cookie 由对外接口按需实时重登刷新。
+    与 adobe_members 隔离，不参与母号/组织编排或自动清理。
+    用户推送到 Sub2 后，后续登录成功会同步更新已关联账号的 Cookie。
     """
 
     __tablename__ = "external_members"
@@ -33,6 +33,9 @@ class ExternalMember(Base):
     expires_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
     credits_available: Mapped[float | None] = mapped_column(Float, nullable=True)
     credits_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    account_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 按目标地址保存关联与同步状态；不保存远端密钥或 Cookie 副本。
+    sub2_links: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # 状态
     first_login_done: Mapped[bool] = mapped_column(Boolean, default=False, index=True)

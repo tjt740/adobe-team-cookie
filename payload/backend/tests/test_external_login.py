@@ -60,6 +60,23 @@ def test_login_failure_maps_code_keeps_cookie(db, monkeypatch, SessionLocal):
     assert m.login_status == "login_failed"
 
 
+def test_sub2_enqueue_failure_does_not_change_successful_login(db, monkeypatch, SessionLocal):
+    from app.services import external_sub2
+
+    m = _seed(db)
+    monkeypatch.setattr(el, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(el, "_login_with_proxy_retry", lambda **kw: ({"cookie": "ims_sid=new"}, None))
+    calls = []
+    def unavailable(mid, **kw):
+        calls.append(mid)
+        raise RuntimeError("simulated queue failure")
+    monkeypatch.setattr(external_sub2, "after_login", unavailable)
+    response = el.login_and_store(m.id)
+    db.refresh(m)
+    assert calls == [m.id]
+    assert response["ok"] and m.login_status == "ok" and m.cookie == "ims_sid=new"
+
+
 def test_login_unknown_member(db, monkeypatch, SessionLocal):
     monkeypatch.setattr(el, "SessionLocal", SessionLocal)
     res = el.login_and_store(999999)
@@ -95,7 +112,7 @@ def test_batch_login_worker_counts_success_and_fail(db, monkeypatch, SessionLoca
     monkeypatch.setattr(el, "SessionLocal", SessionLocal)
     monkeypatch.setattr(el.setting_crud, "get_settings", lambda db: SimpleNamespace(concurrency=2))
 
-    def _fake_login(mid, *, log=None):
+    def _fake_login(mid, *, log=None, check_cancelled=None):
         ok = mid != m2.id
         return {"ok": ok, "cookie": "k" if ok else "", "credits_available": None,
                 "credits_total": None, "code": "" if ok else "login_failed", "message": ""}
@@ -121,7 +138,7 @@ def test_batch_login_worker_survives_raising_member(db, monkeypatch, SessionLoca
     monkeypatch.setattr(el, "SessionLocal", SessionLocal)
     monkeypatch.setattr(el.setting_crud, "get_settings", lambda db: SimpleNamespace(concurrency=2))
 
-    def _fake_login(mid, *, log=None):
+    def _fake_login(mid, *, log=None, check_cancelled=None):
         if mid == m2.id:
             raise RuntimeError("db commit exploded")
         return {"ok": True, "cookie": "k", "credits_available": None,
@@ -154,7 +171,7 @@ def test_batch_login_failure_is_in_job_and_system_logs(db, monkeypatch, SessionL
     monkeypatch.setattr(el, "SessionLocal", SessionLocal)
     log_store.STORE.clear()
 
-    def fail(member_id, *, log):
+    def fail(member_id, *, log, check_cancelled=None):
         log("✗ 登录失败:factor_unavailable")
         return {"ok": False}
 
