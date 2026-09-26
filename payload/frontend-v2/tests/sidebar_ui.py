@@ -58,7 +58,7 @@ async def main():
 
         await page.locator('#extm-nav').click()
         await expect(page.locator('.okad-page-title')).to_have_text('外部子号')
-        await expect(page).to_have_url(BASE + '/settings?panel=external-members')
+        await expect(page).to_have_url(BASE + '/external-members')
         await page.reload()
         await expect(page.locator('.okad-page-title')).to_have_text('外部子号')
         await expect(page.locator('#extm-import')).to_be_visible()
@@ -77,7 +77,7 @@ async def main():
         await expect(page.locator('#sub2-panel')).to_be_visible()
         await expect(page.locator('.okad-page-title')).to_have_text('Sub2 管理')
         await aligned('#sub2-panel')
-        await expect(page).to_have_url(BASE + '/settings?panel=sub2')
+        await expect(page).to_have_url(BASE + '/sub2')
         await toggle.click()
         await aligned('#sub2-panel')
         await toggle.click()
@@ -102,13 +102,13 @@ async def main():
         await expect(page.locator('#extm-embed')).not_to_be_visible()
         await expect(page.locator('.okad-current-item a')).to_have_attribute('href', '/adobe')
         await page.go_back()
-        await expect(page).to_have_url(BASE + '/settings?panel=external-members')
+        await expect(page).to_have_url(BASE + '/external-members')
         await aligned('#extm-embed')
         await page.go_back()
         await expect(page).to_have_url(BASE + '/settings')
         await expect(page.locator('.okad-current-item a')).to_have_attribute('href', '/settings')
         await page.go_forward()
-        await expect(page).to_have_url(BASE + '/settings?panel=external-members')
+        await expect(page).to_have_url(BASE + '/external-members')
         await aligned('#extm-embed')
         # Real SPA layout unmount/remount (logout/login) must restore both custom entries.
         await page.evaluate("localStorage.removeItem('okad_token'); history.pushState({}, '', '/login'); dispatchEvent(new PopStateEvent('popstate'))")
@@ -124,6 +124,43 @@ async def main():
             await page.set_viewport_size(dict(width=width, height=1000))
             await aligned('#extm-embed')
         await page.screenshot(path=str(ROOT / '.local/sidebar-expanded.png'))
+        # Every hit target must change the actual router path, not only a panel parameter.
+        entries = [('/external-members', '#extm-embed'), ('/settings', '#ws-settings-heading'),
+                   ('/dashboard', '.dash'), ('/adobe', '#adobe-workspace'), ('/pool', '#pool-workspace'),
+                   ('/jobs', '#jobs-workspace'), ('/email', '#email-workspace'),
+                   ('/logs', '#logs-workspace'), ('/sub2', '#sub2-panel')]
+        for compact in [False, True]:
+            if compact:
+                await toggle.click()
+                await expect(page.locator('.n-layout-sider--collapsed')).to_have_count(1)
+            for hit in (['label', 'icon', 'padding'] if not compact else ['icon', 'padding']):
+                for path, content in entries:
+                    item = page.locator('.n-menu-item').filter(has=page.locator(f'a[href="{path}"]'))
+                    if hit == 'label':
+                        await item.locator('a').click()
+                    elif hit == 'icon':
+                        # The menu link can cover the icon; click its visible coordinates.
+                        icon = item.locator('.n-menu-item-content__icon svg')
+                        await expect(icon).to_be_visible()
+                        bounds = await icon.bounding_box()
+                        await page.mouse.click(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
+                    else:
+                        await item.click(position={'x': 5, 'y': 20})
+                    await expect(page).to_have_url(BASE + path)
+                    await expect(page.locator('.okad-current-item a')).to_have_attribute('href', path)
+                    await expect(page.locator('.okad-current-item')).to_have_count(1)
+                    await expect(page.locator(content)).to_be_visible()
+                    actual = await page.evaluate("async () => (await import(document.querySelector('script[type=module][src]').src)).cx.currentRoute.value.path")
+                    assert actual == path, (hit, path, actual)
+        # Rapid successive selections resolve to the last requested route.
+        await page.evaluate('''() => {
+            for (const path of ['/adobe', '/external-members', '/settings', '/sub2', '/pool'])
+                document.querySelector('.n-layout-sider a[href="'+path+'"]').click();
+        }''')
+        await expect(page).to_have_url(BASE + '/pool')
+        await expect(page.locator('#pool-workspace')).to_be_visible()
+        await expect(page.locator('#sub2-panel')).not_to_be_visible()
+        await expect(page.locator('#extm-embed')).not_to_be_visible()
         # Reload every menu and cold-open panel links with delayed registration.
         for path in ['/dashboard', '/adobe', '/pool', '/jobs', '/email', '/logs', '/settings']:
             await page.goto(BASE + path)
@@ -140,12 +177,13 @@ async def main():
         await page.route('**/*-patch.js*', slow_panel)
         for name, label, panel, field in [('external-members', '外部子号', '#extm-embed', '#extm-import'),
                                           ('sub2', 'Sub2 管理', '#sub2-panel', '#s2-base')]:
-            url = BASE + '/settings?source=bookmark&panel=' + name + '#saved'
+            url = BASE + '/' + name + '?source=bookmark#saved'
             await page.goto(url)
             for _ in range(2):
                 await expect(page.locator(panel)).to_be_visible()
                 await expect(page.locator(field)).to_be_visible()
                 await expect(page.locator('.okad-page-title')).to_have_text(label)
+                await expect(page).to_have_url(url)
                 await expect(page).to_have_title(label + ' - okad 管理平台')
                 await expect(page.locator('.okad-current-item')).to_have_count(1)
                 assert parse_qs(urlparse(page.url).query)['source'] == ['bookmark']
@@ -158,12 +196,25 @@ async def main():
                 await page.reload()
                 await expect(page.locator(field)).to_be_visible()
                 await page.locator('#s2-close').click()
-                await expect(page).to_have_url(BASE + '/settings?source=bookmark#saved')
+                await expect(page).to_have_url(BASE + '/dashboard')
                 await page.reload()
-                await expect(page.locator('.okad-current-item a')).to_have_attribute('href', '/settings')
+                await expect(page.locator('.okad-current-item a')).to_have_attribute('href', '/dashboard')
                 await expect(page.locator('#sub2-panel')).not_to_be_visible()
+            await page.goto(BASE + '/settings?source=bookmark&panel=' + name + '#saved')
+            await expect(page).to_have_url(url)
+            await expect(page.locator(panel)).to_be_visible()
+            await expect(page.locator('.okad-current-item a')).to_have_attribute('href', '/' + name)
+        # Direct panel routes still require authentication and preserve the login destination.
+        await page.unroute('**/*-patch.js*', slow_panel)
+        for path in ['/external-members', '/sub2']:
+            guest = await browser.new_page()
+            await guest.route('**/api/**', api)
+            await guest.goto(BASE + path)
+            await expect(guest).to_have_url(BASE + '/login?redirect=' + path)
+            await expect(guest.locator('.n-layout-sider')).to_have_count(0)
+            await guest.close()
         assert not errors, errors
-        print('PASS: sidebar layout, keyboard, navigation, remount, all menu reloads, delayed panel links, history, default-open cards; no browser errors')
+        print('PASS: all 9 route paths via labels/icons/padding, collapsed sidebar, rapid switches, reloads, history, legacy links and authentication; no browser errors')
         await browser.close()
 
 

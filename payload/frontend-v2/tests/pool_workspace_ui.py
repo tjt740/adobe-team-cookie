@@ -61,8 +61,11 @@ async def main():
         await page.get_by_role('button', name='Sub2 导入说明', exact=True).click()
         await expect(page.locator('#pool-sub2-help-content')).to_contain_text('未配置密钥时无法导入')
         await page.get_by_role('button', name='去配置 Sub2', exact=True).click()
+        await expect(page).to_have_url(BASE + '/sub2')
         await expect(page.locator('#sub2-panel')).to_have_class('on')
         await page.locator('#s2-close').click()
+        await expect(page).to_have_url(BASE + '/pool')
+        await expect(row.get_by_role('checkbox')).to_be_checked()
         cfg['admin_token_set'] = True
         await page.evaluate("window.dispatchEvent(new Event('okad:sub2-config-changed'))")
         await expect(page.locator('.pool-sub2-notice')).to_have_count(0)

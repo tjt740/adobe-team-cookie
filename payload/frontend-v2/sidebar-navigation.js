@@ -4,7 +4,7 @@
   var pages = {}, active = null, frame = 0, sider = null, header = null, menu = null;
   var tip = null, title = null;
   var router = null;
-  // Use the application's router so query changes preserve its history and current page state.
+  // All sidebar entries use the same router and committed route state.
   var routerReady = import(document.querySelector('script[type="module"][src]').src).then(async function (app) {
     await app.cx.isReady();
     router = app.cx;
@@ -65,15 +65,29 @@
     if (active === id) return;
     deactivate(); active = id; pages[id].open();
   }
-  function navigate(id) {
+  function navigate(path) {
     hideTip();
     return routerReady.then(function (router) {
-      var route = router.currentRoute.value, query = Object.assign({}, route.query);
-      if (id) query.panel = pages[id].route;
-      else delete query.panel;
-      return router.push({ path:route.path, query:query, hash:route.hash });
+      var route = router.currentRoute.value;
+      if (router.resolve(path).meta.okadPanel) {
+        var state = history.state || {};
+        return router.push({ path:path, state:{
+          okadReturnTo:route.meta.okadPanel ? state.okadReturnTo : route.fullPath,
+          okadPoolSelection:state.okadPoolSelection
+        } });
+      }
+      return router.push(path);
     }).catch(function () {
       if (window.$message) window.$message.error('页面切换失败，请刷新后重试');
+    });
+  }
+  function closePage() {
+    return routerReady.then(function (router) {
+      var state = history.state || {};
+      var target = router.resolve(typeof state.okadReturnTo === 'string' ? state.okadReturnTo : '/dashboard');
+      if (!target.meta.requiresAuth || target.meta.okadPanel) target = router.resolve('/dashboard');
+      return router.push({ path:target.path, query:target.query, hash:target.hash,
+        state:{okadPoolSelection:state.okadPoolSelection} });
     });
   }
   function createItem(page) {
@@ -83,11 +97,11 @@
     var content = document.createElement('div'); content.className = 'n-menu-item-content';
     var icon = document.createElement('div'); icon.className = 'n-menu-item-content__icon';
     icon.innerHTML = window.OKAD_ICONS.svg(page.icon);
-    var label = document.createElement('div'); label.className = 'n-menu-item-content-header'; label.textContent = page.label;
+    var label = document.createElement('div'); label.className = 'n-menu-item-content-header';
+    var link = document.createElement('a'); link.href = '/' + page.route; link.textContent = page.label;
+    label.appendChild(link);
     content.append(icon, label); it.appendChild(content);
-    it.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); navigate(page.id); });
     it.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); navigate(page.id); }
       if (e.key === 'Escape') hideTip();
     });
     it.addEventListener('mouseenter', function () { showTip(it); });
@@ -126,7 +140,8 @@
     menu.classList.add('okad-nav-managed');
     // Restore the menu only after the initial route resolves, including on a slow reload.
     var route = router && router.currentRoute.value;
-    var selected = route && Object.keys(pages).find(function (id) { return pages[id].route === route.query.panel; });
+    var selected = route && route.meta.okadPanel;
+    if (!pages[selected]) selected = null;
     if (selected) activate(selected);
     else if (active) deactivate();
     Object.keys(pages).forEach(function (id) {
@@ -162,21 +177,18 @@
   }
   document.addEventListener('click', function (e) {
     var it = e.target.closest && e.target.closest('.n-layout-sider .n-menu-item');
-    if (it && !pages[it.id]) {
-      // Native routes live on label links; forward icon/row clicks when labels are hidden.
-      var link = it.querySelector('a[href]');
-      if (link && !e.target.closest('a') && e.button === 0) {
-        e.preventDefault(); e.stopPropagation();
-        link.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true,
-          ctrlKey:e.ctrlKey, metaKey:e.metaKey, shiftKey:e.shiftKey, altKey:e.altKey }));
-      }
-    }
+    if (!it || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    var link = it.querySelector('a[href]');
+    if (!link) return;
+    // Handle text, SVG icons and row padding exactly once, before the menu's own handlers.
+    e.preventDefault(); e.stopImmediatePropagation();
+    navigate(link.getAttribute('href'));
   }, true);
   document.addEventListener('keydown', function (e) {
     var it = e.target.closest && e.target.closest('.n-layout-sider .n-menu-item');
-    if (!it || pages[it.id] || e.target.closest('a') || (e.key !== 'Enter' && e.key !== ' ')) return;
+    if (!it || (e.key !== 'Enter' && e.key !== ' ')) return;
     var link = it.querySelector('a[href]');
-    if (link) { e.preventDefault(); e.stopPropagation(); link.click(); }
+    if (link) { e.preventDefault(); e.stopImmediatePropagation(); navigate(link.getAttribute('href')); }
   }, true);
   ['pushState', 'replaceState'].forEach(function (name) {
     var original = history[name];
@@ -188,7 +200,7 @@
   new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true });
   window.OKAD_NAV = {
     register: function (page) { pages[page.id] = page; schedule(); },
-    close: function () { return navigate(null); },
+    close: closePage,
     rect: function () {
       var s = document.querySelector('.n-layout-sider'), h = document.querySelector('.n-layout-header');
       return { left:s ? Math.max(0, Math.round(s.getBoundingClientRect().right)) : 0,

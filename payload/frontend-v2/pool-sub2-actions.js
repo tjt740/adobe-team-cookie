@@ -1,5 +1,5 @@
 /* Native Vue integration for the prebuilt pool page. No external-account data. */
-export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows, refresh}) {
+export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows, setSelected, refresh}) {
   const busy = ref(false), current = ref(null), error = ref('');
   const expanded = ref(true), config = ref(null), configError = ref(''), configLoading = ref(true);
   const key = 'okad_pool_cookie_sub2_job';
@@ -23,7 +23,10 @@ export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows,
     finally { configLoading.value = false; }
   }
 
-  function openConfig() { document.getElementById('sub2-nav-mng')?.click(); }
+  function openConfig() {
+    history.replaceState({...history.state, okadPoolSelection: [...selected()]}, '');
+    document.getElementById('sub2-nav-mng')?.click();
+  }
 
   async function api(path, body) {
     const res = await fetch('/api' + path, {
@@ -104,6 +107,14 @@ export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows,
   }
 
   return {
+    restoreSelection() {
+      if (disposed) return;
+      const state = {...history.state}, ids = state.okadPoolSelection;
+      if (!Array.isArray(ids)) return;
+      delete state.okadPoolSelection;
+      history.replaceState(state, '');
+      setSelected(ids);
+    },
     button: () => h('div', {class: 'pool-sub2-control'}, [
       h(Button, {
         id: 'pool-sub2-push', type: 'primary', loading: busy.value,
