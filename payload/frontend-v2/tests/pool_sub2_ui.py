@@ -71,12 +71,16 @@ async def main():
         await page.reload()
         await expect(button).to_be_disabled()
         await expect(page.locator('[data-pool-sub2-id="2"]')).to_contain_text('获取 Cookie')
+        await page.get_by_role('button', name='收起明细', exact=True).click()
         job.update(status='done', success=1, fail=1)
         job['extra']['items'][0].update(status='pushed', message='已推送，在库 Sub2')
         job['extra']['items'][1].update(status='failed', message='验证码获取失败，请检查取信配置')
         rows[0]['has_cookie'] = True
         stock.append('pool1@example.com')
         await expect(page.locator('#pool-sub2-progress')).to_contain_text('已完成', timeout=8000)
+        # Polling preserves a user's explicit collapse when a task changes status.
+        await expect(page.locator('.pool-job-item')).to_have_count(0)
+        await page.get_by_role('button', name='展开明细', exact=True).click()
         await expect(page.locator('[data-pool-sub2-id="2"]')).to_contain_text('验证码获取失败')
         await expect(page.locator('tbody tr').filter(has_text='pool1@example.com')).to_contain_text('在库 Sub2')
         await expect(page.locator('tbody tr').filter(has_text='pool2@example.com')).to_contain_text('未推送')

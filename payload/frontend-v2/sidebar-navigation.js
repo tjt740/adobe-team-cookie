@@ -3,6 +3,15 @@
   'use strict';
   var pages = {}, active = null, frame = 0, sider = null, header = null, menu = null;
   var tip = null, title = null;
+  var router = null;
+  // Use the application's router so query changes preserve its history and current page state.
+  var routerReady = import(document.querySelector('script[type="module"][src]').src).then(async function (app) {
+    await app.cx.isReady();
+    router = app.cx;
+    router.afterEach(schedule);
+    schedule();
+    return router;
+  });
   var css = document.createElement('style');
   css.textContent = `
     .n-layout-sider .n-menu.okad-nav-managed .n-menu-item-content { padding-left:32px!important; }
@@ -54,7 +63,18 @@
   }
   function activate(id) {
     if (active === id) return;
-    deactivate(); active = id; pages[id].open(); layout(); sync();
+    deactivate(); active = id; pages[id].open();
+  }
+  function navigate(id) {
+    hideTip();
+    return routerReady.then(function (router) {
+      var route = router.currentRoute.value, query = Object.assign({}, route.query);
+      if (id) query.panel = pages[id].route;
+      else delete query.panel;
+      return router.push({ path:route.path, query:query, hash:route.hash });
+    }).catch(function () {
+      if (window.$message) window.$message.error('页面切换失败，请刷新后重试');
+    });
   }
   function createItem(page) {
     var it = document.createElement('div'); it.id = page.id;
@@ -65,9 +85,9 @@
     icon.innerHTML = window.OKAD_ICONS.svg(page.icon);
     var label = document.createElement('div'); label.className = 'n-menu-item-content-header'; label.textContent = page.label;
     content.append(icon, label); it.appendChild(content);
-    it.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); hideTip(); activate(page.id); });
+    it.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); navigate(page.id); });
     it.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); activate(page.id); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); navigate(page.id); }
       if (e.key === 'Escape') hideTip();
     });
     it.addEventListener('mouseenter', function () { showTip(it); });
@@ -104,6 +124,11 @@
       return;
     }
     menu.classList.add('okad-nav-managed');
+    // Restore the menu only after the initial route resolves, including on a slow reload.
+    var route = router && router.currentRoute.value;
+    var selected = route && Object.keys(pages).find(function (id) { return pages[id].route === route.query.panel; });
+    if (selected) activate(selected);
+    else if (active) deactivate();
     Object.keys(pages).forEach(function (id) {
       if (!menu.querySelector('#' + id)) menu.appendChild(createItem(pages[id]));
     });
@@ -118,7 +143,7 @@
     menu.querySelectorAll('.n-menu-item').forEach(function (it) {
       var link = it.querySelector('a[href]');
       if (link) { it.tabIndex = 0; it.setAttribute('aria-label', link.textContent.trim()); }
-      var current = active ? it.id === active : !!(link && new URL(link.href).pathname === location.pathname);
+      var current = active ? it.id === active : !!(link && new URL(link.href).pathname === (route ? route.path : location.pathname));
       it.classList.toggle('okad-current-item', current);
       var target = link || it;
       if (current) { if (target.getAttribute('aria-current') !== 'page') target.setAttribute('aria-current', 'page'); }
@@ -130,12 +155,14 @@
       if (title.parentNode !== header) header.insertBefore(title, header.firstChild);
       if (title.textContent !== pages[active].label) title.textContent = pages[active].label;
     } else if (title) title.remove();
+    var pageTitle = active ? pages[active].label : route && route.meta.title;
+    var documentTitle = pageTitle ? pageTitle + ' - okad 管理平台' : 'okad 管理平台';
+    if (document.title !== documentTitle) document.title = documentTitle;
     layout();
   }
   document.addEventListener('click', function (e) {
     var it = e.target.closest && e.target.closest('.n-layout-sider .n-menu-item');
     if (it && !pages[it.id]) {
-      deactivate();
       // Native routes live on label links; forward icon/row clicks when labels are hidden.
       var link = it.querySelector('a[href]');
       if (link && !e.target.closest('a') && e.button === 0) {
@@ -153,15 +180,15 @@
   }, true);
   ['pushState', 'replaceState'].forEach(function (name) {
     var original = history[name];
-    history[name] = function () { var result = original.apply(this, arguments); deactivate(); return result; };
+    history[name] = function () { var result = original.apply(this, arguments); schedule(); return result; };
   });
-  window.addEventListener('popstate', deactivate);
+  window.addEventListener('popstate', schedule);
   window.addEventListener('resize', function () { hideTip(); layout(); });
   document.addEventListener('scroll', hideTip, true);
   new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true });
   window.OKAD_NAV = {
     register: function (page) { pages[page.id] = page; schedule(); },
-    close: deactivate,
+    close: function () { return navigate(null); },
     rect: function () {
       var s = document.querySelector('.n-layout-sider'), h = document.querySelector('.n-layout-header');
       return { left:s ? Math.max(0, Math.round(s.getBoundingClientRect().right)) : 0,

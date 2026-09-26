@@ -137,7 +137,7 @@
         '<button class="s2-btn dft sm" id="s2-reload">↻ 刷新列表</button>' +
         '<button class="s2-x" id="s2-close" title="关闭">✕</button></div>' +
       '<div class="s2-body">' +
-        '<div class="s2-card s2-cfg collapsed" id="s2-cfg"><div class="hd" id="s2-cfghd">连接配置 <span class="s2-msg" id="s2-cfgstate"></span><span class="ar">▾</span></div>' +
+        '<div class="s2-card s2-cfg" id="s2-cfg"><div class="hd" id="s2-cfghd">连接配置 <span class="s2-msg" id="s2-cfgstate"></span><span class="ar">▾</span></div>' +
           '<div class="bd">' +
             '<div class="s2-grid">' +
               '<div class="s2-f" style="grid-column:1/-1"><label>Sub2API 地址</label><input class="s2-in" id="s2-base" placeholder="http://主机(自动补 /api/v1)"></div>' +
@@ -404,7 +404,7 @@
   }
   function closePanel() { var p = el(PANEL_ID); if (p) p.classList.remove("on"); }
   window.OKAD_NAV.register({
-    id: NAV_ID, panel: PANEL_ID, label: "Sub2 管理", icon: "sub2",
+    id: NAV_ID, route: "sub2", panel: PANEL_ID, label: "Sub2 管理", icon: "sub2",
     open: openPanel, close: closePanel, layout: positionPanel
   });
 })();

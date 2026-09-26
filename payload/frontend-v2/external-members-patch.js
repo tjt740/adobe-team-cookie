@@ -125,7 +125,7 @@
   function buildBody(host) {
     host.innerHTML =
       '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span></div>' +
-      '<details class="extm-card extm-import-card"><summary>导入外部子号</summary>' +
+      '<details class="extm-card extm-import-card" open><summary>导入外部子号</summary>' +
         '<div class="bd">' +
           '<p class="tip">每行一个，格式：邮箱----密码----ClientID----RefreshToken[----Adobe密码]（兼容 | 分隔）</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com----邮箱密码----ClientID(UUID)----M.RefreshToken\n带 Adobe 密码则再加一段:…----M.RefreshToken----AdobePwd\n首次补全账号时会生成并保存独立密码"></textarea>' +
           '<div class="extm-row">' +
@@ -594,7 +594,7 @@
   }
   function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); st.open = false; st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
-    id: NAV_ID, panel: HOST_ID, label: "外部子号", icon: "external", first: true,
+    id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,
     layout: function () { var w = el(HOST_ID); if (w) positionPanel(w); }
   });

@@ -51,7 +51,7 @@ async def main():
         await page.locator('#sub2-nav-mng').click()
         await expect(page.locator('#s2-tbody')).to_contain_text('test@example.com')
         await expect(page.locator('#s2-st-total')).to_have_text('1')
-        await page.locator('#s2-cfghd').click()
+        await expect(page.locator('#s2-base')).to_be_visible()
         await expect(page.locator('#s2-plat')).to_have_value('adobe')
         await expect(page.locator('#s2-proto')).to_be_hidden()
         await expect(page.locator('#s2-groups')).to_contain_text('Adobe images')

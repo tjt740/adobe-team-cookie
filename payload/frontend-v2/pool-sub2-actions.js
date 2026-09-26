@@ -1,7 +1,7 @@
 /* Native Vue integration for the prebuilt pool page. No external-account data. */
 export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows, refresh}) {
   const busy = ref(false), current = ref(null), error = ref('');
-  const expanded = ref(false), config = ref(null), configError = ref(''), configLoading = ref(true);
+  const expanded = ref(true), config = ref(null), configError = ref(''), configLoading = ref(true);
   const key = 'okad_pool_cookie_sub2_job';
   let timer, disposed = false, refreshing = false, submitting = false;
   const active = job => ['running', 'pausing', 'paused', 'cancelling'].includes(job?.status);
@@ -51,8 +51,6 @@ export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows,
     try {
       const job = await api('/adobe-accounts/jobs/' + current.value.id);
       if (disposed) return;
-      const previous = current.value;
-      if (previous?.status !== job.status) expanded.value = active(job) || job.fail > 0 || !!job.error;
       current.value = job;
       busy.value = active(job);
       error.value = '';
@@ -90,7 +88,7 @@ export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows,
       localStorage.setItem(key, String(job.id));
       if (disposed) return;
       current.value = job;
-      expanded.value = active(job) || job.fail > 0 || !!job.error;
+      expanded.value = true;
       await poll();
     } catch (e) {
       error.value = e.message;
@@ -169,7 +167,7 @@ export function createPoolSub2({ref, h, Button, Tooltip, selected, selectedRows,
           if (job) {
             localStorage.setItem(key, String(job.id));
             current.value = job;
-            expanded.value = active(job) || job.fail > 0 || !!job.error;
+            expanded.value = true;
             busy.value = active(job);
             poll();
           }

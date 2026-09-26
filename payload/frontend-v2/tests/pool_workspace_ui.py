@@ -15,7 +15,7 @@ async def main():
                  created_at='2026-09-26T00:00:00Z') for i in (1, 2)]
     cfg = dict(admin_token_set=False, base_url='http://sub2.test', platform='adobe', group_ids='2')
     pushes, exports, lists, logins, errors = [], [], [], [], []
-    job = dict(id=88, type='pool_cookie_sub2', status='done', target=1, success=1, fail=0,
+    job = dict(id=88, type='pool_cookie_sub2', status='running', target=1, success=0, fail=0,
                extra={'items': [dict(id=1, email='pool1@example.com', status='pushed', message='已推送，在库 Sub2')]})
 
     async def api(route):
@@ -27,7 +27,7 @@ async def main():
             data = dict(items=rows, total=2, page=1, size=500)
         elif url.path == '/api/sub2/config': data = cfg
         elif url.path == '/api/sub2/pool-membership': data = dict(ok=True, in_sub2=['pool1@example.com'])
-        elif url.path == '/api/adobe-accounts/jobs': data = []
+        elif url.path == '/api/adobe-accounts/jobs': data = [job] if pushes else []
         elif url.path == '/api/dashboard/overview':
             data = {'members': {'registered': 2, 'full4000': 2, 'building': 0, 'zero': 0, 'cookie': 1}}
         elif url.path == '/api/pool/login-push-sub2':
@@ -84,12 +84,23 @@ async def main():
         await page.evaluate("window.dispatchEvent(new Event('okad:sub2-config-changed'))")
         await expect(button).to_be_enabled()
         await button.click()
-        await expect(page.locator('#pool-sub2-progress')).to_contain_text('已完成')
+        await expect(page.locator('#pool-sub2-progress')).to_contain_text('处理中')
+        await expect(page.locator('.pool-job-item')).to_have_count(1)
+        job.update(status='done', success=1)
+        await expect(page.locator('#pool-sub2-progress')).to_contain_text('已完成', timeout=8000)
         assert pushes == [[1]]
+        await expect(page.locator('.pool-job-item')).to_have_count(1)
+        await page.get_by_role('button', name='收起明细', exact=True).click()
         await expect(page.locator('.pool-job-item')).to_have_count(0)
         await page.get_by_role('button', name='展开明细', exact=True).click()
         await expect(page.locator('.pool-job-item')).to_have_count(1)
-        await page.get_by_role('button', name='收起明细', exact=True).click()
+        await page.reload()
+        await expect(page.locator('.pool-job-item')).to_have_count(1)
+        # Discovering a completed task without a saved task id also starts expanded.
+        await page.evaluate("localStorage.removeItem('okad_pool_cookie_sub2_job')")
+        await page.reload()
+        await expect(page.locator('.pool-job-item')).to_have_count(1)
+        assert pushes == [[1]]
         # The export-state filter is now a real request parameter, not an injected decoration.
         await page.locator('.pool-field').last.locator('.n-base-selection').click()
         await page.get_by_text('未导出', exact=True).last.click()
@@ -125,7 +136,7 @@ async def main():
         assert logins[-1]['has_token'] is None and logins[-1]['pool_type'] == 'all'
         assert not errors, errors
         await browser.close()
-    print('PASS: key gating, question-mark help, configuration navigation/update, selected import, folded results, menus, filters and responsive layout')
+    print('PASS: key gating, question-mark help, configuration navigation/update, selected import, default-open results, menus, filters and responsive layout')
 
 
 if __name__ == '__main__':

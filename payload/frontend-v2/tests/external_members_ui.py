@@ -232,7 +232,7 @@ async def main():
         await expect(page.locator('[data-login="1"]')).to_be_disabled()
         await expect(page.locator('[data-login="3"]')).to_be_disabled()
         # Import button itself also provides loading feedback.
-        await page.locator('.extm-import-card summary').click()
+        await expect(page.locator('#extm-import')).to_be_visible()
         await page.locator('#extm-import').fill('synthetic@example.com----test')
         await page.locator('#extm-do-import').click()
         await expect(page.locator('#extm-do-import')).to_have_attribute('aria-busy', 'true')
