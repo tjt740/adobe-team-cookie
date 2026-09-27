@@ -14,6 +14,7 @@ async def main():
                  has_cookie=True, subscription_ok=True, created_at='2026-09-26T00:00:00',
                  sub2_status='not_pushed', message='登录成功') for i in (1, 2)]
     pushes = []
+    relinks = []
     reject = False
     stock_ids = set()
     stock_ok = True
@@ -34,8 +35,8 @@ async def main():
                         message='' if stock_ok else 'Sub2 连接失败',
                         items={r['id']: dict(email=r['email'], in_stock=r['id'] in stock_ids,
                                             account_ids=[r['id'] + 10] if r['id'] in stock_ids else []) for r in rows} if stock_ok else {})
-        elif path == '/api/external/members/push-sub2':
-            pushes.append(req.post_data_json['ids'])
+        elif path in ('/api/external/members/push-sub2', '/api/external/members/relink-sub2'):
+            (relinks if path.endswith('/relink-sub2') else pushes).append(req.post_data_json['ids'])
             await asyncio.sleep(.3)
             if reject:
                 await route.fulfill(status=400, json={'detail': '请先选择 Adobe 分组'})
@@ -91,6 +92,20 @@ async def main():
         await button.click()
         await expect(page.locator('#extm-op')).to_contain_text('请先选择 Adobe 分组')
         await expect(button).to_be_enabled()
+        # Missing links require an explicit confirmation, cancellation is read-only.
+        reject = False
+        relink = page.locator('#extm-sub2-relink')
+        page.once('dialog', lambda dialog: dialog.dismiss())
+        await relink.click()
+        assert relinks == []
+        page.once('dialog', lambda dialog: dialog.accept())
+        await relink.click()
+        await expect(relink).to_be_disabled()
+        await expect(page.locator('[data-member="1"]')).to_contain_text('Sub2 待同步')
+        assert relinks == [[1]]
+        rows[0].update(sub2_status='synced', sub2_account_id=15)
+        await page.locator('#extm-refresh').click()
+        await expect(relink).to_be_enabled()
         stock_ids.remove(2)
         await expect(second).to_have_text('未在库 Sub2', timeout=6000)
         stock_ok = False

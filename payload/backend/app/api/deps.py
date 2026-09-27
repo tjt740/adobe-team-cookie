@@ -29,8 +29,14 @@ def get_current_user(
         raise credentials_exception
 
     user = user_crud.get_by_id(db, int(user_id))
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or payload.get("ver", 0) != user.token_version:
         raise credentials_exception
+    return user
+
+
+def require_superuser(user: User = Depends(get_current_user)) -> User:
+    if not user.is_superuser:
+        raise HTTPException(status_code=403, detail="仅管理员可以管理登录用户")
     return user
 
 

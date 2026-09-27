@@ -24,6 +24,10 @@ _queued: set[tuple[int, str]] = set()
 class SyncError(Exception):
     """Only deliberately safe, user-readable errors may cross this boundary."""
 
+    def __init__(self, message, *, http_status=None):
+        super().__init__(message)
+        self.http_status = http_status
+
 
 def config(db):
     # Lazy import: Sub2's existing routes also use external_login.
@@ -71,7 +75,9 @@ def _hash(cookie):
     return hashlib.sha256(cookie.encode()).hexdigest()
 
 
-def prepare(db, ids, *, automatic=False):
+def prepare(db, ids, *, automatic=False, relink=False, operator=''):
+    if automatic and relink:
+        raise SyncError('自动同步不能重新创建已删除的账号')
     cfg = config(db)
     target = destination(cfg)
     queued, skipped = [], []
@@ -86,6 +92,12 @@ def prepare(db, ids, *, automatic=False):
             if not member or member.login_status != 'ok' or not (member.cookie or '').strip():
                 skipped.append(mid)
                 continue
+            if relink:
+                if link.get('status') in ('pending', 'syncing'):
+                    skipped.append(mid)
+                    continue
+                link = {**link, 'relink_requested': True, 'relink_operator': operator,
+                        'relink_requested_at': datetime.now(timezone.utc).isoformat()}
             _store(member, target, {**link, 'status': 'pending', 'message': '等待同步 Cookie'})
             queued.append(mid)
         db.commit()
@@ -129,7 +141,7 @@ def _request(cfg, method, path, body=None):
         raise SyncError('Sub2 请求超时或网络异常，请检查连接后重试') from None
     if code not in (200, 201):
         reason = {401: '管理员密钥无效', 403: '管理员密钥无权操作', 404: '账号或接口不存在'}.get(code, '请求失败')
-        raise SyncError(f'Sub2 {reason}（HTTP {code}）')
+        raise SyncError(f'Sub2 {reason}（HTTP {code}）', http_status=code)
     try:
         envelope = json.loads(raw)
         data = envelope.get('data')
@@ -153,12 +165,21 @@ def _matches(account, email):
     return str(account.get('name', '')).strip().lower() == email.lower()
 
 
-def _find(cfg, email, account_id):
+def _find(cfg, email, account_id, *, relink=False):
     if account_id:
-        account = _request(cfg, 'GET', f'/admin/accounts/{account_id}')
-        if not _matches(account, email):
-            raise SyncError('Sub2 关联账号身份不一致，请检查后重试')
-        return account
+        try:
+            account = _request(cfg, 'GET', f'/admin/accounts/{account_id}')
+        except SyncError as exc:
+            if exc.http_status != 404:
+                raise
+            if not relink:
+                raise SyncError('Sub2 关联账号不存在（HTTP 404），请勾选后点击「重新关联 / 推送」', http_status=404) from None
+            # Only an explicit recovery may search by email after a missing ID.
+            # A missing list endpoint or an incomplete list must still fail closed.
+        else:
+            if not _matches(account, email):
+                raise SyncError('Sub2 关联账号身份不一致，请检查后重试')
+            return account
     matches = []
     fetched = 0
     for page in range(1, 201):
@@ -180,7 +201,7 @@ def _find(cfg, email, account_id):
 
 
 def _sync(cfg, email, cookie, link):
-    account = _find(cfg, email, link.get('account_id'))
+    account = _find(cfg, email, link.get('account_id'), relink=bool(link.get('relink_requested')))
     credentials = {'cookie': cookie, 'access_token': '', 'email': email}
     marker = {'adobeteam_external_email': email.lower()}
     if account:
@@ -238,15 +259,19 @@ def _run(mid, target):
                     return
                 latest = (member.sub2_links or {}).get(target, {})
                 if remote_id:
+                    if link.get('relink_requested') and latest.get('account_id') != remote_id:
+                        latest = {**latest, 'previous_account_id': latest.get('account_id')}
                     latest = {**latest, 'account_id': remote_id, 'cookie_hash': _hash(cookie),
                               'synced_at': datetime.now(timezone.utc).isoformat()}
                 changed = bool(member.cookie) and member.cookie != cookie
                 latest = {**latest, 'status': 'pending' if changed else ('failed' if error else 'synced'),
+                          'relink_requested': False,
                           'message': '等待同步新 Cookie' if changed else (error or 'Cookie 已同步，重登成功后自动更新')}
                 _store(member, target, latest)
                 db.commit()
             log_store.STORE.add('WARNING' if error else 'INFO', 'external_sub2',
-                                f'外部子号 #{mid} Sub2 ' + (error or 'Cookie 同步成功'))
+                                f'外部子号 #{mid} Sub2 ' + (error or 'Cookie 同步成功') +
+                                (f" · 重新关联操作者：{link.get('relink_operator') or '未记录'}" if link.get('relink_requested') else ''))
             if not changed:
                 return
     except Exception:
@@ -255,7 +280,8 @@ def _run(mid, target):
             member = db.get(ExternalMember, mid)
             if member:
                 link = (member.sub2_links or {}).get(target, {})
-                _store(member, target, {**link, 'status': 'failed', 'message': 'Sub2 同步未完成，请重新推送'})
+                _store(member, target, {**link, 'status': 'failed', 'relink_requested': False,
+                                        'message': 'Sub2 同步未完成，请重新推送'})
                 db.commit()
         log_store.STORE.add('WARNING', 'external_sub2', f'外部子号 #{mid} Sub2 同步未完成')
     finally:

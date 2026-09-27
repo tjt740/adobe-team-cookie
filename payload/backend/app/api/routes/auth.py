@@ -22,7 +22,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResult:
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被禁用")
 
-    token = Token(access_token=create_access_token(user.id))
+    token = Token(access_token=create_access_token(user.id, token_version=user.token_version))
     return LoginResult(token=token, user=UserOut.model_validate(user))
 
 
@@ -36,7 +36,9 @@ def login_oauth(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误"
         )
-    return Token(access_token=create_access_token(user.id))
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被禁用")
+    return Token(access_token=create_access_token(user.id, token_version=user.token_version))
 
 
 @router.get("/me", response_model=UserOut, summary="获取当前登录用户")

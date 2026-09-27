@@ -41,7 +41,7 @@ class Remote:
         if method == 'GET':
             aid = int(path.rsplit('/', 1)[1])
             if aid not in self.accounts:
-                raise sync.SyncError('Sub2 账号或接口不存在（HTTP 404）')
+                raise sync.SyncError('Sub2 账号或接口不存在（HTTP 404）', http_status=404)
             return self.accounts[aid]
         if path == '/admin/accounts':
             account = {'id': len(self.accounts) + 10, **body}
@@ -146,6 +146,83 @@ def test_deleted_linked_remote_is_not_recreated(db, setup_sync, remote):
     db.refresh(row)
     assert row.sub2_links[TARGET]['status'] == 'failed'
     assert not remote.accounts
+
+
+def test_explicit_relink_recreates_missing_remote_and_records_operator(db, setup_sync, remote):
+    row = member(db, sub2_links={TARGET: {'account_id': 99, 'status': 'failed'}})
+    _, ids, _ = sync.prepare(db, [row.id], relink=True, operator='owner')
+    assert ids == [row.id]
+    sync._run(row.id, TARGET)
+    db.refresh(row)
+    link = row.sub2_links[TARGET]
+    assert link['status'] == 'synced' and link['account_id'] == 10
+    assert link['previous_account_id'] == 99 and link['relink_operator'] == 'owner'
+    assert not link['relink_requested']
+    assert remote.accounts[10]['credentials']['cookie'] == row.cookie
+    # A later deletion is not undone by automatic re-login synchronization.
+    remote.accounts.clear()
+    sync.prepare(db, [row.id], automatic=True)
+    sync._run(row.id, TARGET)
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['status'] == 'failed' and not remote.accounts
+    assert '重新关联' in row.sub2_links[TARGET]['message']
+
+
+def test_relink_reuses_email_match_and_preserves_remote_settings(db, setup_sync, remote):
+    row = member(db, sub2_links={TARGET: {'account_id': 99, 'status': 'failed'}})
+    remote.accounts[20] = {'id': 20, 'name': row.email, 'platform': 'adobe', 'type': 'oauth',
+                           'credentials': {'email': row.email, 'model_mapping': {'a': 'b'}},
+                           'extra': {}, 'group_ids': [7], 'proxy_id': 91}
+    sync.prepare(db, [row.id], relink=True)
+    sync._run(row.id, TARGET)
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['account_id'] == 20 and len(remote.accounts) == 1
+    assert remote.accounts[20]['group_ids'] == [7] and remote.accounts[20]['proxy_id'] == 91
+    assert remote.accounts[20]['credentials']['model_mapping'] == {'a': 'b'}
+    assert not any(method == 'POST' and path == '/admin/accounts' for method, path, _ in remote.calls)
+
+
+@pytest.mark.parametrize('failure', ['unauthorized', 'forbidden', 'network', 'list404', 'incomplete', 'duplicates', 'identity'])
+def test_relink_never_creates_when_lookup_is_unsafe(db, setup_sync, remote, monkeypatch, failure):
+    row = member(db, sub2_links={TARGET: {'account_id': 99, 'status': 'failed'}})
+    original = remote.request
+    writes = []
+    def request(cfg, method, path, body=None):
+        if method != 'GET':
+            writes.append(path)
+        if path == '/admin/accounts/99':
+            if failure in ('unauthorized', 'forbidden', 'network'):
+                raise sync.SyncError('请求失败', http_status={'unauthorized': 401, 'forbidden': 403, 'network': None}[failure])
+            if failure == 'identity':
+                return {'id': 99, 'platform': 'adobe', 'type': 'oauth', 'credentials': {'email': 'another@example.com'}}
+        if path.startswith('/admin/accounts?'):
+            if failure == 'list404':
+                raise sync.SyncError('接口不存在', http_status=404)
+            if failure == 'incomplete':
+                return {'items': [], 'total': 5}
+            if failure == 'duplicates':
+                return {'items': [{'id': n, 'name': row.email, 'platform': 'adobe', 'type': 'oauth'} for n in (20, 21)], 'total': 2}
+        return original(cfg, method, path, body)
+    monkeypatch.setattr(sync, '_request', request)
+    sync.prepare(db, [row.id], relink=True)
+    sync._run(row.id, TARGET)
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['status'] == 'failed'
+    assert not row.sub2_links[TARGET]['relink_requested'] and not writes
+
+
+def test_relink_endpoint_skips_pending_and_rejects_automatic_recreation(client, db, setup_sync, monkeypatch):
+    row = member(db, sub2_links={TARGET: {'account_id': 99, 'status': 'failed'}})
+    calls = []
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: calls.append((ids, target)))
+    assert client.post('/api/external/members/relink-sub2', json={'ids': []}).status_code == 400
+    response = client.post('/api/external/members/relink-sub2', json={'ids': [row.id]})
+    assert response.json()['queued'] == 1
+    assert client.post('/api/external/members/relink-sub2', json={'ids': [row.id]}).json()['skipped'] == 1
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['relink_operator'] == 'tester'
+    with pytest.raises(sync.SyncError):
+        sync.prepare(db, [row.id], relink=True, automatic=True)
 
 
 def test_new_cookie_arriving_during_sync_is_sent_last(db, setup_sync, remote, monkeypatch, SessionLocal):

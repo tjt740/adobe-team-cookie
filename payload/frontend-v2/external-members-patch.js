@@ -148,6 +148,7 @@
           '<button class="extm-btn del sm" id="extm-batch-del">删除选中</button></div>' +
           '<span class="ws-spacer"></span><button class="extm-btn o sm" id="extm-export">导出全部 Cookie</button>' +
           '<button class="extm-btn o sm" id="extm-sub2-push" disabled>推送 Sub2</button>' +
+          '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
         '</div>' +
         '<div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:174px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择全部账号"></th><th></th>' +
@@ -160,7 +161,8 @@
     el("extm-batch-login").onclick = batchLogin;
     el("extm-login-all").onclick = loginAll;
     el("extm-export").onclick = exportCookies;
-    el("extm-sub2-push").onclick = pushSub2;
+    el("extm-sub2-push").onclick = function () { pushSub2(false); };
+    el("extm-sub2-relink").onclick = function () { pushSub2(true); };
     el("extm-batch-del").onclick = batchDelete;
     el("extm-f-status").onchange = function () { st.statusF = this.value; updSel(); load(); };
     el("extm-f-sub").onchange = function () { st.subF = this.value; updSel(); load(); };
@@ -495,6 +497,8 @@
     var pushing = st.sub2Submitting || st.rows.some(function (r) { return st.sel.has(r.id) && ['pending', 'syncing'].includes(r.sub2_status); });
     setLoading(el('extm-sub2-push'), !!pushing, pushing ? 'Sub2 同步中…' : '推送 Sub2');
     if (el('extm-sub2-push')) el('extm-sub2-push').disabled = !!pushing || !st.sel.size || busy;
+    setLoading(el('extm-sub2-relink'), !!pushing, pushing ? 'Sub2 同步中…' : '重新关联 / 推送');
+    if (el('extm-sub2-relink')) el('extm-sub2-relink').disabled = !!pushing || !st.sel.size || busy;
   }
   function selIds() { return Array.from(st.sel); }
 
@@ -521,11 +525,12 @@
       (row.sub2_status === 'failed' ? '<span class="extm-clip" style="font-size:12px;color:#d03050" title="' + esc(detail) + '">' + esc(row.sub2_message || '请重新推送') + '</span>' : '');
   }
 
-  async function pushSub2() {
+  async function pushSub2(relink) {
     var ids = selIds(); if (!ids.length || st.sub2Submitting) return;
+    if (relink && !confirm('重新关联选中的 ' + ids.length + ' 个账号？将按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。')) return;
     st.sub2Submitting = true; updSel();
     try {
-      var result = await api('/members/push-sub2', { method: 'POST', body: { ids: ids } });
+      var result = await api('/members/' + (relink ? 'relink-sub2' : 'push-sub2'), { method: 'POST', body: { ids: ids } });
       toast(result.queued ? 'success' : 'warning', result.message);
       await load(true);
     } catch (e) { toast('error', e.message); }

@@ -14,6 +14,7 @@ from app.models import user as _user_model  # noqa: F401
 
 # 针对已存在的表新增的列(SQLite 轻量迁移):表名 -> {列名: 列定义}
 _MIGRATIONS: dict[str, dict[str, str]] = {
+    "users": {"token_version": "INTEGER NOT NULL DEFAULT 0"},
     "adobe_accounts": {
         "is_valid": "BOOLEAN",
         "check_message": "VARCHAR(500) DEFAULT ''",
@@ -106,10 +107,7 @@ def init_db() -> None:
                 nickname=settings.FIRST_ADMIN_NICKNAME,
                 is_superuser=True,
             )
-            print(
-                f"[init_db] 已创建默认管理员: {settings.FIRST_ADMIN_USERNAME} "
-                f"/ {settings.FIRST_ADMIN_PASSWORD}"
-            )
+            print(f"[init_db] 已创建默认管理员: {settings.FIRST_ADMIN_USERNAME}")
     finally:
         db.close()
 

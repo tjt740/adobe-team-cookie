@@ -84,6 +84,20 @@ def push_sub2(payload: BatchIds, background: BackgroundTasks, db: Session = Depe
             "message": f"已提交 {len(queued)} 个账号同步，跳过 {len(skipped)} 个未登录成功或无 Cookie 的账号"}
 
 
+@router.post("/members/relink-sub2", summary="手动重新关联 Sub2，缺失账号按邮箱去重后重建")
+def relink_sub2(payload: BatchIds, background: BackgroundTasks, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)) -> dict:
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="请先勾选账号")
+    try:
+        target, queued, skipped = external_sub2.prepare(db, payload.ids, relink=True, operator=user.username)
+    except external_sub2.SyncError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    background.add_task(external_sub2.submit, queued, target)
+    return {"queued": len(queued), "skipped": len(skipped),
+            "message": f"已提交 {len(queued)} 个账号重新关联，跳过 {len(skipped)} 个未就绪或正在同步的账号"}
+
+
 @router.post("/members/import", summary="批量导入外部子号(并自动开批量登录任务)")
 def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)) -> dict:

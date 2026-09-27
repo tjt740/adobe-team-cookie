@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.routes import adobe_account, auth, dashboard, email, external_cookie, external_member, log as log_route, pool, setting, sub2
+from app.api.routes import admin_user, adobe_account, auth, dashboard, email, external_cookie, external_member, log as log_route, pool, setting, sub2
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.services import log_store
@@ -55,6 +55,9 @@ async def _on_http_exception(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def _on_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith(settings.API_PREFIX + "/admin/users"):
+        # Pydantic's default response and log contain invalid password input.
+        return JSONResponse(status_code=422, content={"detail": "请检查参数：用户名 3～50 位字母、数字或 ._-；昵称最多 50 字；密码至少 10 个字符且不超过 72 字节"})
     if request.url.path.startswith(settings.API_PREFIX + "/settings/clash"):
         # Validation errors may otherwise echo a private subscription in input.
         return JSONResponse(status_code=422, content={"detail": "请检查订阅链接或节点参数"})
@@ -78,6 +81,7 @@ async def _on_unhandled(request: Request, exc: Exception):
 
 
 app.include_router(auth.router, prefix=settings.API_PREFIX)
+app.include_router(admin_user.router, prefix=settings.API_PREFIX)
 app.include_router(adobe_account.router, prefix=settings.API_PREFIX)
 app.include_router(email.router, prefix=settings.API_PREFIX)
 app.include_router(pool.router, prefix=settings.API_PREFIX)
