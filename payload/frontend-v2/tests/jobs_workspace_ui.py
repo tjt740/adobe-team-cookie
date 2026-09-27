@@ -14,6 +14,7 @@ def job(i,t,status='done',email=None,success=1,fail=0):
 
 async def main():
     data={101:job(101,'external_login','running',email='running@example.com'),100:job(100,'pool_cookie_sub2',success=2),99:job(99,'pool_login',fail=1),98:job(98,'admin_login','error'),88:job(88,'pool_login')}
+    data[101]['trace']['filters']={'keyword':'running', 'login_status':'ok', 'subscription_ok':False}
     data[100]['result']={'pushed':1,'existing':1}
     data[100]['trace']['destination']={'url':'http://sub2.test/api/v1','group_ids':[2]}
     data[100]['extra']['items'][1].update(status='existing',message='已在库，跳过')
@@ -71,6 +72,8 @@ async def main():
         await page.get_by_role('tab',name='账号结果').click()
         await page.screenshot(path=str(ROOT/'.local/jobs-workspace-detail.png'),full_page=True)
         await page.goto(BASE+'/jobs?id=101')
+        await expect(page.locator('.task-provenance')).to_contain_text('登录状态：正常')
+        await expect(page.locator('.task-provenance')).to_contain_text('订阅：掉订阅')
         await page.get_by_role('button',name='暂停任务',exact=True).click()
         await expect(page.get_by_role('button',name='继续任务',exact=True)).to_be_visible()
         await page.get_by_role('button',name='继续任务',exact=True).click()

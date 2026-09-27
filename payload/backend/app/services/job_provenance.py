@@ -17,7 +17,7 @@ TYPES = {
     '批量更新号池': ('同步成员到号池', '母号管理', '/adobe', '更新号池', '读取所选母号的成员并更新本地号池'),
 }
 FILTERS = ('keyword', 'registered_only', 'pool_type', 'has_token', 'credit_status',
-           'credit_value', 'status_filter', 'export_status')
+           'credit_value', 'status_filter', 'export_status', 'login_status', 'subscription_ok')
 
 
 def capture_meta(job_type, meta):
@@ -31,7 +31,9 @@ def capture_meta(job_type, meta):
     if definition:
         _, label, path, action, _ = definition
         endpoint = ctx['endpoint']
-        if endpoint.endswith('/batch-login-filter'):
+        if endpoint.endswith('/external/members/batch-login-filter'):
+            action = '一键重登'
+        elif endpoint.endswith('/batch-login-filter'):
             action = '登录筛选结果'
         elif '/batch-login-retry/' in endpoint:
             label, path, action = '任务列表', '/jobs', '重试未拿到 Token 的账号'

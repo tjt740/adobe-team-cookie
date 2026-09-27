@@ -71,10 +71,10 @@ const btn = (label, props={}) => h(Button,props,()=>label);
 const pill = (label,tone='muted') => h('span',{class:`ws-pill ${tone}`},label);
 const safe = fn => (...args) => Promise.resolve(fn(...args)).catch(()=>{});
 const severity = text => /失败|异常|ERROR|✗|错误/.test(text)?'error':/重试|告警|WARNING|限流/.test(text)?'warning':/成功|完成|✓/.test(text)?'success':'info';
-const filtersText = filters => Object.entries(filters).filter(([k,v])=>v!==''&&v!==null&&v!==undefined&&(v!==false||k==='has_token')).map(([k,v])=>{
-  const names={keyword:'搜索',registered_only:'只看已注册',pool_type:'账号类型',has_token:'Token',credit_status:'额度',credit_value:'积分',status_filter:'状态',export_status:'导出状态'};
-  const values={all:'全部',imported:'导入',sub:'子号',admin:'母号',yes:'有',no:'无',exported:'已导出',unexported:'未导出',known:'已知',unknown:'未知',registered:'已拿 Token',pending:'未拿 Token',failed:'失败'};
-  return `${names[k] || k}：${k==='has_token'?(v?'有 Token':'无 Token'):values[v] || (v===true?'是':String(v))}`;
+const filtersText = filters => Object.entries(filters).filter(([k,v])=>v!==''&&v!==null&&v!==undefined&&(v!==false||k==='has_token'||k==='subscription_ok')).map(([k,v])=>{
+  const names={keyword:'搜索',registered_only:'只看已注册',pool_type:'账号类型',has_token:'Token',credit_status:'额度',credit_value:'积分',status_filter:'状态',export_status:'导出状态',login_status:'登录状态',subscription_ok:'订阅'};
+  const values={all:'全部',imported:'导入',sub:'子号',admin:'母号',yes:'有',no:'无',exported:'已导出',unexported:'未导出',known:'已知',unknown:'未知',registered:'已拿 Token',pending:'未拿 Token',failed:'失败',ok:'正常',never:'未登录',login_failed:'登录失败',account_disabled:'已停用',rate_limited:'频繁登录限流',internal:'内部错误'};
+  return `${names[k] || k}：${k==='has_token'?(v?'有 Token':'无 Token'):k==='subscription_ok'?(v?'订阅正常':'掉订阅'):values[v] || (v===true?'是':String(v))}`;
 }).join(' · ');
 
 export default defineComponent({name:'JobsWorkspace',setup(){

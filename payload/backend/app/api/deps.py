@@ -42,6 +42,10 @@ async def capture_job_request(request: Request, user: User = Depends(get_current
         body = await request.json()
         if isinstance(body, dict):
             filters = {key: body[key] for key in FILTERS if key in body}
+    elif request.url.path.endswith('/external/members/batch-login-filter') and request.method == 'POST':
+        body = await request.json()
+        if isinstance(body, dict):
+            filters = {key: body[key] for key in ('keyword', 'login_status', 'subscription_ok') if key in body}
     token = request_context.set({'operator': user.username, 'endpoint': request.url.path,
                                  'filters': filters, 'db': db})
     try:

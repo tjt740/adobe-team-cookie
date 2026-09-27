@@ -37,5 +37,11 @@ class ExternalImportRequest(BaseModel):
     on_duplicate: str = Field(default="skip", pattern="^(skip|overwrite)$")
 
 
+class ExternalLoginFilter(BaseModel):
+    login_status: str | None = None
+    subscription_ok: bool | None = None
+    keyword: str = ""
+
+
 class ExternalMemberExportItem(BaseModel):
     cookie: str

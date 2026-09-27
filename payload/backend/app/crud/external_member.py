@@ -98,7 +98,7 @@ def list_members(
     db: Session,
     *,
     page: int = 1,
-    size: int = 20,
+    size: int | None = 20,
     login_status: str | None = None,
     subscription_ok: bool | None = None,
     keyword: str = "",
@@ -114,7 +114,7 @@ def list_members(
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
         db.scalars(
-            stmt.order_by(ExternalMember.id.desc()).offset((page - 1) * size).limit(size)
+            stmt.order_by(ExternalMember.id.desc()).offset((page - 1) * size if size is not None else 0).limit(size)
         )
     )
     return items, total

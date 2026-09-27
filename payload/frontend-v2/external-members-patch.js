@@ -143,7 +143,8 @@
           '<button class="extm-btn dft sm" id="extm-refresh">刷新</button>' +
           '</div><div class="extm-batch-row">' +
           '<div class="extm-batch-controls"><span class="selc">已选 <b id="extm-selc">0</b></span>' +
-          '<button class="extm-btn o sm" id="extm-batch-login">批量登录</button>' +
+          '<button class="extm-btn o sm" id="extm-batch-login" disabled>选中批量重登</button>' +
+          '<button class="extm-btn o sm" id="extm-login-all" title="重登全部外部子号，自动跳过任务未结束的账号">一键重登全部</button>' +
           '<button class="extm-btn del sm" id="extm-batch-del">删除选中</button></div>' +
           '<span class="ws-spacer"></span><button class="extm-btn o sm" id="extm-export">导出全部 Cookie</button>' +
           '<button class="extm-btn o sm" id="extm-sub2-push" disabled>推送 Sub2</button>' +
@@ -157,6 +158,7 @@
     el("extm-do-import").onclick = doImport;
     el("extm-refresh").onclick = function () { refreshAll(true); refreshStock(true); };
     el("extm-batch-login").onclick = batchLogin;
+    el("extm-login-all").onclick = loginAll;
     el("extm-export").onclick = exportCookies;
     el("extm-sub2-push").onclick = pushSub2;
     el("extm-batch-del").onclick = batchDelete;
@@ -254,7 +256,7 @@
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
-        '<td><button class="extm-link extm-clip extm-email" data-expand="' + r.id + '" title="' + esc(r.email) + '">' + esc(r.email) + '</button>' + sub2Pill(r) + '</td>' +
+        '<td><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + sub2Pill(r) + '</td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status">' +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
@@ -292,6 +294,7 @@
     body.onclick = function (e) {
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
+      if (b.hasAttribute("data-copy-email")) copyEmail(Number(b.dataset.copyEmail));
       if (b.hasAttribute("data-login")) reloginOne(Number(b.dataset.login));
       if (b.hasAttribute("data-del")) doDelete([Number(b.dataset.del)]);
     };
@@ -480,7 +483,14 @@
     setLoading(el('extm-export'), !!st.exporting, st.exporting ? '导出中…' : (st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : (qs().length ? '导出筛选 Cookie' : '导出全部 Cookie')));
     var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
     var busy = st.rows.some(function (r) { return st.sel.has(r.id) && running(r); });
-    setLoading(el('extm-batch-login'), busy, busy ? '任务未结束' : '批量登录', busy && st.rows.some(function(r){return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}));
+    setLoading(el('extm-batch-login'), busy || !!st.loginAllSubmitting, busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : ''), busy && st.rows.some(function(r){return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}));
+    if (el('extm-batch-login')) el('extm-batch-login').disabled = busy || !!st.loginAllSubmitting || !st.sel.size;
+    var loginAllButton = el('extm-login-all');
+    setLoading(loginAllButton, !!st.loginAllSubmitting, st.loginAllSubmitting ? '提交重登中…' : (qs().length ? '一键重登筛选结果' : '一键重登全部'));
+    if (loginAllButton) {
+      loginAllButton.disabled = !!st.loginAllSubmitting || st.pending.size > 0;
+      loginAllButton.title = (qs().length ? '重登符合当前筛选的全部外部子号' : '重登全部外部子号') + '，自动跳过任务未结束的账号';
+    }
     if (el('extm-batch-del')) el('extm-batch-del').disabled = busy;
     var pushing = st.sub2Submitting || st.rows.some(function (r) { return st.sel.has(r.id) && ['pending', 'syncing'].includes(r.sub2_status); });
     setLoading(el('extm-sub2-push'), !!pushing, pushing ? 'Sub2 同步中…' : '推送 Sub2');
@@ -536,6 +546,7 @@
   }
 
   async function startLogin(ids, expandFirst) {
+    if (st.loginAllSubmitting) return;
     if (ids.some(function (id) { var row = rowById(id); return row && running(row); })) { toast('warning', '所选账号正在登录，请等待任务完成'); return; }
     ids.forEach(function (id) { st.pending.add(id); });
     ++st.loadSeq; renderRows();
@@ -553,6 +564,41 @@
   function batchLogin() {
     var ids = selIds(); if (!ids.length) { toast('warning', '请先勾选账号'); return; }
     return startLogin(ids);
+  }
+
+  async function loginAll() {
+    if (st.loginAllSubmitting || st.pending.size) return;
+    var filters = { login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q };
+    var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
+    st.loginAllSubmitting = true;
+    ids.forEach(function (id) { st.pending.add(id); });
+    ++st.loadSeq; renderRows();
+    try {
+      var result = await api('/members/batch-login-filter', { method: 'POST', body: filters });
+      toast(result.queued ? 'success' : 'warning', result.message + (result.job ? ' · 任务 #' + result.job.id + '，可展开账号查看进度' : ''));
+    } catch (e) { toast('error', e.message); }
+    finally {
+      await load(true);
+      ids.forEach(function (id) { st.pending.delete(id); });
+      st.loginAllSubmitting = false; renderRows();
+    }
+  }
+
+  async function copyEmail(id) {
+    var row = rowById(id); if (!row) return;
+    var copied = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(row.email); copied = true; } catch (e) { /* Try the fallback below. */ }
+    }
+    if (!copied) {
+      var input = document.createElement('textarea'), focused = document.activeElement;
+      input.value = row.email; input.readOnly = true;
+      input.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(input); input.select();
+      try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+      finally { input.remove(); if (focused && focused.isConnected) focused.focus({ preventScroll: true }); }
+    }
+    toast(copied ? 'success' : 'error', copied ? '已复制账号：' + row.email : '复制失败，请手动复制账号：' + row.email);
   }
 
   function exportCookies() {

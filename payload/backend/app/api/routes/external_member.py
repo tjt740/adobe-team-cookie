@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, MessageResult, Page
-from app.schemas.external_member import ExternalImportRequest, ExternalMemberOut
+from app.schemas.external_member import ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
 
@@ -118,6 +118,22 @@ def batch_login(payload: BatchIds, db: Session = Depends(get_db),
             raise HTTPException(status_code=409, detail="所选账号已有登录任务运行中,请等待完成后再重试")
         job = _start_login(members, db, user.username)
     return JobStatusOut(**job.to_dict())
+
+
+@router.post("/members/batch-login-filter", summary="一键重登当前筛选的全部外部子号")
+def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)) -> dict:
+    with _login_lock:
+        members, total = crud.list_members(db, size=None, **payload.model_dump())
+        active = _active_jobs([m.id for m in members]) if members else {}
+        pending = [m for m in members if m.id not in active]
+        job = _start_login(pending, db, user.username) if pending else None
+    if job:
+        message = f"已提交 {len(pending)} 个账号重登，跳过 {len(active)} 个任务未结束的账号"
+    else:
+        message = "当前范围暂无外部子号" if not total else f"当前范围的 {len(active)} 个账号任务未结束，无需重复提交"
+    return {"job": JobStatusOut(**job.to_dict()) if job else None,
+            "queued": len(pending), "skipped": len(active), "total": total, "message": message}
 
 
 @router.get("/members/{member_id}/jobs", response_model=list[JobStatusOut], summary="外部子号任务历史")

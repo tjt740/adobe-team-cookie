@@ -53,6 +53,25 @@ def test_old_job_does_not_invent_an_operator_or_resolve_reused_account_id():
     assert t['source']['label']=='号池管理'
 
 
+def test_external_one_click_relogin_records_filter_scope(client, db, monkeypatch):
+    from app.models.external_member import ExternalMember
+    from app.services import external_login
+
+    member = ExternalMember(email='external@example.com', login_status='ok', subscription_ok=True)
+    db.add(member); db.commit()
+    monkeypatch.setattr(external_login, 'batch_login_worker', finish)
+    filters = {'keyword': 'external', 'login_status': 'ok', 'subscription_ok': True}
+    response = client.post('/api/external/members/batch-login-filter', json={**filters, 'operator': 'forged'})
+    assert response.status_code == 200
+    job_id = response.json()['job']['id']
+    wait(JOBS.get(job_id))
+    trace = client.get(f'/api/adobe-accounts/jobs/{job_id}').json()['trace']
+    assert trace['filters'] == filters
+    assert trace['operator'] == 'tester'
+    assert trace['source']['action'] == '一键重登'
+    assert trace['accounts'] == [{'id': member.id, 'email': member.email, 'kind': 'external'}]
+
+
 def test_old_push_job_uses_recorded_result_email_and_destination():
     job=Job(9,'pool_cookie_sub2',{'member_ids':[2], 'sub2_url':'http://sub2.test/api/v1','group_ids':[7]})
     job.set_extra('items',[{'id':2,'email':'original@example.com','status':'existing'}])

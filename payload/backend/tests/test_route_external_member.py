@@ -170,6 +170,80 @@ def test_running_login_is_reused_and_overlapping_batch_rejected(client, db, monk
     assert members[0].operator == "alice"
 
 
+def test_one_click_relogin_covers_all_accounts_beyond_the_display_limit(client, db, monkeypatch):
+    db.add_all(ExternalMember(email=f"bulk{i}@ex.com", login_status="ok") for i in range(1005))
+    db.commit()
+    started = []
+
+    def start(job_type, worker, *, meta):
+        started.append(meta)
+        return _FakeJob()
+
+    monkeypatch.setattr(JOBS, "start", start)
+    assert len(client.get("/api/external/members?size=1000").json()["items"]) == 1000
+    response = client.post("/api/external/members/batch-login-filter", json={})
+    assert response.status_code == 200
+    assert response.json()["queued"] == response.json()["total"] == 1005
+    assert response.json()["skipped"] == 0
+    assert len(started) == 1 and len(set(started[0]["member_ids"])) == 1005
+    assert started[0]["operator"] == "tester"
+
+
+def test_one_click_relogin_filters_and_skips_all_unfinished_task_states(client, db, monkeypatch):
+    members = [
+        ExternalMember(email="match@ex.com", login_status="ok", subscription_ok=True),
+        ExternalMember(email="message@ex.com", message="match", login_status="ok", subscription_ok=True),
+        ExternalMember(email="other@ex.com", login_status="ok", subscription_ok=True),
+        ExternalMember(email="match-failed@ex.com", login_status="login_failed", subscription_ok=True),
+        ExternalMember(email="match-unsubscribed@ex.com", login_status="ok", subscription_ok=False),
+    ]
+    active_members = [ExternalMember(email=f"match-{state}@ex.com", operator="alice", login_status="ok", subscription_ok=True)
+                      for state in ("running", "pausing", "paused", "cancelling")]
+    db.add_all(members + active_members)
+    db.commit()
+    for jid, (member, state) in enumerate(zip(active_members, ("running", "pausing", "paused", "cancelling")), 1):
+        _record_job(jid, [member.id], state=state, actor="alice")
+    started = []
+
+    def start(job_type, worker, *, meta):
+        started.append(meta)
+        return _FakeJob()
+
+    monkeypatch.setattr(JOBS, "start", start)
+    response = client.post("/api/external/members/batch-login-filter", json={
+        "keyword": "match", "login_status": "ok", "subscription_ok": True,
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert (data["queued"], data["skipped"], data["total"]) == (2, 4, 6)
+    assert set(started[0]["member_ids"]) == {m.id for m in members[:2]}
+    for member in active_members:
+        db.refresh(member)
+        assert member.operator == "alice"
+    # False must remain a filter, not be treated as an omitted value.
+    response = client.post("/api/external/members/batch-login-filter", json={"subscription_ok": False})
+    assert response.json()["queued"] == 1
+    assert started[-1]["member_ids"] == [members[4].id]
+
+
+def test_one_click_relogin_with_empty_or_fully_busy_scope_starts_no_job(client, db, monkeypatch):
+    member = ExternalMember(email="busy@ex.com")
+    db.add(member)
+    db.commit()
+    _record_job(1, [member.id], state="paused")
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Must not launch an empty or duplicate job")
+
+    monkeypatch.setattr(JOBS, "start", unexpected)
+    for filters, total in (({}, 1), ({"keyword": "missing"}, 0)):
+        response = client.post("/api/external/members/batch-login-filter", json=filters)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["job"] is None and data["queued"] == 0
+        assert data["total"] == data["skipped"] == total
+
+
 def test_import_overwrite_preserves_import_time_and_reuses_running_job(client, db, monkeypatch):
     from datetime import datetime
 
