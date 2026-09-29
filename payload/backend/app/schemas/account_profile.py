@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ProfilePreference = Literal["", "personal", "organization"]
+
 
 class ProfileItem(BaseModel):
     profile_id: str = ""

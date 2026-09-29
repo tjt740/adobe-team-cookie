@@ -87,11 +87,12 @@ def auth_for(client):
                            identity_verification_token="")
 
 
-def finish(client, *, separate_auth=False):
+def finish(client, *, separate_auth=False, profile_preference=""):
     auth = auth_for(client)
     a2 = auth_for(client) if separate_auth else auth
     logs = []
-    token = firefly._finish_firefly_token(auth, a2, "test@example.com", logs.append, lambda r: None)
+    token = firefly._finish_firefly_token(auth, a2, "test@example.com", logs.append, lambda r: None,
+                                         profile_preference=profile_preference)
     snapshot = build_profile_snapshot(auth._firefly_context, auth._enterprise_account_id)
     return token, snapshot, logs
 
@@ -109,6 +110,25 @@ def test_all_del_orgs_use_personal_and_preserve_orgs_for_display():
     assert len(snapshot["profiles"]) == 3
     assert all(p["status"] == "suspected_deleted" for p in snapshot["profiles"] if p["kind"] == "organization")
     assert any("跳过 2 个" in line for line in logs)
+
+
+def test_explicit_personal_ignores_healthy_org_but_lists_it():
+    client = ProfileClient([link()])
+    _, snapshot, logs = finish(client, profile_preference="personal")
+    assert client.switches == [PERSON]
+    assert snapshot["current_kind"] == "personal"
+    assert any(p["profile_id"] == ORG for p in snapshot["profiles"])
+    assert any("按指定设置使用个人配置" in line for line in logs)
+
+
+@pytest.mark.parametrize("disabled", [True, False])
+def test_explicit_personal_does_not_silently_use_org_if_missing_or_disabled(disabled):
+    client = ProfileClient([link()], personal=disabled)
+    if disabled:
+        client.fps[0]["disabled"] = True
+    with pytest.raises(firefly._adm.AdminError, match="指定的个人配置不可用"):
+        finish(client, profile_preference="personal")
+    assert client.switches == []
 
 
 @pytest.mark.parametrize("separate_auth", [False, True])
@@ -200,9 +220,11 @@ def test_failed_switch_never_publishes_selected_identity(failure):
     assert not hasattr(auth, "_enterprise_account_id")
 
 
-@pytest.mark.parametrize("reason,expected", [(2000, PERSON), (1000, ORG)])
+@pytest.mark.parametrize("reason,preference,expected", [(2000, "organization", PERSON),
+                                                     (1000, "organization", ORG), (1000, "personal", PERSON),
+                                                     (2000, "", PERSON), (1000, "", ORG)])
 def test_register_and_store_keep_cookie_token_profile_and_zero_credits_together(
-        db, SessionLocal, monkeypatch, reason, expected):
+        db, SessionLocal, monkeypatch, reason, preference, expected):
     client = ProfileClient([link()], reason=reason)
     auth = auth_for(client)
     monkeypatch.setattr(firefly._p, "HttpClient", lambda **kwargs: client)
@@ -221,7 +243,8 @@ def test_register_and_store_keep_cookie_token_profile_and_zero_credits_together(
         return {"available": 0, "total": 4000}
 
     monkeypatch.setattr(firefly, "fetch_credits_detail", credits)
-    record = firefly.register_account(email="test@example.com", refresh_token="mail", client_id="mail-client")
+    record = firefly.register_account(email="test@example.com", refresh_token="mail", client_id="mail-client",
+                                      profile_preference=preference)
     member = ExternalMember(email="test@example.com")
     db.add(member)
     db.commit()
@@ -234,4 +257,4 @@ def test_register_and_store_keep_cookie_token_profile_and_zero_credits_together(
     assert member.account_profile["credits_account_id"] == expected
     assert member.credits_available == 0
     assert member.credits_total == 4000
-    assert client.switches == ([ORG, PERSON] if reason == 2000 else [ORG])
+    assert client.switches == ([PERSON] if preference == "personal" else [ORG, PERSON] if reason == 2000 else [ORG])

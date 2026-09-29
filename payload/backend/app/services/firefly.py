@@ -17,6 +17,7 @@ from app.services.adobe_otp import make_otp_poller
 from app.services.adobe_protocol import admin_member_protocol as _p
 from app.services.adobe_protocol.admin_member_protocol import AdminAuth
 from app.services.account_profile import build_profile_snapshot
+from app.schemas.account_profile import ProfilePreference
 
 try:
     from curl_cffi import requests as _cffi
@@ -485,7 +486,8 @@ def _prepare_firefly_context(
 def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
                            poll=None, password: str = "",
                            otp_timeout: int = 180,
-                           force_code_login: bool = False) -> str:
+                           force_code_login: bool = False,
+                           profile_preference: ProfilePreference = "") -> str:
     """优先沿用已验证的登录会话;会话失效时才重新认证。
 
     浏览器实测、纯 HTTP 可复刻的正确链:
@@ -504,7 +506,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
 
         lf("firefly:沿用已验证的登录会话,切换账号资料并获取 token")
         try:
-            return _finish_firefly_token(auth, auth, email, lf, capture_existing)
+            return _finish_firefly_token(auth, auth, email, lf, capture_existing, profile_preference=profile_preference)
         except _adm.AdminError as exc:
             # 首次激活企业资料可能作废补全会话;仅此时需要重新认证。
             lf(f"firefly:已有会话无法完成 token 交换,重新认证:{str(exc)[:200]}")
@@ -533,7 +535,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
     # 密码不是我们设的」那种号(导入的/别人跑的)必然 401 invalid_authentication。
     if force_code_login or not password:
         code_login("强制" if force_code_login else "没有该号的 Adobe 密码")
-        return _finish_firefly_token(auth, a2, email, lf, cap)
+        return _finish_firefly_token(auth, a2, email, lf, cap, profile_preference=profile_preference)
 
     # a2 是新的 Sunbreak 客户端,不能只共享 cookie 就直接提交密码。
     # 必须先建立这个客户端的认证状态,否则 Adobe 返回 invalid_auth_session,
@@ -578,14 +580,14 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         lf(f"firefly type2e:密码登录被拒 {r.status_code} "
            f"{jd.get('errorCode','')},退回验证码")
         code_login("密码登录被拒")
-        return _finish_firefly_token(auth, a2, email, lf, cap)
+        return _finish_firefly_token(auth, a2, email, lf, cap, profile_preference=profile_preference)
     a2.susi_token = tok
     lf("firefly type2e:密码会话已建立")
-    return _finish_firefly_token(auth, a2, email, lf, cap)
+    return _finish_firefly_token(auth, a2, email, lf, cap, profile_preference=profile_preference)
 
 
 def _pick_enterprise_profile(
-    a2: "AdminAuth", lf: LogFn, fps: list | None
+    a2: "AdminAuth", lf: LogFn, fps: list | None, *, select_organization: bool = True
 ) -> tuple[str, str]:
     """收集所有配置,优先选择未停用且没有删除标记的企业资料。
 
@@ -631,6 +633,8 @@ def _pick_enterprise_profile(
                f" status={lk.get('status') or '-'}"
                f" ident={lk.get('ident') or '-'}"
                f" entGuid={lk.get('entitlementAccountUserId') or '-'}")
+        if not select_organization:
+            return "", ""
         usable = [
             lk for lk in links
             if isinstance(lk, dict)
@@ -659,7 +663,7 @@ def _pick_enterprise_profile(
 
 
 def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
-                          lf: LogFn, cap) -> str:
+                          lf: LogFn, cap, *, profile_preference: ProfilePreference = "") -> str:
     """优先保留正常企业配置;疑似删除或明确过期时使用个人配置。"""
     r = a2.client.get(
         f"{_p.AUTH_HOST}/signin/v2/accounts/filtered_profiles?filter=isSessionForwardProfile%28%29",
@@ -670,9 +674,16 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
                           and not p.get("disabled")
                           and (p.get("userId") or "").endswith("@AdobeID")), "")
     lf(f"firefly:filtered_profiles status={r.status_code} personal_guid={personal_guid or '-'}")
-    org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps)
+    org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps,
+                                                select_organization=profile_preference != "personal")
     a2._profiles_complete = a2._profiles_complete and r.status_code == 200
     ent_guid = org_guid or personal_guid
+    if profile_preference == "personal":
+        lf("firefly:按指定设置使用个人配置")
+        if not personal_guid:
+            raise _adm.AdminError("指定的个人配置不可用，请检查账号或改选组织配置后重试")
+    elif not org_guid and personal_guid:
+        lf("firefly:没有可用的非删除组织配置，回退到个人配置")
     if not ent_guid:
         raise _adm.AdminError("未找到可用的组织或个人配置,不会选择疑似已删除或已停用的配置")
     lf(f"firefly:选择{'组织配置「' + org_desc + '」' if org_guid else '个人配置'} guid={ent_guid}")
@@ -771,6 +782,7 @@ def register_account(
     mail_url: str = "", proxy_url: str = "", otp_timeout: int = 180,
     account_id: str = "", adobe_password: str = "",
     force_code_login: bool = False,
+    profile_preference: ProfilePreference = "",
     log: Optional[LogFn] = None,
     on_credentials: Optional[Callable[..., None]] = None,
 ) -> dict[str, Any]:
@@ -779,6 +791,8 @@ def register_account(
     返回 newbanana 记录:{access_token, cookie, credits, expires_at, display_name, user_id}。
     """
     lf = _mklog(log)
+    if profile_preference not in ("", "personal", "organization"):
+        raise ValueError("无效的登录配置")
     if not ((refresh_token and client_id) or mail_url):
         raise _adm.AdminError("子号缺少 Refresh Token / Client ID 或取信配置,无法收验证码登录")
 
@@ -820,6 +834,7 @@ def register_account(
         token = _acquire_firefly_token(
             auth, email, lf, poll=poller, password=pwd,
             otp_timeout=otp_timeout, force_code_login=force_code_login,
+            profile_preference=profile_preference,
         )
         cookie = _adm._session_cookie_str(client)
 

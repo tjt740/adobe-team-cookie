@@ -68,6 +68,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "credits_available": "FLOAT",
         "credits_total": "FLOAT",
         "account_profile": "JSON",
+        "profile_preference": "VARCHAR(16) NOT NULL DEFAULT ''",
         "sub2_links": "JSON",
         "first_login_done": "BOOLEAN DEFAULT 0",
         "login_status": "VARCHAR(32) DEFAULT 'never'",

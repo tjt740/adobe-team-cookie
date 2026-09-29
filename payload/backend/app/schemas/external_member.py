@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.adobe_account import JobStatusOut
-from app.schemas.account_profile import AccountProfile
+from app.schemas.account_profile import AccountProfile, ProfilePreference
 
 
 class ExternalMemberOut(BaseModel):
@@ -15,6 +15,7 @@ class ExternalMemberOut(BaseModel):
     credits_available: float | None = None
     credits_total: float | None = None
     account_profile: AccountProfile | None = None
+    profile_preference: ProfilePreference = ""
     login_status: str = "never"
     subscription_ok: bool = False
     first_login_done: bool = False
@@ -35,6 +36,11 @@ class ExternalMemberOut(BaseModel):
 class ExternalImportRequest(BaseModel):
     content: str
     on_duplicate: str = Field(default="skip", pattern="^(skip|overwrite)$")
+    profile_preference: ProfilePreference | None = None
+
+
+class ExternalProfilePreferenceUpdate(BaseModel):
+    profile_preference: ProfilePreference
 
 
 class ExternalLoginFilter(BaseModel):

@@ -25,8 +25,9 @@ def spy(monkeypatch):
         calls["code_login"] += 1
         auth.susi_token = "susi.from.code"
 
-    def _fake_finish(auth, a2, email, lf, cap):
+    def _fake_finish(auth, a2, email, lf, cap, *, profile_preference=""):
         calls["sessions"].append(a2)
+        calls["profile_preference"] = profile_preference
         return "FIREFLY_TOKEN"
 
     monkeypatch.setattr(ff._adm, "_browser_code_login", _fake_browser_code_login)
@@ -97,7 +98,7 @@ def test_expired_existing_session_can_reauthenticate(spy, monkeypatch):
     auth.susi_token = "expired-session"
     sessions = []
 
-    def finish(original, current, *args):
+    def finish(original, current, *args, **kwargs):
         sessions.append(current)
         if current is original:
             raise ff._adm.AdminError("会话已失效")
@@ -113,7 +114,7 @@ def test_exchange_network_error_does_not_request_another_code(spy, monkeypatch):
     auth = _auth(_FakeResp())
     auth.susi_token = "verified-session"
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise TimeoutError("connection timeout")
 
     monkeypatch.setattr(ff, "_finish_firefly_token", fail)
@@ -140,6 +141,15 @@ def test_force_code_login_skips_password_even_when_known(spy):
                               password="Known1!", force_code_login=True)
     assert spy["code_login"] == 1
     assert not _pwd_tried(auth)
+
+
+@pytest.mark.parametrize("existing_session", [True, False])
+def test_personal_preference_reaches_exchange_after_reauthentication(spy, existing_session):
+    auth = _auth(_FakeResp(200, {"token": "susi.tok"}))
+    auth.susi_token = "verified" if existing_session else ""
+    ff._acquire_firefly_token(auth, "personal@ex.com", lambda _: None,
+                              profile_preference="personal")
+    assert spy["profile_preference"] == "personal"
 
 
 def test_known_password_uses_password_login(spy):

@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, MessageResult, Page
-from app.schemas.external_member import ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut
+from app.schemas.external_member import ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
 
@@ -26,6 +26,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
         id=m.id, email=m.email,
         credits_available=m.credits_available, credits_total=m.credits_total,
         account_profile=m.account_profile,
+        profile_preference=m.profile_preference,
         login_status=m.login_status, subscription_ok=m.subscription_ok,
         first_login_done=m.first_login_done, has_cookie=bool(m.cookie),
         has_adobe_password=bool((m.adobe_password or "").strip()),
@@ -42,7 +43,8 @@ def _start_login(members, db, operator):
     return JOBS.start(
         "external_login", external_login.batch_login_worker,
         meta={"member_ids": [m.id for m in members], "target": len(members), "operator": operator,
-              "member_emails": {str(m.id): m.email for m in members}},
+              "member_emails": {str(m.id): m.email for m in members},
+              "member_profile_preferences": {str(m.id): m.profile_preference for m in members}},
     )
 
 
@@ -69,6 +71,20 @@ def list_members(
 @router.get("/members/sub2-stock", summary="按邮箱核对外部子号在 Sub2 的实时库存")
 def sub2_stock(refresh: bool = False, db: Session = Depends(get_db)) -> dict:
     return external_sub2_stock.membership(db, refresh=refresh)
+
+
+@router.patch("/members/{member_id}/login-profile", summary="保存账号下次登录使用的配置")
+def update_login_profile(member_id: int, payload: ExternalProfilePreferenceUpdate,
+                         db: Session = Depends(get_db)) -> dict:
+    with _login_lock:
+        member = crud.get(db, member_id)
+        if not member:
+            raise HTTPException(status_code=404, detail="条目不存在")
+        if _active_jobs([member_id]):
+            raise HTTPException(status_code=409, detail="账号登录任务尚未结束，请完成或终止后修改登录配置")
+        member.profile_preference = payload.profile_preference
+        db.commit()
+    return {"profile_preference": member.profile_preference, "message": "已保存，下次登录生效"}
 
 
 @router.post("/members/push-sub2", summary="推送选中外部子号并开启重登后 Cookie 同步")
@@ -101,7 +117,8 @@ def relink_sub2(payload: BatchIds, background: BackgroundTasks, db: Session = De
 @router.post("/members/import", summary="批量导入外部子号(并自动开批量登录任务)")
 def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)) -> dict:
-    result = crud.import_lines(db, payload.content, on_duplicate=payload.on_duplicate, operator=user.username)
+    result = crud.import_lines(db, payload.content, on_duplicate=payload.on_duplicate,
+                               operator=user.username, profile_preference=payload.profile_preference)
     ids = result.pop("ids", [])
     # 导入成功后自动开一个批量登录任务(任务列表可见、可看日志)
     if ids:

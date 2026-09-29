@@ -17,7 +17,7 @@ from app.crud import setting as setting_crud
 from app.db.session import SessionLocal
 from app.services import firefly, log_store, proxy_pool
 from app.services.job_manager import Job, JobCancelled
-from app.schemas.account_profile import AccountProfile
+from app.schemas.account_profile import AccountProfile, ProfilePreference
 
 SUBSCRIPTION_MIN = 1000.0
 
@@ -73,6 +73,7 @@ def _classify(err: str) -> str:
 def _login_with_proxy_retry(
     *, email: str, refresh_token: str, client_id: str, mail_url: str,
     proxy_raw: str, lf, adobe_password: str = "",
+    profile_preference: ProfilePreference = "",
     on_credentials=None,
 ) -> tuple[dict | None, Exception | None]:
     """跑协议登录,网络/代理失败时换一个出口 IP 再试。返回 ``(rec, last_exc)``。
@@ -104,6 +105,7 @@ def _login_with_proxy_retry(
                 email=email, refresh_token=refresh_token, client_id=client_id,
                 mail_url=mail_url, proxy_url=proxy, otp_timeout=180,
                 adobe_password=adobe_password,
+                profile_preference=profile_preference,
                 force_code_login=FORCE_CODE_LOGIN,
                 log=lambda mm: lf(f"[{email}] {mm}"),
                 on_credentials=update_credentials,
@@ -127,7 +129,8 @@ def _login_with_proxy_retry(
     return None, last_exc
 
 
-def login_and_store(member_id: int, *, log=None, check_cancelled=None) -> dict:
+def login_and_store(member_id: int, *, log=None, check_cancelled=None,
+                    profile_preference: ProfilePreference | None = None) -> dict:
     lf = log if callable(log) else (lambda _m: None)
     db = SessionLocal()
     try:
@@ -141,6 +144,7 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None) -> dict:
         cid = m.client_id or ""
         mail_url = m.mail_url or ""
         adobe_pwd = m.adobe_password or ""
+        profile_preference = m.profile_preference if profile_preference is None else profile_preference
         settings = setting_crud.get_settings(db)
     finally:
         db.close()
@@ -148,9 +152,12 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None) -> dict:
     # 复用「设置」里的代理池(settings.proxy_url),登录时随机取一个出口;
     # 网络原因挂掉时换一个出口 IP 再试一次(见 _login_with_proxy_retry)
     proxy_raw = (settings.proxy_url or "") if settings.proxy_enabled else ""
+    label = {'personal': '个人配置', 'organization': '组织配置（无可用组织时回退个人）'}.get(profile_preference, '未指定，沿用原逻辑')
+    lf(f"[{email}] 本次登录配置：{label}")
     rec, exc = _login_with_proxy_retry(
         email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
         adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
+        profile_preference=profile_preference,
         on_credentials=lambda **values: _save_credentials(member_id, **values),
     )
     if check_cancelled:
@@ -277,7 +284,9 @@ def batch_login_worker(job: Job) -> None:
             return
         try:
             job.record_item(mid, status='running', message='正在登录')
-            res = login_and_store(mid, log=_log, check_cancelled=job.check_cancelled)
+            preferences = job.meta.get('member_profile_preferences') or {}
+            options = {'profile_preference': preferences[str(mid)]} if str(mid) in preferences else {}
+            res = login_and_store(mid, log=_log, check_cancelled=job.check_cancelled, **options)
             job.bump(success=1) if res["ok"] else job.bump(fail=1)
             job.record_item(mid, status='done' if res['ok'] else 'failed',
                             message=res.get('message') or ('登录成功' if res['ok'] else '登录失败，请查看执行记录'))

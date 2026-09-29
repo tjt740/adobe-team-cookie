@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.crud.email import _parse_email_line
 from app.models.external_member import ExternalMember
+from app.schemas.account_profile import ProfilePreference
 
 
 def get(db: Session, mid: int) -> ExternalMember | None:
@@ -26,7 +27,8 @@ def get_many(db: Session, ids: list[int]) -> list[ExternalMember]:
     return list(db.scalars(select(ExternalMember).where(ExternalMember.id.in_(ids))))
 
 
-def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, operator: str = "") -> dict:
+def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, operator: str = "",
+                 profile_preference: ProfilePreference | None = None) -> dict:
     """导入 `邮箱----密码----ClientID----RefreshToken`(复用 _parse_email_line)。
 
     同一次 ``content`` 内出现重复邮箱时(常见于粘贴的名单本身带重复行),
@@ -87,6 +89,8 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
         row.refresh_token = rt or row.refresh_token
         row.mail_url = mail_url or row.mail_url
         row.operator = operator
+        if profile_preference is not None:
+            row.profile_preference = profile_preference
         row.updated_at = datetime.now(timezone.utc)
     db.commit()
     ids = [seen[k].id for k in login_keys if seen.get(k) is not None and seen[k].id is not None]

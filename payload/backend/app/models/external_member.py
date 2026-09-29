@@ -34,6 +34,8 @@ class ExternalMember(Base):
     credits_available: Mapped[float | None] = mapped_column(Float, nullable=True)
     credits_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     account_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Applies to the next login; account_profile remains the last actual result.
+    profile_preference: Mapped[str] = mapped_column(String(16), default="", server_default="")
     # 按目标地址保存关联与同步状态；不保存远端密钥或 Cookie 副本。
     sub2_links: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

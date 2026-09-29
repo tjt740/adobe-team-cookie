@@ -5,7 +5,7 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var st = { rows: [], sel: new Set(), statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -40,6 +40,7 @@
     '.extm-tools .selc{font-size:13px;color:#909399}.extm-tools .selc b{color:#18a058}',
     '.extm-batch-controls{display:flex;align-items:center;gap:10px}.extm-detail:not(.extm-manage-history) .extm-history-select,.extm-detail:not(.extm-manage-history) [data-action=delete]{display:none}.extm-pill.info{background:#eaf2ff;color:#3b82f6}',
     '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
+    '.extm-login-profile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0 0 10px;font-size:11px;color:#909399}.extm-login-profile select.extm-in{height:28px;width:140px;max-width:100%;padding:0 6px;font-size:12px}.extm-login-profile select:disabled{opacity:.55;cursor:not-allowed}.extm-import-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266}',
     '.extm-tw{overflow-x:auto}',
     '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1560px}',
     '.extm-t th{text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:#909399;background:#fafafc;border-bottom:1px solid #efeff5;white-space:nowrap}',
@@ -131,6 +132,7 @@
           '<p class="tip">每行一个，格式：邮箱----密码----ClientID----RefreshToken[----Adobe密码]（兼容 | 分隔）</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com----邮箱密码----ClientID(UUID)----M.RefreshToken\n带 Adobe 密码则再加一段:…----M.RefreshToken----AdobePwd\n首次补全账号时会生成并保存独立密码"></textarea>' +
           '<div class="extm-row">' +
             '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
+            '<label class="extm-import-profile">登录配置<select id="extm-import-profile" class="extm-in" title="可选；不指定时沿用原来的自动选择逻辑"><option value="">不指定（原逻辑）</option><option value="personal">个人配置</option><option value="organization">组织配置优先</option></select></label>' +
             '<button class="extm-btn" id="extm-do-import">批量导入</button>' +
             '<span class="sp" style="flex:1"></span><span id="extm-op" class="extm-msg mut"></span>' +
           '</div>' +
@@ -212,6 +214,7 @@
 
   function load(silent) {
     var body = el("extm-tbody"); if (!body) return Promise.resolve();
+    if (st.profileSaving.size) return Promise.resolve();
     var seq = ++st.loadSeq;
     if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty">加载中…</td></tr>';
     return api("/members?" + qs().concat(["size=1000"]).join("&")).then(function (d) {
@@ -264,7 +267,7 @@
     st.rows.forEach(function (r) {
       var tr = body.querySelector('tr[data-member="' + r.id + '"]');
       if (!tr) { tr = document.createElement("tr"); tr.dataset.member = r.id; }
-      var busy = running(r), expanded = st.expanded.has(r.id);
+      var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id);
       tr.className = expanded ? "extm-expanded" : "";
       var message = busy ? (st.pending.has(r.id) ? "正在提交任务…" : "任务 #" + r.latest_job.id + " · 展开查看实时进度") : r.message;
       setHTML(tr,
@@ -280,8 +283,8 @@
         '<td>' + subPill(r) + '</td>' +
         '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
         '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
-        '<td><div class="extm-actions"><button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + busy + '"' + (busy ? ' disabled' : '') + '>' + (busy ? ((r.latest_job && r.latest_job.status === 'paused') ? '' : spinner()) + (st.pending.has(r.id) ? '提交中' : ({paused:'已暂停',pausing:'暂停中',cancelling:'终止中'}[(r.latest_job || {}).status] || '登录中')) : '重登') + '</button>' +
-        '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy ? ' disabled' : '') + '>删除</button></div></td>');
+        '<td>' + loginProfileEditor(r, busy || saving) + '<div class="extm-actions"><button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + busy + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? ((r.latest_job && r.latest_job.status === 'paused') ? '' : spinner()) + (st.pending.has(r.id) ? '提交中' : ({paused:'已暂停',pausing:'暂停中',cancelling:'终止中'}[(r.latest_job || {}).status] || '登录中')) : '重登') + '</button>' +
+        '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
       if (tr !== cursor) body.insertBefore(tr, cursor);
       cursor = tr.nextElementSibling;
@@ -302,6 +305,9 @@
       }
     });
     body.onchange = function (e) {
+      if (e.target.matches('[data-profile-preference]')) {
+        saveProfilePreference(Number(e.target.dataset.profilePreference), e.target.value); return;
+      }
       if (!e.target.matches(".extm-rowck")) return;
       var id = Number(e.target.dataset.id); if (e.target.checked) st.sel.add(id); else st.sel.delete(id); updSel();
     };
@@ -313,6 +319,29 @@
       if (b.hasAttribute("data-del")) doDelete([Number(b.dataset.del)]);
     };
     updSel();
+  }
+
+  function loginProfileEditor(row, disabled) {
+    var preference = row.profile_preference || '';
+    return '<label class="extm-login-profile">' + (st.profileSaving.has(row.id) ? '保存中…' : '下次登录') +
+      '<select class="extm-in" data-profile-preference="' + row.id + '" aria-label="' + esc(row.email) + ' 的登录配置" title="可选；不指定时沿用原逻辑。个人配置：直接使用个人身份。组织配置优先：跳过疑似已删除的组织，无可用组织或授权过期时回退个人配置。选择后自动保存，下次登录生效。"' + (disabled ? ' disabled' : '') + '>' +
+      '<option value=""' + (!preference ? ' selected' : '') + '>不指定（原逻辑）</option>' +
+      '<option value="personal"' + (preference === 'personal' ? ' selected' : '') + '>个人配置</option>' +
+      '<option value="organization"' + (preference === 'organization' ? ' selected' : '') + '>组织配置优先</option></select></label>';
+  }
+
+  async function saveProfilePreference(id, preference) {
+    var row = rowById(id);
+    if (!row || running(row) || st.profileSaving.has(id)) return;
+    var previous = row.profile_preference || '';
+    row.profile_preference = preference; st.profileSaving.add(id); ++st.loadSeq; renderRows();
+    try {
+      var result = await api('/members/' + id + '/login-profile', { method: 'PATCH', body: { profile_preference: preference } });
+      row.profile_preference = result.profile_preference;
+      toast('success', '已保存 ' + row.email + ' 的登录配置，下次登录生效');
+    } catch (e) {
+      row.profile_preference = previous; toast('error', '登录配置保存失败：' + e.message);
+    } finally { st.profileSaving.delete(id); renderRows(); await load(true); }
   }
 
   function toggleDetail(id) {
@@ -497,15 +526,16 @@
     setLoading(el('extm-export'), !!st.exporting, st.exporting ? '导出中…' : (st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : (qs().length ? '导出筛选 Cookie' : '导出全部 Cookie')));
     var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
     var busy = st.rows.some(function (r) { return st.sel.has(r.id) && running(r); });
-    setLoading(el('extm-batch-login'), busy || !!st.loginAllSubmitting, busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : ''), busy && st.rows.some(function(r){return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}));
-    if (el('extm-batch-login')) el('extm-batch-login').disabled = busy || !!st.loginAllSubmitting || !st.sel.size;
+    var saving = Array.from(st.sel).some(function (id) { return st.profileSaving.has(id); });
+    setLoading(el('extm-batch-login'), busy || saving || !!st.loginAllSubmitting, saving ? '配置保存中…' : busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : ''), busy && st.rows.some(function(r){return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}));
+    if (el('extm-batch-login')) el('extm-batch-login').disabled = busy || saving || !!st.loginAllSubmitting || !st.sel.size;
     var loginAllButton = el('extm-login-all');
     setLoading(loginAllButton, !!st.loginAllSubmitting, st.loginAllSubmitting ? '提交重登中…' : (qs().length ? '一键重登筛选结果' : '一键重登全部'));
     if (loginAllButton) {
-      loginAllButton.disabled = !!st.loginAllSubmitting || st.pending.size > 0;
+      loginAllButton.disabled = !!st.loginAllSubmitting || st.pending.size > 0 || st.profileSaving.size > 0;
       loginAllButton.title = (qs().length ? '重登符合当前筛选的全部外部子号' : '重登全部外部子号') + '，自动跳过任务未结束的账号';
     }
-    if (el('extm-batch-del')) el('extm-batch-del').disabled = busy;
+    if (el('extm-batch-del')) el('extm-batch-del').disabled = busy || saving;
     var pushing = st.sub2Submitting || st.rows.some(function (r) { return st.sel.has(r.id) && ['pending', 'syncing'].includes(r.sub2_status); });
     setLoading(el('extm-sub2-push'), !!pushing, pushing ? 'Sub2 同步中…' : '推送 Sub2');
     if (el('extm-sub2-push')) el('extm-sub2-push').disabled = !!pushing || !st.sel.size || busy;
@@ -554,7 +584,7 @@
     if (!content) { opMsg('请粘贴要导入的子号', 'err'); return; }
     setLoading(btn, true, '导入中'); opMsg('导入中…', 'mut');
     try {
-      var r = await api('/members/import', { method: 'POST', body: { content: content, on_duplicate: el('extm-dup').value } });
+      var r = await api('/members/import', { method: 'POST', body: { content: content, on_duplicate: el('extm-dup').value, profile_preference: el('extm-import-profile').value } });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
       if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，展开账号行查看进度和日志';
       opMsg(msg, r.failed ? 'err' : 'ok'); ta.value = ''; await load(true);
@@ -564,6 +594,7 @@
 
   async function startLogin(ids, expandFirst) {
     if (st.loginAllSubmitting) return;
+    if (ids.some(function (id) { return st.profileSaving.has(id); })) { toast('warning', '请等待登录配置保存完成'); return; }
     if (ids.some(function (id) { var row = rowById(id); return row && running(row); })) { toast('warning', '所选账号正在登录，请等待任务完成'); return; }
     ids.forEach(function (id) { st.pending.add(id); });
     ++st.loadSeq; renderRows();
@@ -584,7 +615,7 @@
   }
 
   async function loginAll() {
-    if (st.loginAllSubmitting || st.pending.size) return;
+    if (st.loginAllSubmitting || st.pending.size || st.profileSaving.size) return;
     var filters = { login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q };
     var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
     st.loginAllSubmitting = true;
