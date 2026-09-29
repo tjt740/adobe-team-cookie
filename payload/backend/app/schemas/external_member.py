@@ -12,6 +12,7 @@ class ExternalMemberOut(BaseModel):
 
     id: int
     email: str
+    note: str = ""
     credits_available: float | None = None
     credits_total: float | None = None
     account_profile: AccountProfile | None = None
@@ -41,6 +42,10 @@ class ExternalImportRequest(BaseModel):
 
 class ExternalProfilePreferenceUpdate(BaseModel):
     profile_preference: ProfilePreference
+
+
+class ExternalNoteUpdate(BaseModel):
+    note: str = Field(max_length=1000)
 
 
 class ExternalBatchProfilePreferenceUpdate(ExternalProfilePreferenceUpdate):

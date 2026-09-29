@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, MessageResult, Page
-from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalProfilePreferenceUpdate
+from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
 
@@ -23,7 +23,7 @@ _login_lock = Lock()
 
 def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
     return ExternalMemberOut(
-        id=m.id, email=m.email,
+        id=m.id, email=m.email, note=m.note,
         credits_available=m.credits_available, credits_total=m.credits_total,
         account_profile=m.account_profile,
         profile_preference=m.profile_preference,
@@ -71,6 +71,17 @@ def list_members(
 @router.get("/members/sub2-stock", summary="按邮箱核对外部子号在 Sub2 的实时库存")
 def sub2_stock(refresh: bool = False, db: Session = Depends(get_db)) -> dict:
     return external_sub2_stock.membership(db, refresh=refresh)
+
+
+@router.patch("/members/{member_id}/note", summary="保存外部子号备注")
+def update_note(member_id: int, payload: ExternalNoteUpdate,
+                db: Session = Depends(get_db)) -> dict:
+    member = crud.get(db, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    member.note = payload.note.strip()
+    db.commit()
+    return {"note": member.note, "message": "备注已保存"}
 
 
 def _save_login_profiles(ids, preference, db) -> dict:

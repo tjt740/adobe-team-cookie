@@ -5,7 +5,7 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var st = { rows: [], sel: new Set(), statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -42,7 +42,9 @@
     '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
     '.extm-batch-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266;white-space:nowrap}.extm-batch-profile select.extm-in{height:34px;width:156px;padding:0 6px;font-size:12px}.extm-batch-profile select:disabled{opacity:.55;cursor:not-allowed}',
     '.extm-tw{overflow-x:auto}',
-    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1560px}',
+    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1800px}',
+    '.extm-note-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.extm-note-empty{color:#a3acb9}',
+    '.extm-note-dialog{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(480px,calc(100vw - 40px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--ws-line,#e4eaf2);border-radius:14px;padding:24px;background:var(--ws-card,#fff);color:var(--ws-text,#333639);box-shadow:0 20px 80px #18294533}.extm-note-dialog::backdrop{background:#17263d66}.extm-note-dialog .extm-btn[type=submit]{background:#2080f0;border-color:#2080f0}.extm-note-dialog .extm-btn[type=submit]:hover:not(:disabled){background:#4098fc;border-color:#4098fc}.extm-note-dialog .extm-ta:focus{border-color:#2080f0;box-shadow:0 0 0 2px #2080f026}.extm-note-dialog h3{margin:0 0 8px;font-size:18px}.extm-note-dialog p{margin:0 0 18px;color:var(--ws-muted,#7d8797);font-size:13px;overflow-wrap:anywhere}.extm-note-dialog label{display:block;margin-bottom:8px;font-size:13px}.extm-note-dialog .extm-ta{min-height:150px}.extm-note-help{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--ws-muted,#7d8797);margin-top:6px}.extm-note-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.extm-note-error{color:#d03050;font-size:12px;white-space:pre-wrap;margin-top:10px}.extm-note-error:empty{display:none}',
     '.extm-t th{text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:#909399;background:#fafafc;border-bottom:1px solid #efeff5;white-space:nowrap}',
     '.extm-t td{padding:12px;border-bottom:1px solid #f2f3f5;color:#333639;vertical-align:middle;white-space:nowrap}.extm-t th{padding:11px 12px}',
     '.extm-t td:last-child{white-space:nowrap}',
@@ -155,10 +157,10 @@
             '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
           '</div></details>' +
         '</div>' +
-        '<div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:174px"></colgroup><thead><tr>' +
+        '<div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:200px"><col style="width:96px"><col style="width:210px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th title="最近一次导入或登录的操作人">操作人</th><th>邮箱导入时间</th><th>最后登录</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
+          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
+        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="12" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
       '</div>';
 
     el("extm-do-import").onclick = doImport;
@@ -215,9 +217,9 @@
 
   function load(silent) {
     var body = el("extm-tbody"); if (!body) return Promise.resolve();
-    if (st.profileSaving.size) return Promise.resolve();
+    if (st.profileSaving.size || st.noteSaving) return Promise.resolve();
     var seq = ++st.loadSeq;
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty">加载中…</td></tr>';
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="12" class="extm-empty">加载中…</td></tr>';
     return api("/members?" + qs().concat(["size=1000"]).join("&")).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.rows = d.items || [];
@@ -227,7 +229,7 @@
       renderRows();
     }).catch(function (e) {
       if (seq !== st.loadSeq) return;
-      if (!st.rows.length) body.innerHTML = '<tr><td colspan="11" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
+      if (!st.rows.length) body.innerHTML = '<tr><td colspan="12" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
       else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
     });
   }
@@ -258,7 +260,7 @@
 
   function renderRows() {
     var body = el("extm-tbody"); if (!body) return;
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty">暂无匹配的外部子号</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="12" class="extm-empty">暂无匹配的外部子号</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -282,9 +284,10 @@
           (busy ? (r.latest_job ? jobPill(r.latest_job) : '<span class="extm-pill warn">提交中</span>') : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
           (!busy && r.login_status === 'ok' && (!message || message.trim() === '登录成功') ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
         '<td>' + subPill(r) + '</td>' +
-        '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
         '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
-        '<td><div class="extm-actions"><button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + busy + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? ((r.latest_job && r.latest_job.status === 'paused') ? '' : spinner()) + (st.pending.has(r.id) ? '提交中' : ({paused:'已暂停',pausing:'暂停中',cancelling:'终止中'}[(r.latest_job || {}).status] || '登录中')) : '重登') + '</button>' +
+        '<td><span class="extm-note-text' + (r.note ? '' : ' extm-note-empty') + '" title="' + esc(r.note || '暂无备注') + '">' + esc(r.note || '—') + '</span></td>' +
+        '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
+        '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + busy + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? ((r.latest_job && r.latest_job.status === 'paused') ? '' : spinner()) + (st.pending.has(r.id) ? '提交中' : ({paused:'已暂停',pausing:'暂停中',cancelling:'终止中'}[(r.latest_job || {}).status] || '登录中')) : '重登') + '</button>' +
         '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
       if (tr !== cursor) body.insertBefore(tr, cursor);
@@ -293,7 +296,7 @@
         var fresh = false;
         var detail = body.querySelector('tr[data-detail="' + r.id + '"]');
         if (!detail) { fresh = true; detail = document.createElement("tr"); detail.dataset.detail = r.id; detail.className = "extm-detail-row"; detail.innerHTML = '<td><div class="extm-fold is-closed"><div class="extm-fold-clip"><div class="extm-detail" id="extm-detail-' + r.id + '"></div></div></div></td>'; }
-        detail.firstElementChild.colSpan = 11;
+        detail.firstElementChild.colSpan = 12;
         if (detail !== cursor) body.insertBefore(detail, cursor);
         cursor = detail.nextElementSibling;
         renderDetail(r.id);
@@ -313,10 +316,45 @@
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
       if (b.hasAttribute("data-copy-email")) copyEmail(Number(b.dataset.copyEmail));
+      if (b.hasAttribute("data-note")) editNote(Number(b.dataset.note));
       if (b.hasAttribute("data-login")) reloginOne(Number(b.dataset.login));
       if (b.hasAttribute("data-del")) doDelete([Number(b.dataset.del)]);
     };
     updSel();
+  }
+
+  function editNote(id) {
+    var row = rowById(id); if (!row || el('extm-note-dialog')) return;
+    var dialog = document.createElement('dialog'); dialog.id = 'extm-note-dialog'; dialog.className = 'extm-note-dialog';
+    dialog.setAttribute('aria-labelledby', 'extm-note-title');
+    dialog.innerHTML = '<form><h3 id="extm-note-title">编辑备注</h3><p>' + esc(row.email) + '</p>' +
+      '<label for="extm-note-input">备注内容</label><textarea id="extm-note-input" class="extm-ta" maxlength="1000" placeholder="填写这个账号的备注…"></textarea>' +
+      '<div class="extm-note-help"><span>最多 1000 字，清空后保存即可删除备注</span><span id="extm-note-count"></span></div>' +
+      '<div class="extm-note-error" role="alert"></div><footer><button class="extm-btn dft" type="button">取消</button><button class="extm-btn" type="submit">保存备注</button></footer></form>';
+    el(HOST_ID).appendChild(dialog);
+    var form = dialog.querySelector('form'), input = dialog.querySelector('textarea'), error = dialog.querySelector('[role=alert]');
+    var cancel = dialog.querySelector('[type=button]'), save = dialog.querySelector('[type=submit]'), busy = false;
+    input.value = row.note || '';
+    input.oninput = function () { setText(el('extm-note-count'), input.value.length + '/1000'); }; input.oninput();
+    cancel.onclick = function () { if (!busy) dialog.close(); };
+    dialog.addEventListener('cancel', function (event) { if (busy) event.preventDefault(); });
+    dialog.addEventListener('close', function () {
+      dialog.remove();
+      var button = document.querySelector('[data-note="' + id + '"]');
+      if (st.open && button) button.focus({ preventScroll: true });
+    });
+    form.onsubmit = async function (event) {
+      event.preventDefault(); if (busy) return;
+      busy = true; st.noteSaving = true; ++st.loadSeq; error.textContent = '';
+      input.disabled = cancel.disabled = true; setLoading(save, true, '保存中…');
+      try {
+        var result = await api('/members/' + id + '/note', { method: 'PATCH', body: { note: input.value } });
+        var current = rowById(id); if (current) current.note = result.note;
+        renderRows(); dialog.close(); toast('success', result.note ? '备注已保存' : '备注已清空');
+      } catch (e) { error.textContent = '保存失败：' + e.message; }
+      finally { busy = false; st.noteSaving = false; input.disabled = cancel.disabled = false; setLoading(save, false, '保存备注'); await load(true); }
+    };
+    dialog.showModal(); input.focus();
   }
 
   async function saveSelectedProfilePreference(preference) {
@@ -683,7 +721,7 @@
     if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
     positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
   }
-  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; st.stock = null; st.stockEpoch++; }
+  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,

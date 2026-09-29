@@ -17,6 +17,7 @@ class ExternalMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")
 
     # 导入的微软邮箱凭据(收 Adobe 验证码用):邮箱----密码----ClientID----RefreshToken
     mail_password: Mapped[str] = mapped_column(String(255), default="")
