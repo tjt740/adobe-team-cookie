@@ -24,7 +24,7 @@ def build_profile_snapshot(context, credits_account_id):
         # subscription owners (a personal identity can have organization plans).
         current = ProfileItem(profile_id=current_id, kind=kind, org_id=org_id,
                               name=(current.name if current else "") or ("个人配置" if kind == "personal" else ""),
-                              status="active")
+                              status=(current.status if current else "") or "active")
         profiles[current_id] = current
     owners = {}
     for raw in context.get("abp_subscriptions") or []:

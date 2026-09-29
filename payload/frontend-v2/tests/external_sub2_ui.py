@@ -95,9 +95,12 @@ async def main():
         # Missing links require an explicit confirmation, cancellation is read-only.
         reject = False
         relink = page.locator('#extm-sub2-relink')
+        await expect(relink).to_be_hidden()
+        await page.locator('#extm-more-actions > summary').click()
         page.once('dialog', lambda dialog: dialog.dismiss())
         await relink.click()
         assert relinks == []
+        await page.locator('#extm-more-actions > summary').click()
         page.once('dialog', lambda dialog: dialog.accept())
         await relink.click()
         await expect(relink).to_be_disabled()

@@ -23,6 +23,14 @@ def test_looks_deleted_matches_status_field():
     assert looks_deleted_org({"name": "Acme", "status": "DELETED"}) is True
 
 
+def test_del_prefix_only_matches_org_names():
+    assert looks_deleted_org(" DEL-旧组织") is True
+    assert looks_deleted_org({"name": "Company", "description": "del-Old Team"}) is True
+    assert looks_deleted_org("Delta Team") is False
+    assert looks_deleted_org("Model-Team") is False
+    assert looks_deleted_org({"name": "Company", "id": "DEL-123"}) is False
+
+
 def test_looks_deleted_ignores_live_org():
     assert looks_deleted_org({"name": "Acme Team", "status": "ACTIVE"}) is False
     assert looks_deleted_org("Acme Team") is False

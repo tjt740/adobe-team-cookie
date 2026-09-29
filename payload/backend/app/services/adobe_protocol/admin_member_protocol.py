@@ -631,17 +631,20 @@ def looks_deleted_org(o: Any) -> bool:
     拿到已删组织的真实 JSON 后应当收紧成精确判据。
     """
     if isinstance(o, str):
-        text = o
+        names = [o]
     elif isinstance(o, dict):
         for key in _ORG_STATUS_KEYS:
             val = str(o.get(key) or "")
             if val and any(m in val.lower() for m in _DELETED_MARKERS):
                 return True
-        text = " ".join(str(o.get(k) or "") for k in _ORG_NAME_KEYS)
+        names = [str(o.get(k) or "") for k in _ORG_NAME_KEYS]
     else:
         return False
-    low = text.lower()
-    return any(m in low for m in _DELETED_MARKERS)
+    # DEL- is a name prefix used by stale profiles; do not match ordinary
+    # names such as Delta or unrelated metadata fields containing "del".
+    return any(name.strip().lower().startswith("del-")
+               or any(m in name.lower() for m in _DELETED_MARKERS)
+               for name in names)
 
 
 def choose_org(orgs: list[dict[str, Any]]) -> dict[str, Any]:

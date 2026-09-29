@@ -587,30 +587,21 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
 def _pick_enterprise_profile(
     a2: "AdminAuth", lf: LogFn, fps: list | None
 ) -> tuple[str, str]:
-    """挑出这个号要切过去的企业资料,返回 ``(entitlementAccountUserId, 名字)``。
+    """收集所有配置,优先选择未停用且没有删除标记的企业资料。
 
-    为什么不能用 filtered_profiles 的结果:那个接口的 filter 是
-    ``isSessionForwardProfile()``,只回「会话默认转发」的那一条 —— 实测一个挂在
-    具名组织下的子号,它只返回 1 条 ``Personal Account``(个人 @AdobeID),具名
-    企业资料压根不在列表里。拿这个个人 guid 去 filterprofilemapping,会话就一直
-    停在个人身份上,clio 只会铸出 type1 token,额度接口于是只给个人免费层 10。
-
-    企业资料只能从 ``accounts/me`` 的 ``profileData.links`` 拿,那里的
-    ``entitlementAccountUserId`` 形如 ``<id>@<org>.e``,才是企业会员 id。
-    用它当 guid 切一次会话,account_type 就变 type2e、额度变 4000(已实测:
-    ClydieNomoto3868 10/10 → 3990/4000,ownerOrg 同时出现)。
-    ``adobe_admin._select_org_profile`` 早就是这么做的,只是子号这条链没用上。
-
-    这里的 accounts/me 是纯 GET:不切资料、不换 token、不动会话状态。
-    取证日志一并保留 —— 缺了它们,上面这些结论当初根本查不出来。
+    filtered_profiles 可能只含个人配置,用 accounts/me 补齐组织链接。
+    link 的 active 仅表示链接状态,选中后仍需检查实际授权是否过期。
     """
     a2._available_profiles = [
         {"profile_id": p.get("userId") or "", "name": p.get("description") or "",
-         "kind": "personal" if p.get("description") == "Personal Account" else "unknown",
-         "status": "disabled" if p.get("disabled") else "active"}
+         "kind": "personal" if (p.get("userId") or "").endswith("@AdobeID") else "unknown",
+         "status": ("disabled" if p.get("disabled") else "suspected_deleted"
+                    if _p.looks_deleted_org(p.get("description") or "") else "active")}
         for p in (fps or []) if isinstance(p, dict)
     ]
     a2._profiles_complete = False
+    disabled_ids = {p.get("userId") for p in (fps or [])
+                    if isinstance(p, dict) and p.get("disabled")}
     try:
         raw = json.dumps(fps or [], ensure_ascii=False)
         lf(f"firefly 取证:filteredProfiles 共 {len(fps or [])} 条 {raw[:1000]}")
@@ -626,7 +617,9 @@ def _pick_enterprise_profile(
         a2._available_profiles.extend(
             {"profile_id": lk.get("entitlementAccountUserId") or "",
              "name": lk.get("description") or "", "kind": "organization",
-             "status": lk.get("status") or "active"}
+             "status": ("disabled" if lk.get("entitlementAccountUserId") in disabled_ids
+                        else "suspected_deleted" if _p.looks_deleted_org(lk.get("description") or "")
+                        else lk.get("status") or "active")}
             for lk in links if isinstance(lk, dict) and lk.get("entitlementAccountUserId")
         )
         lf(f"firefly 取证:accounts/me status={r.status_code} "
@@ -643,18 +636,18 @@ def _pick_enterprise_profile(
             if isinstance(lk, dict)
             and lk.get("entitlementAccountUserId")
             and lk.get("status", "active") == "active"
+            and lk["entitlementAccountUserId"] not in disabled_ids
         ]
         if not usable:
             return "", ""
-        # 组织被删之后 link 的 status 仍然是 active,死信号在 description 里
-        # ("… Deleted")。把看着已删的排到最后而不是丢掉:全删光时仍要选得出来。
-        # 与 adobe_admin._select_org_profile 同一套判据。
+        # Firefly can use a personal profile; never force a stale organization
+        # merely because its link still reports active.
         dead = [lk for lk in usable if _p.looks_deleted_org(lk.get("description") or "")]
-        if dead and len(dead) < len(usable):
-            lf(f"firefly type2e:跳过 {len(dead)} 个已删组织的企业资料,优先选活的")
-        elif dead:
-            lf(f"⚠ firefly type2e:{len(dead)} 个企业资料全都看着已删,只能先用第一个")
-        usable.sort(key=lambda lk: 1 if _p.looks_deleted_org(lk.get("description") or "") else 0)
+        if dead:
+            lf(f"firefly:跳过 {len(dead)} 个疑似已删除的组织配置")
+        usable = [lk for lk in usable if not _p.looks_deleted_org(lk.get("description") or "")]
+        if not usable:
+            return "", ""
         if len(usable) > 1:
             lf(f"⚠ firefly type2e:有 {len(usable)} 个可用企业资料,按顺序取第一个"
                f"(可能不是额度最多的那个)")
@@ -667,49 +660,56 @@ def _pick_enterprise_profile(
 
 def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
                           lf: LogFn, cap) -> str:
-    """会话建好之后的公共收尾:企业 profile -> ims/tokens -> fromSusi -> clio token。
-
-    密码登录和验证码登录走到这里是一样的,所以抽出来共用。
-    """
-    # 企业资料 link 已在 complete_sub_account 里用补全会话激活过(激活会作废会话,不能放这里)。
-    # filtered_profiles -> 企业会员 guid
-    ent_guid = ""
-    try:
-        r = a2.client.get(
-            f"{_p.AUTH_HOST}/signin/v2/accounts/filtered_profiles?filter=isSessionForwardProfile%28%29",
-            headers=a2.headers(), timeout=15)
-        cap(r)
-        fps = (r.json() or {}).get("filteredProfiles") or []
-        if fps:
-            ent_guid = fps[0].get("userId") or ""
-        lf(f"firefly type2e:filtered_profiles status={r.status_code} "
-           f"session_forward_guid={ent_guid or '-'}")
-        # filtered_profiles 只回 session-forward(个人)那条;真正带额度的具名企业
-        # 资料要去 accounts/me 拿。拿得到就用企业的,拿不到才退回个人。
-        org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps)
-        a2._profiles_complete = a2._profiles_complete and r.status_code == 200
-        if org_guid:
-            lf(f"firefly type2e:选择企业资料「{org_desc or '-'}」guid={org_guid}")
-            ent_guid = org_guid
-        elif ent_guid:
-            lf("firefly type2e:无可用企业资料,沿用 session-forward 个人资料"
-               "(该号若本该有组织额度,就会只拿到个人免费层)")
-    except Exception as e:  # noqa: BLE001
-        lf(f"firefly type2e:filtered_profiles 异常:{e}")
+    """优先保留正常企业配置;疑似删除或明确过期时使用个人配置。"""
+    r = a2.client.get(
+        f"{_p.AUTH_HOST}/signin/v2/accounts/filtered_profiles?filter=isSessionForwardProfile%28%29",
+        headers=a2.headers(), timeout=15)
+    cap(r)
+    fps = ((r.json() or {}).get("filteredProfiles") or []) if r.status_code == 200 else []
+    personal_guid = next((p.get("userId") for p in fps if isinstance(p, dict)
+                          and not p.get("disabled")
+                          and (p.get("userId") or "").endswith("@AdobeID")), "")
+    lf(f"firefly:filtered_profiles status={r.status_code} personal_guid={personal_guid or '-'}")
+    org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps)
+    a2._profiles_complete = a2._profiles_complete and r.status_code == 200
+    ent_guid = org_guid or personal_guid
     if not ent_guid:
-        raise _adm.AdminError(
-            "type2e:accounts/me 无可用企业资料,filtered_profiles 也没返回任何 "
-            "session-forward profile(会话可能没建起来)")
+        raise _adm.AdminError("未找到可用的组织或个人配置,不会选择疑似已删除或已停用的配置")
+    lf(f"firefly:选择{'组织配置「' + org_desc + '」' if org_guid else '个人配置'} guid={ent_guid}")
+    token, context = _switch_firefly_profile(auth, a2, ent_guid, lf, cap)
+    # Reason 2000 is the observed Adobe response for expired/non-compliant
+    # licenses. Zero credits or unavailable metadata alone do not imply expiry.
+    if (org_guid and context.get("access_profile_status") == 200
+            and str(context.get("access_profile_status_reason")) == "2000"):
+        for item in a2._available_profiles:
+            if item["profile_id"] == org_guid:
+                item["status"] = "expired"
+        if personal_guid:
+            lf("firefly:组织配置授权已过期(reason=2000),回退到个人配置")
+            ent_guid = personal_guid
+            token, context = _switch_firefly_profile(auth, a2, ent_guid, lf, cap)
+        else:
+            lf("firefly:组织配置授权已过期,没有可回退的个人配置")
+    context.update(available_profiles=a2._available_profiles,
+                   profiles_complete=a2._profiles_complete)
+    auth.susi_token = token
+    auth._enterprise_account_id = ent_guid
+    auth._firefly_context = context
+    lf(f"✓ 子号 firefly token 获取成功(account_type={context['check_account_type']})")
+    return token
 
-    # filterprofilemapping guid=企业会员id
-    try:
-        r = a2.client.put(
-            f"{_p.AUTH_HOST}/signin/v1/filterprofilemapping", headers=a2.headers(),
-            json={"filter": "isSessionForwardProfile()", "guid": ent_guid}, timeout=15)
-        cap(r)
-        lf(f"firefly type2e:filterprofilemapping status={r.status_code}")
-    except Exception as e:  # noqa: BLE001
-        lf(f"firefly type2e:filterprofilemapping 异常:{e}")
+
+def _switch_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
+                            lf: LogFn, cap) -> tuple[str, dict]:
+    """切换会话并核对实际 token 身份;回退后 Cookie 与额度身份必须一致。"""
+
+    r = a2.client.put(
+        f"{_p.AUTH_HOST}/signin/v1/filterprofilemapping", headers=a2.headers(),
+        json={"filter": "isSessionForwardProfile()", "guid": ent_guid}, timeout=15)
+    cap(r)
+    lf(f"firefly:filterprofilemapping status={r.status_code}")
+    if not 200 <= r.status_code < 300:
+        raise _adm.AdminError(f"firefly 配置切换失败 status={r.status_code}")
 
     # ims/tokens force
     try:
@@ -745,29 +745,25 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
     tok3 = data.get("access_token") or ""
     acct = data.get("account_type") or ""
     lf(f"firefly type2e:check/v6/token account_type={acct} got_token={bool(tok3)}")
-    if not tok3:
+    if r.status_code != 200 or not tok3:
         raise _adm.AdminError(f"firefly check/v6/token 未返回 token status={r.status_code}")
-    if acct != "type2e":
-        lf(f"⚠ firefly token 非 type2e(account_type={acct}),额度可能偏低")
-    auth.susi_token = tok3
-    auth._enterprise_account_id = ent_guid
+    actual_id = data.get("userId") or extract_account_id(tok3)
+    expected_type = "type1" if ent_guid.endswith("@AdobeID") else "type2e"
+    if actual_id != ent_guid or acct != expected_type:
+        raise _adm.AdminError("firefly 配置切换后身份不一致,停止保存 Cookie 和积分")
     context = {
         "check_status": r.status_code,
         "check_account_type": acct,
-        "check_user_id": data.get("userId") or ent_guid,
+        "check_user_id": actual_id,
         "check_owner_org": data.get("ownerOrg") or "",
         "check_client_id": data.get("client_id") or CLIO_CLIENT_ID,
-        "available_profiles": getattr(a2, "_available_profiles", []),
-        "profiles_complete": getattr(a2, "_profiles_complete", False),
         "token_claims": _token_diagnostics(tok3),
     }
     try:
         context.update(_prepare_firefly_context(auth, tok3, lf))
     except Exception:
         pass
-    auth._firefly_context = context
-    lf(f"✓ 子号 firefly token 获取成功(account_type={acct})")
-    return tok3
+    return tok3, context
 
 
 def register_account(
@@ -870,9 +866,8 @@ def register_account(
         # 403 ErrMismatchOauthToken。它本身不是「选组织」的开关:线上有 26 次用
         # 个人 AdobeID 照样拿到 4000(因为那些号的额度就挂在个人资料上),也有
         # 同一个号用 .e 和用 @AdobeID 都拿到 4000 的自对照。
-        # 真正决定拿 10 还是 4000 的是**会话切没切到企业资料**(见
-        # _pick_enterprise_profile):切了 token 才是 type2e,额度才是组织的。
-        # 切过去之后 _enterprise_account_id 就是那个 .e id,与 token 自洽。
+        # _enterprise_account_id 保存最终选定的配置(也可能是个人 AdobeID),
+        # 授权和额度以该身份的实际查询结果为准。
         ent_from_auth = getattr(auth, "_enterprise_account_id", "") or ""
         user_id = token_user_id or profile_user_id
         credits_account_id = account_id or ent_from_auth or user_id

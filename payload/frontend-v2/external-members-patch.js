@@ -39,6 +39,7 @@
     '.extm-tools .sp{flex:1}',
     '.extm-tools .selc{font-size:13px;color:#909399}.extm-tools .selc b{color:#18a058}',
     '.extm-batch-controls{display:flex;align-items:center;gap:10px}.extm-detail:not(.extm-manage-history) .extm-history-select,.extm-detail:not(.extm-manage-history) [data-action=delete]{display:none}.extm-pill.info{background:#eaf2ff;color:#3b82f6}',
+    '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
     '.extm-tw{overflow-x:auto}',
     '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1560px}',
     '.extm-t th{text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:#909399;background:#fafafc;border-bottom:1px solid #efeff5;white-space:nowrap}',
@@ -144,11 +145,13 @@
           '</div><div class="extm-batch-row">' +
           '<div class="extm-batch-controls"><span class="selc">已选 <b id="extm-selc">0</b></span>' +
           '<button class="extm-btn o sm" id="extm-batch-login" disabled>选中批量重登</button>' +
-          '<button class="extm-btn o sm" id="extm-login-all" title="重登全部外部子号，自动跳过任务未结束的账号">一键重登全部</button>' +
           '<button class="extm-btn del sm" id="extm-batch-del">删除选中</button></div>' +
           '<span class="ws-spacer"></span><button class="extm-btn o sm" id="extm-export">导出全部 Cookie</button>' +
           '<button class="extm-btn o sm" id="extm-sub2-push" disabled>推送 Sub2</button>' +
-          '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
+          '<details class="ws-maintenance-menu" id="extm-more-actions"><summary>更多操作 ▾</summary><div>' +
+            '<button class="extm-btn dft sm" id="extm-login-all" title="重登全部外部子号，自动跳过任务未结束的账号">一键重登全部</button>' +
+            '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
+          '</div></details>' +
         '</div>' +
         '<div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:174px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择全部账号"></th><th></th>' +
@@ -159,10 +162,19 @@
     el("extm-do-import").onclick = doImport;
     el("extm-refresh").onclick = function () { refreshAll(true); refreshStock(true); };
     el("extm-batch-login").onclick = batchLogin;
-    el("extm-login-all").onclick = loginAll;
+    var moreActions = el("extm-more-actions");
+    el("extm-login-all").onclick = function () { moreActions.open = false; loginAll(); };
     el("extm-export").onclick = exportCookies;
     el("extm-sub2-push").onclick = function () { pushSub2(false); };
-    el("extm-sub2-relink").onclick = function () { pushSub2(true); };
+    el("extm-sub2-relink").onclick = function () { moreActions.open = false; pushSub2(true); };
+    document.addEventListener("click", function (event) {
+      if (!moreActions.contains(event.target)) moreActions.open = false;
+    });
+    moreActions.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        moreActions.open = false; moreActions.querySelector("summary").focus();
+      }
+    });
     el("extm-batch-del").onclick = batchDelete;
     el("extm-f-status").onchange = function () { st.statusF = this.value; updSel(); load(); };
     el("extm-f-sub").onchange = function () { st.subF = this.value; updSel(); load(); };
@@ -363,7 +375,7 @@
       var current = !!item.profile_id && item.profile_id === p.current_profile_id;
       return '<div class="extm-profile-option"><div>' + profilePill({current_kind:item.kind}) +
         '<strong>' + esc(item.name || '名称未获取') + '</strong>' + (current ? '<span class="extm-pill ok">当前使用</span>' : '') +
-        '<span class="extm-msg mut">' + esc(({active:'有效',disabled:'已停用',inactive:'未激活'}[item.status]) || item.status || '状态未获取') + '</span></div>' +
+        '<span class="extm-msg mut">' + esc(({active:'已启用',disabled:'已停用',inactive:'未激活',suspected_deleted:'疑似已删除',expired:'授权已过期'}[item.status]) || item.status || '状态未获取') + '</span></div>' +
         '<div class="extm-profile-id">配置 ID：' + esc(item.profile_id || '未获取') + (item.org_id ? ' · 组织 ID：' + esc(item.org_id) : '') + '</div></div>';
     }).join('') || '<p class="extm-msg mut">未获取配置列表</p>';
     html += '</div>';
@@ -643,7 +655,7 @@
     if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
     positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
   }
-  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); st.open = false; st.stock = null; st.stockEpoch++; }
+  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,

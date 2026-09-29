@@ -64,6 +64,11 @@ async def main():
         await page.goto(BASE + '/external-members')
         await expect(page.locator('tr[data-member]')).to_have_count(3)
         batch, all_button = page.locator('#extm-batch-login'), page.locator('#extm-login-all')
+        async def click_all():
+            await page.locator('#extm-more-actions > summary').click()
+            await all_button.click()
+
+        await expect(all_button).to_be_hidden()
         await expect(batch).to_be_disabled()
         await expect(all_button).to_have_text('一键重登全部')
         email = page.locator('[data-member="1"] .extm-email')
@@ -96,7 +101,7 @@ async def main():
         await page.locator('#extm-refresh').click()
         await expect(batch).to_be_enabled()
         await page.locator('[data-member="3"] .extm-rowck').uncheck()
-        await all_button.click()
+        await click_all()
         await expect(all_button).to_have_text('提交重登中…')
         await expect(batch).to_be_disabled()
         await expect(page.locator('#extm-op')).to_contain_text('已提交 2 个账号重登，跳过 1 个')
@@ -108,7 +113,8 @@ async def main():
         await page.reload()
         await expect(page.locator('[data-login="1"]')).to_be_disabled()
         await expect(page.locator('[data-login="3"]')).to_be_disabled()
-        await all_button.click()
+        await expect(all_button).to_be_hidden()
+        await click_all()
         await expect(page.locator('#extm-op')).to_contain_text('已提交 0 个账号重登，跳过 3 个')
         await expect(all_button).to_be_enabled()
 
@@ -118,19 +124,19 @@ async def main():
         await page.locator('#extm-f-sub').select_option('true')
         await expect(page.locator('tr[data-member]')).to_have_count(1)
         await expect(all_button).to_have_text('一键重登筛选结果')
-        await all_button.click()
+        await click_all()
         await expect(page.locator('#extm-op')).to_contain_text('已提交 1 个账号重登，跳过 0 个')
         assert calls[-1][1] == {'keyword': 'account3', 'login_status': 'ok', 'subscription_ok': True}
         await expect(all_button).to_be_enabled()
         reject = True
-        await all_button.click()
+        await click_all()
         await expect(page.locator('#extm-op')).to_have_text('模拟重登提交失败')
         await expect(all_button).to_be_enabled()
         assert len(calls) == 5
         reject = False
         await page.locator('#extm-f-kw').fill('missing')
         await expect(page.locator('tr[data-member]')).to_have_count(0)
-        await all_button.click()
+        await click_all()
         await expect(page.locator('#extm-op')).to_contain_text('已提交 0 个账号重登，跳过 0 个')
         await expect(all_button).to_be_enabled()
         await page.locator('#extm-f-kw').fill('')
