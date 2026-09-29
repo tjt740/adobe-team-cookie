@@ -51,6 +51,43 @@ def test_missing_member_returns_404(client):
     assert client.patch('/api/external/members/999/login-profile', json={"profile_preference": "personal"}).status_code == 404
 
 
+@pytest.mark.parametrize("count,preference", [(1, "personal"), (2, "organization"), (2, "")])
+def test_batch_save_only_changes_selected_accounts_without_login(client, db, monkeypatch, count, preference):
+    members = [ExternalMember(email=f"batch-{i}@example.com", profile_preference="personal" if i == 0 else "organization",
+                              cookie=f"cookie-{i}", account_profile={"current_kind": "personal"}) for i in range(3)]
+    db.add_all(members); db.commit()
+    monkeypatch.setattr(JOBS, "start", lambda *a, **kw: pytest.fail("Saving preferences must not start login"))
+    ids = [m.id for m in members[:count]]
+    response = client.patch('/api/external/members/login-profile', json={"ids": ids + ids, "profile_preference": preference})
+    assert response.status_code == 200 and response.json()["updated"] == count
+    for i, member in enumerate(members):
+        db.refresh(member)
+        assert member.profile_preference == (preference if i < count else "organization")
+        assert member.cookie == f"cookie-{i}" and member.account_profile == {"current_kind": "personal"}
+
+
+@pytest.mark.parametrize("status", ["running", "pausing", "paused", "cancelling", "missing"])
+def test_batch_save_does_not_partially_apply_on_conflict(client, db, status):
+    members = [ExternalMember(email=f"conflict-{i}@example.com") for i in range(2)]
+    db.add_all(members); db.commit()
+    ids = [m.id for m in members]
+    if status == "missing":
+        ids.append(999)
+    else:
+        _record_job(1, [members[1].id], state=status)
+    response = client.patch('/api/external/members/login-profile', json={"ids": ids, "profile_preference": "personal"})
+    assert response.status_code == (404 if status == "missing" else 409)
+    for member in members:
+        db.refresh(member)
+        assert member.profile_preference == ""
+
+
+@pytest.mark.parametrize("payload", [{"ids": [], "profile_preference": "personal"},
+                                     {"ids": [1], "profile_preference": "auto"}, {"ids": [1]}])
+def test_batch_save_requires_accounts_and_explicit_valid_preference(client, payload):
+    assert client.patch('/api/external/members/login-profile', json=payload).status_code == 422
+
+
 @pytest.mark.parametrize("status", ["running", "pausing", "paused", "cancelling"])
 def test_cannot_change_preference_during_unfinished_login(client, db, status):
     member = ExternalMember(email="busy@example.com")

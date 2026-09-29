@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, MessageResult, Page
-from app.schemas.external_member import ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalProfilePreferenceUpdate
+from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
 
@@ -73,18 +73,31 @@ def sub2_stock(refresh: bool = False, db: Session = Depends(get_db)) -> dict:
     return external_sub2_stock.membership(db, refresh=refresh)
 
 
+def _save_login_profiles(ids, preference, db) -> dict:
+    with _login_lock:
+        ids = list(dict.fromkeys(ids))
+        members = crud.get_many(db, ids)
+        if len(members) != len(ids):
+            raise HTTPException(status_code=404, detail="所选账号已不存在，请刷新后重试")
+        if _active_jobs(ids):
+            raise HTTPException(status_code=409, detail="账号登录任务尚未结束，请完成或终止后修改登录配置")
+        for member in members:
+            member.profile_preference = preference
+        db.commit()
+    return {"profile_preference": preference, "updated": len(members),
+            "message": f"已保存 {len(members)} 个账号的登录配置，下次登录生效"}
+
+
+@router.patch("/members/login-profile", summary="保存选中账号下次登录使用的配置")
+def update_login_profiles(payload: ExternalBatchProfilePreferenceUpdate,
+                          db: Session = Depends(get_db)) -> dict:
+    return _save_login_profiles(payload.ids, payload.profile_preference, db)
+
+
 @router.patch("/members/{member_id}/login-profile", summary="保存账号下次登录使用的配置")
 def update_login_profile(member_id: int, payload: ExternalProfilePreferenceUpdate,
                          db: Session = Depends(get_db)) -> dict:
-    with _login_lock:
-        member = crud.get(db, member_id)
-        if not member:
-            raise HTTPException(status_code=404, detail="条目不存在")
-        if _active_jobs([member_id]):
-            raise HTTPException(status_code=409, detail="账号登录任务尚未结束，请完成或终止后修改登录配置")
-        member.profile_preference = payload.profile_preference
-        db.commit()
-    return {"profile_preference": member.profile_preference, "message": "已保存，下次登录生效"}
+    return _save_login_profiles([member_id], payload.profile_preference, db)
 
 
 @router.post("/members/push-sub2", summary="推送选中外部子号并开启重登后 Cookie 同步")

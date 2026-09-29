@@ -43,6 +43,10 @@ class ExternalProfilePreferenceUpdate(BaseModel):
     profile_preference: ProfilePreference
 
 
+class ExternalBatchProfilePreferenceUpdate(ExternalProfilePreferenceUpdate):
+    ids: list[int] = Field(min_length=1)
+
+
 class ExternalLoginFilter(BaseModel):
     login_status: str | None = None
     subscription_ok: bool | None = None
