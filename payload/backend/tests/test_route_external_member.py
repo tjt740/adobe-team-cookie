@@ -112,7 +112,9 @@ def test_single_member_can_relogin_as_background_job(client, db, monkeypatch):
         "type": "external_login", "worker": external_login.batch_login_worker,
         "meta": {"member_ids": [member.id], "target": 1, "operator": "tester",
                  "member_emails": {str(member.id): member.email},
-                 "member_profile_preferences": {str(member.id): ""}},
+                 "member_profile_preferences": {str(member.id): ""},
+                 "member_code_login": {str(member.id): False},
+                 "member_otp_modes": {str(member.id): "auto"}},
     }
     db.refresh(member)
     assert member.operator == "tester"

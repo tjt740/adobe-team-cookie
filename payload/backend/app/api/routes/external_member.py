@@ -1,6 +1,6 @@
 from threading import Lock
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import capture_job_request, get_current_user
@@ -12,6 +12,9 @@ from app.schemas.common import BatchIds, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
+from app.schemas.external_member import SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
+from app.services import supply_mail, manual_otp
+from app.crud.setting import _set
 
 router = APIRouter(
     prefix="/external",
@@ -19,6 +22,48 @@ router = APIRouter(
     dependencies=[Depends(capture_job_request)],
 )
 _login_lock = Lock()
+
+
+@router.get("/mail/config", summary="获取 supply.ink 取信配置状态")
+def mail_config(db: Session = Depends(get_db)) -> dict:
+    return {"configured": bool(supply_mail.get_token(db)), "api_base": supply_mail.API_BASE}
+
+
+@router.put("/mail/config", summary="保存 supply.ink 取信 Token")
+def save_mail_config(payload: SupplyMailConfigUpdate, db: Session = Depends(get_db)) -> dict:
+    import re
+    token = re.sub(r"^Bearer\s+", "", (payload.token or "").strip(), flags=re.I)
+    if token and not re.fullmatch(r"[A-Za-z0-9._\-]+", token):
+        raise HTTPException(status_code=400, detail="Token 格式无效，请粘贴 Token 裸串")
+    if payload.clear_token or token:
+        _set(db, supply_mail.TOKEN_KEY, "" if payload.clear_token else token)
+        db.commit()
+    return mail_config(db)
+
+
+@router.post("/mail/test", summary="测试 supply.ink 邮件连接")
+def test_mail(db: Session = Depends(get_db)) -> dict:
+    mailbox = supply_mail.SupplyMailbox(supply_mail.get_token(db))
+    try:
+        return mailbox.test()
+    except supply_mail.SupplyMailError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    finally:
+        mailbox.close()
+
+
+@router.get("/members/{member_id}/mail", summary="查看外部子号最近五封 supply.ink 邮件")
+def member_mail(member_id: int, db: Session = Depends(get_db)) -> dict:
+    member = crud.get(db, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    mailbox = supply_mail.SupplyMailbox(supply_mail.get_token(db))
+    try:
+        return {"email": member.email, "messages": mailbox.messages(member.email)}
+    except supply_mail.SupplyMailError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    finally:
+        mailbox.close()
 
 
 def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
@@ -30,6 +75,10 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
         login_status=m.login_status, subscription_ok=m.subscription_ok,
         first_login_done=m.first_login_done, has_cookie=bool(m.cookie),
         has_adobe_password=bool((m.adobe_password or "").strip()),
+        force_code_login=bool(m.force_code_login),
+        uses_supply_mail=m.otp_mode != "manual" and not m.mail_url and not (m.refresh_token and m.client_id),
+        otp_mode=m.otp_mode,
+        otp_challenge=manual_otp.BROKER.status(m.id),
         last_login_at=m.last_login_at, message=m.message, created_at=m.created_at,
         operator=m.operator or "", latest_job=latest_job,
         **external_sub2.summary(m, sub2_target),
@@ -44,13 +93,49 @@ def _start_login(members, db, operator):
         "external_login", external_login.batch_login_worker,
         meta={"member_ids": [m.id for m in members], "target": len(members), "operator": operator,
               "member_emails": {str(m.id): m.email for m in members},
-              "member_profile_preferences": {str(m.id): m.profile_preference for m in members}},
+              "member_profile_preferences": {str(m.id): m.profile_preference for m in members},
+              "member_code_login": {str(m.id): bool(m.force_code_login) for m in members},
+              "member_otp_modes": {str(m.id): m.otp_mode for m in members}},
     )
 
 
 def _active_jobs(ids):
     return {mid: jobs[0] for mid, jobs in JOBS.external_member_jobs(ids).items()
             if jobs[0]["status"] in {"running", "pausing", "paused", "cancelling"}}
+
+
+@router.patch("/members/{member_id}/otp-mode", summary="设置验证码自动获取或手动输入")
+def update_otp_mode(member_id: int, payload: ExternalOtpModeUpdate,
+                    db: Session = Depends(get_db)) -> dict:
+    with _login_lock:
+        member = crud.get(db, member_id)
+        if not member:
+            raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+        if _active_jobs([member_id]) or manual_otp.BROKER.status(member_id):
+            raise HTTPException(status_code=409, detail="账号正在登录，请结束本次任务后切换取码方式")
+        member.otp_mode = payload.otp_mode
+        db.commit()
+    return {"otp_mode": member.otp_mode, "message": "取码方式已保存，下次登录生效"}
+
+
+@router.get("/members/{member_id}/otp", summary="查询正在等待的手动验证码请求")
+def otp_status(member_id: int, response: Response, db: Session = Depends(get_db)) -> dict:
+    if not crud.get(db, member_id):
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    response.headers["Cache-Control"] = "no-store"
+    return {"challenge": manual_otp.BROKER.status(member_id)}
+
+
+@router.post("/members/{member_id}/otp", summary="提交本次登录的手动验证码")
+def submit_otp(member_id: int, payload: ExternalOtpSubmit,
+               db: Session = Depends(get_db)) -> dict:
+    if not crud.get(db, member_id):
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    try:
+        manual_otp.BROKER.submit(member_id, payload.request_id, payload.code)
+    except manual_otp.ManualOtpError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return {"message": "验证码已提交，正在继续登录"}
 
 
 @router.get("/members", response_model=Page[ExternalMemberOut], summary="外部子号分页查询")
@@ -142,7 +227,8 @@ def relink_sub2(payload: BatchIds, background: BackgroundTasks, db: Session = De
 def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)) -> dict:
     result = crud.import_lines(db, payload.content, on_duplicate=payload.on_duplicate,
-                               operator=user.username, profile_preference=payload.profile_preference)
+                               operator=user.username, profile_preference=payload.profile_preference,
+                               otp_mode=payload.otp_mode)
     ids = result.pop("ids", [])
     # 导入成功后自动开一个批量登录任务(任务列表可见、可看日志)
     if ids:

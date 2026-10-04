@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 from urllib.parse import urlencode
 
 from app.services import adobe_admin as _adm
-from app.services.adobe_otp import make_otp_poller
+from app.services.adobe_otp import make_otp_poller, OtpHolder
 from app.services.adobe_protocol import admin_member_protocol as _p
 from app.services.adobe_protocol.admin_member_protocol import AdminAuth
 from app.services.account_profile import build_profile_snapshot
@@ -777,9 +777,51 @@ def _switch_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
     return tok3, context
 
 
+def _try_password_session(auth, email: str, password: str, lf, *, poll, otp_timeout: int) -> bool:
+    """先建立密码认证状态，仅在 Adobe 要求时发送邮件 MFA。"""
+    if not auth.start_email_mfa(email):
+        raise _adm.AdminError("无法建立密码登录认证会话")
+
+    def submit():
+        response = auth.client.post(
+            f"{_p.AUTH_HOST}/signin/v2/tokens?credential=password",
+            headers=auth.headers(),
+            json={"username": email, "usernameType": "EMAIL", "password": password,
+                  "accountType": "individual", "rememberMe": True}, timeout=25,
+        )
+        auth.auth_state_encrypted = response.headers.get("x-ims-authentication-state-encrypted", auth.auth_state_encrypted)
+        auth.identity_verification_token = response.headers.get("x-identity-verification-token", auth.identity_verification_token)
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        return response, data if isinstance(data, dict) else {}
+
+    lf("优先尝试 Adobe 密码登录…")
+    response, data = submit()
+    if data.get("errorCode") == "challenge_required":
+        lf("Adobe 要求邮箱二次验证，开始自动取信…")
+        if not auth.send_email_challenge():
+            raise _adm.AdminError("密码登录邮箱 MFA 发码失败，请稍后重试")
+        if not auth.verify_email_challenge(poll(email, timeout=otp_timeout)):
+            raise _adm.AdminError("密码登录邮箱 MFA 验证失败")
+        response, data = submit()
+    token = data.get("token") or data.get("access_token")
+    if response.status_code == 200 and token:
+        auth.susi_token = token
+        lf("✓ Adobe 密码登录成功")
+        return True
+    if response.status_code == 429:
+        raise _adm.AdminError("Adobe 密码登录被限流（429），请稍后重试")
+    lf("密码登录未建立会话，改用邮箱验证码登录…")
+    return False
+
+
 def register_account(
     *, email: str, refresh_token: str, client_id: str,
     mail_url: str = "", proxy_url: str = "", otp_timeout: int = 180,
+    supply_token: str = "",
+    otp_poller: Optional[Callable[..., str]] = None,
     account_id: str = "", adobe_password: str = "",
     force_code_login: bool = False,
     profile_preference: ProfilePreference = "",
@@ -793,14 +835,18 @@ def register_account(
     lf = _mklog(log)
     if profile_preference not in ("", "personal", "organization"):
         raise ValueError("无效的登录配置")
-    if not ((refresh_token and client_id) or mail_url):
-        raise _adm.AdminError("子号缺少 Refresh Token / Client ID 或取信配置,无法收验证码登录")
+    if otp_poller is None and (force_code_login or not adobe_password) and not ((refresh_token and client_id) or mail_url or supply_token):
+        raise _adm.AdminError("验证码登录需要取信配置，请先保存 supply.ink Token，或提供完整邮箱凭据 / 取信接口")
 
     # 显式传入收码器(不改全局),保证并发拉号时各子号互不干扰
-    poll_codes, holder = make_otp_poller(
-        refresh_token=refresh_token, client_id=client_id,
-        mail_url=mail_url, proxy_url=proxy_url, timeout=otp_timeout, log=lf,
-    )
+    if otp_poller is None:
+        poll_codes, holder = make_otp_poller(
+            refresh_token=refresh_token, client_id=client_id,
+            mail_url=mail_url, proxy_url=proxy_url, timeout=otp_timeout, log=lf,
+            supply_token=supply_token,
+        )
+    else:
+        poll_codes, holder = otp_poller, OtpHolder(refresh_token)
 
     def poller(*args, **kwargs):
         try:
@@ -809,6 +855,8 @@ def register_account(
             # 邮箱令牌已经轮换时,后面的 Adobe 登录即使失败也不能丢掉新令牌。
             if on_credentials and holder.rotated:
                 on_credentials(refresh_token=holder.refresh_token)
+
+    poller.manual_input = bool(getattr(poll_codes, "manual_input", False))
 
     client = _p.HttpClient(proxy=proxy_url)
     try:
@@ -819,8 +867,11 @@ def register_account(
         auth.authorize(email, "en_US")
         methods = _adm._probe_auth_methods(auth, email)
         lf(f"子号 {email} 认证方式:{', '.join(methods) if methods else '无(免密码)'}")
-        # 子号(被邀请的 TYPE2E)通常是免密码账号,用验证码登录
-        _adm._passwordless_login(auth, email, lf, poll=poller, otp_timeout=otp_timeout)
+        password_logged_in = bool(adobe_password and not force_code_login) and _try_password_session(
+            auth, email, adobe_password, lf, poll=poller, otp_timeout=otp_timeout,
+        )
+        if not password_logged_in:
+            _adm._passwordless_login(auth, email, lf, poll=poller, otp_timeout=otp_timeout)
         # 首次登录的被邀请号需补全账号(姓名/密码/生日)并激活企业资料。
         # 返回本次实际设置的密码(账号本来就已补全则是 ""),调用方据此记库。
         set_password = _adm.complete_sub_account(

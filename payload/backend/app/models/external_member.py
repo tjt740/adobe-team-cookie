@@ -24,6 +24,9 @@ class ExternalMember(Base):
     # 这个号的 Adobe 账号密码。导入行带第 5 段就用那一段;自己补全注册的号
     # 则在补全成功后立即写入本次实际设置的密码。
     adobe_password: Mapped[str] = mapped_column(String(255), default="")
+    # 仅邮箱导入明确选择验证码登录；补全账号保存密码后仍保持此选择。
+    force_code_login: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    otp_mode: Mapped[str] = mapped_column(String(16), default="auto", server_default="auto")
     client_id: Mapped[str] = mapped_column(String(255), default="")
     refresh_token: Mapped[str] = mapped_column(Text, default="")
     mail_url: Mapped[str] = mapped_column(Text, default="")

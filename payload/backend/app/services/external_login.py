@@ -16,6 +16,7 @@ from app.crud import external_member as crud
 from app.crud import setting as setting_crud
 from app.db.session import SessionLocal
 from app.services import firefly, log_store, proxy_pool
+from app.services import manual_otp
 from app.services.job_manager import Job, JobCancelled
 from app.schemas.account_profile import AccountProfile, ProfilePreference
 
@@ -65,7 +66,7 @@ def _classify(err: str) -> str:
         return "rate_limited"
     if "disabled" in low or "not found" in low or "no account" in low or "banned" in low:
         return "account_disabled"
-    if "password" in low or "otp" in low or "captcha" in low or "验证码" in low or "login" in low:
+    if "password" in low or "otp" in low or "captcha" in low or "验证码" in low or "login" in low or "supply.ink" in low:
         return "login_failed"
     return "internal"
 
@@ -73,6 +74,9 @@ def _classify(err: str) -> str:
 def _login_with_proxy_retry(
     *, email: str, refresh_token: str, client_id: str, mail_url: str,
     proxy_raw: str, lf, adobe_password: str = "",
+    supply_token: str = "",
+    force_code_login: bool = False,
+    otp_poller=None,
     profile_preference: ProfilePreference = "",
     on_credentials=None,
 ) -> tuple[dict | None, Exception | None]:
@@ -105,10 +109,12 @@ def _login_with_proxy_retry(
                 email=email, refresh_token=refresh_token, client_id=client_id,
                 mail_url=mail_url, proxy_url=proxy, otp_timeout=180,
                 adobe_password=adobe_password,
+                supply_token=supply_token,
                 profile_preference=profile_preference,
-                force_code_login=FORCE_CODE_LOGIN,
+                force_code_login=force_code_login or FORCE_CODE_LOGIN,
                 log=lambda mm: lf(f"[{email}] {mm}"),
                 on_credentials=update_credentials,
+                **({"otp_poller": otp_poller} if otp_poller is not None else {}),
             )
         except Exception as e:  # noqa: BLE001
             last_exc = e
@@ -130,7 +136,9 @@ def _login_with_proxy_retry(
 
 
 def login_and_store(member_id: int, *, log=None, check_cancelled=None,
-                    profile_preference: ProfilePreference | None = None) -> dict:
+                    profile_preference: ProfilePreference | None = None,
+                    force_code_login: bool | None = None,
+                    otp_mode: str | None = None) -> dict:
     lf = log if callable(log) else (lambda _m: None)
     db = SessionLocal()
     try:
@@ -144,8 +152,12 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
         cid = m.client_id or ""
         mail_url = m.mail_url or ""
         adobe_pwd = m.adobe_password or ""
+        force_code_login = bool(m.force_code_login) if force_code_login is None else force_code_login
+        otp_mode = m.otp_mode if otp_mode is None else otp_mode
         profile_preference = m.profile_preference if profile_preference is None else profile_preference
         settings = setting_crud.get_settings(db)
+        from app.services.supply_mail import get_token
+        supply_token = get_token(db) if otp_mode != "manual" else ""
     finally:
         db.close()
 
@@ -154,9 +166,21 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
     proxy_raw = (settings.proxy_url or "") if settings.proxy_enabled else ""
     label = {'personal': '个人配置', 'organization': '组织配置（无可用组织时回退个人）'}.get(profile_preference, '未指定，沿用原逻辑')
     lf(f"[{email}] 本次登录配置：{label}")
+    if force_code_login or FORCE_CODE_LOGIN:
+        lf(f"[{email}] 本次使用邮箱验证码登录")
+    otp_poller = None
+    if otp_mode == "manual":
+        lf(f"[{email}] 验证码采用手动输入；需要验证码时请在账号行提交")
+        def otp_poller(mail_email, timeout=180, **kwargs):
+            return manual_otp.BROKER.request(member_id, email, timeout=timeout,
+                check_cancelled=check_cancelled, log=lambda msg: lf(f"[{email}] {msg}"))
+        otp_poller.manual_input = True
     rec, exc = _login_with_proxy_retry(
         email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
         adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
+        supply_token=supply_token,
+        force_code_login=force_code_login,
+        otp_poller=otp_poller,
         profile_preference=profile_preference,
         on_credentials=lambda **values: _save_credentials(member_id, **values),
     )
@@ -286,6 +310,12 @@ def batch_login_worker(job: Job) -> None:
             job.record_item(mid, status='running', message='正在登录')
             preferences = job.meta.get('member_profile_preferences') or {}
             options = {'profile_preference': preferences[str(mid)]} if str(mid) in preferences else {}
+            code_modes = job.meta.get('member_code_login') or {}
+            if str(mid) in code_modes:
+                options['force_code_login'] = code_modes[str(mid)]
+            otp_modes = job.meta.get('member_otp_modes') or {}
+            if str(mid) in otp_modes:
+                options['otp_mode'] = otp_modes[str(mid)]
             res = login_and_store(mid, log=_log, check_cancelled=job.check_cancelled, **options)
             job.bump(success=1) if res["ok"] else job.bump(fail=1)
             job.record_item(mid, status='done' if res['ok'] else 'failed',

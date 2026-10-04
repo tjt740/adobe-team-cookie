@@ -60,6 +60,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "operator": "VARCHAR(255) DEFAULT ''",
         "mail_password": "VARCHAR(255) DEFAULT ''",
         "adobe_password": "VARCHAR(255) DEFAULT ''",
+        "force_code_login": "BOOLEAN NOT NULL DEFAULT 0",
+        "otp_mode": "VARCHAR(16) NOT NULL DEFAULT 'auto'",
         "client_id": "VARCHAR(255) DEFAULT ''",
         "refresh_token": "TEXT DEFAULT ''",
         "mail_url": "TEXT DEFAULT ''",

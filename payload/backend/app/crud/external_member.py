@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import re
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.crud.email import _parse_email_line
 from app.models.external_member import ExternalMember
 from app.schemas.account_profile import ProfilePreference
+from app.schemas.external_member import OtpMode
 
 
 def get(db: Session, mid: int) -> ExternalMember | None:
@@ -28,8 +30,9 @@ def get_many(db: Session, ids: list[int]) -> list[ExternalMember]:
 
 
 def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, operator: str = "",
-                 profile_preference: ProfilePreference | None = None) -> dict:
-    """导入 `邮箱----密码----ClientID----RefreshToken`(复用 _parse_email_line)。
+                 profile_preference: ProfilePreference | None = None,
+                 otp_mode: OtpMode | None = None) -> dict:
+    """导入邮箱、账号密码或完整邮箱凭据。
 
     同一次 ``content`` 内出现重复邮箱时(常见于粘贴的名单本身带重复行),
     不能仅靠 ``get_by_email`` 查库判重——本次调用只在结尾统一 ``commit()``,
@@ -46,7 +49,15 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
         line = raw.strip()
         if not line:
             continue
-        fields = _parse_email_line(line)
+        # 两段格式明确是 Adobe 密码，不能按 UUID/M./URL 等特征猜测密码用途。
+        sep = "----" if "----" in line else "|" if "|" in line else "\t"
+        parts = line.split(sep)
+        email_only = len(parts) == 1
+        password_only = len(parts) == 2
+        fields = ({"email": parts[0].strip(), "adobe_password": parts[1].strip()}
+                  if password_only else _parse_email_line(line))
+        if fields and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", fields["email"]):
+            fields = None
         if not fields:
             failed += 1
             errors.append(f"第 {line_no} 行:邮箱格式无效")
@@ -55,9 +66,9 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
         rt = fields.get("refresh_token") or ""
         cid = fields.get("client_id") or ""
         mail_url = fields.get("mail_url") or ""
-        if not ((rt and cid) or mail_url):
+        if not (email_only or (rt and cid) or mail_url or fields.get("adobe_password")):
             failed += 1
-            errors.append(f"第 {line_no} 行:缺少 ClientID/RefreshToken 或取信接口")
+            errors.append(f"第 {line_no} 行:缺少 Adobe 密码、ClientID/RefreshToken 或取信接口")
             continue
         key = email.lower()
         row = seen.get(key)
@@ -85,6 +96,9 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
         row.mail_password = fields.get("password") or row.mail_password
         # 导入行带了第 5 段就以它为准(覆盖此前自动写入的默认密码)
         row.adobe_password = fields.get("adobe_password") or row.adobe_password
+        row.force_code_login = email_only
+        if otp_mode is not None:
+            row.otp_mode = otp_mode
         row.client_id = cid or row.client_id
         row.refresh_token = rt or row.refresh_token
         row.mail_url = mail_url or row.mail_url

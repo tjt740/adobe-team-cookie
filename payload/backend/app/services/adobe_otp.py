@@ -147,6 +147,7 @@ def make_otp_poller(
     refresh_token: str,
     client_id: str,
     mail_url: str = "",
+    supply_token: str = "",
     proxy_url: str = "",
     timeout: int = 180,
     use_proxy_for_mail: bool = False,
@@ -155,6 +156,38 @@ def make_otp_poller(
     """构造 poll_otp 兼容的收码函数。``timeout`` 同时作为默认等待上限(秒)。"""
     holder = OtpHolder(refresh_token)
     lf = log if callable(log) else (lambda _m: None)
+    if not mail_url and not (refresh_token and client_id):
+        from app.services.supply_mail import SupplyMailbox
+
+        used_codes: dict[str, set[str]] = {}
+
+        def supply_poll(email: str, timeout: int | None = None, interval: int = 5,
+                        base_url: str = "") -> str:
+            wait_s = max(1, int(timeout or 180))
+            deadline = time.monotonic() + wait_s
+            not_before = time.time() - 15
+            used = used_codes.setdefault(email.lower(), set())
+            mailbox = SupplyMailbox(supply_token)
+            lf("需要邮箱验证码，正在通过 supply.ink 获取新邮件…")
+            try:
+                while time.monotonic() < deadline:
+                    for message in mailbox.messages(email, limit=20):
+                        ts = message["timestamp"]
+                        if ts is None or ts < max(not_before, time.time() - _OTP_MAX_AGE_MIN * 60) or ts > time.time() + 60:
+                            continue
+                        if not _is_adobe_message(message["sender"], message["subject"]) and "adobe" not in message["body"].lower():
+                            continue
+                        code = _extract_adobe_otp(message["subject"], message["body"])
+                        if code and code not in used:
+                            used.add(code)
+                            lf("✓ 已收到 Adobe 验证码（supply.ink）")
+                            return code
+                    time.sleep(min(max(1, interval), max(0, deadline - time.monotonic())))
+            finally:
+                mailbox.close()
+            raise RuntimeError("获取 supply.ink 邮件验证码超时，请检查邮箱是否收到 Adobe 新邮件")
+
+        return supply_poll, holder
     default_wait_s = max(90, min(int(timeout or 180), 300))
     req_timeout = _GRAPH_REQ_TIMEOUT
 

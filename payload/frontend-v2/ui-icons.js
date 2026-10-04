@@ -12,6 +12,7 @@
     settings: '<path d="M4 3v4m0 6v8M12 3v10m0 6v2M20 3v4m0 6v8M1 7h6v6H1V7Zm8 6h6v6H9v-6Zm8-6h6v6h-6V7Z"/>',
     sub2: '<rect x="9" y="3" width="6" height="6" rx="1.5"/><rect x="2" y="16" width="6" height="5" rx="1.5"/><rect x="16" y="16" width="6" height="5" rx="1.5"/><path d="M12 9v4M5 16v-3h14v3"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>',
+    tag: '<path d="M20 13 13 20a2 2 0 0 1-3 0L3 13V3h10l7 7a2 2 0 0 1 0 3Z"/><circle cx="7.5" cy="7.5" r="1"/>',
     check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>'
   };
   function svg(name, size) {

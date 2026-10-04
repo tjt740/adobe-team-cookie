@@ -44,4 +44,6 @@ def change_password(db: Session, user: User, new_password: str) -> User:
     user.hashed_password = hash_password(new_password)
     db.commit()
     db.refresh(user)
+    from app.services.login_hints import password_changed
+    password_changed(user.username, new_password, db=db)
     return user

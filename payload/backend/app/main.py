@@ -55,6 +55,10 @@ async def _on_http_exception(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def _on_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith(settings.API_PREFIX + "/external/members/") and request.url.path.endswith("/otp"):
+        return JSONResponse(status_code=422, content={"detail": "请输入本次请求对应的 6 位数字验证码"})
+    if request.url.path == settings.API_PREFIX + "/external/mail/config":
+        return JSONResponse(status_code=422, content={"detail": "请检查邮件配置参数：Token 最多 512 字符"})
     if request.url.path.startswith(settings.API_PREFIX + "/admin/users"):
         # Pydantic's default response and log contain invalid password input.
         return JSONResponse(status_code=422, content={"detail": "请检查参数：用户名 3～50 位字母、数字或 ._-；昵称最多 50 字；密码至少 10 个字符且不超过 72 字节"})

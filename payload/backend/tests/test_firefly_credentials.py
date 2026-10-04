@@ -21,6 +21,8 @@ def test_register_persists_credentials_before_later_failure(db, SessionLocal, mo
         authorize=lambda *args: None, susi_token="", client=client,
     ))
     monkeypatch.setattr(firefly._adm, "_probe_auth_methods", lambda *args: [])
+    # 本用例覆盖密码未建立会话后，验证码轮换凭据的持久化。
+    monkeypatch.setattr(firefly, "_try_password_session", lambda *args, **kwargs: False)
     holder = SimpleNamespace(rotated=False, refresh_token="M.old")
 
     def poll(*args, **kwargs):
