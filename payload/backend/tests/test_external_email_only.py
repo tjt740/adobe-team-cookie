@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from threading import Lock
 import time
 
 import pytest
@@ -7,7 +8,7 @@ from sqlalchemy import create_engine, text
 from app.crud import external_member as crud
 from app.crud.setting import _set
 from app.services import external_login, external_sub2, firefly, supply_mail
-from app.services.job_manager import JOBS, Job
+from app.services.job_manager import JOBS, Job, JobCancelled
 
 
 def test_email_only_mixed_import_and_same_batch_duplicates(db):
@@ -17,7 +18,76 @@ def test_email_only_mixed_import_and_same_batch_duplicates(db):
     two = crud.get_by_email(db, "two@example.com")
     assert one.force_code_login and not one.adobe_password
     assert not two.force_code_login and two.adobe_password == "Known9!"
-    assert set(result["ids"]) == {one.id, two.id}
+    assert result["ids"] == [one.id, two.id]
+
+
+def test_batch_email_import_keeps_pasted_order_for_existing_rows(client, db, monkeypatch):
+    crud.import_lines(db, "first@example.com|Known9!\nsecond@example.com|Known9!")
+    first = crud.get_by_email(db, "first@example.com")
+    second = crud.get_by_email(db, "second@example.com")
+    snapshots = []
+    monkeypatch.setattr(JOBS, "start", lambda *a, **kw: snapshots.append(kw["meta"]) or SimpleNamespace(id=987))
+    response = client.post("/api/external/members/import", json={
+        "content": "second@example.com\nnew@example.com\nfirst@example.com\nSECOND@example.com",
+        "on_duplicate": "overwrite", "otp_mode": "auto",
+    })
+    assert response.status_code == 200 and response.json()["sequential_login"] is True
+    new = crud.get_by_email(db, "new@example.com")
+    assert snapshots[0]["member_ids"] == [second.id, new.id, first.id]
+    assert snapshots[0]["sequential_login"] is True
+    assert all(snapshots[0]["member_code_login"].values())
+    assert [m.id for m in crud.get_many(db, [second.id, first.id, second.id])] == [second.id, first.id]
+
+
+@pytest.mark.parametrize("raise_error", [False, True])
+def test_sequential_login_overrides_concurrency_and_continues_after_failure(SessionLocal, monkeypatch, raise_error):
+    monkeypatch.setattr(external_login, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(external_login.setting_crud, "get_settings", lambda db: SimpleNamespace(concurrency=8))
+    monkeypatch.setattr(external_login, "log_login", lambda message: None)
+    active = peak = 0
+    started = []
+    lock = Lock()
+
+    def login(mid, **kw):
+        nonlocal active, peak
+        with lock:
+            started.append(mid)
+            active += 1
+            peak = max(peak, active)
+        try:
+            time.sleep(.02)  # 给错误的并发实现足够机会同时启动下一个账号。
+            if mid == 3 and raise_error:
+                raise RuntimeError("single account failure")
+            return {"ok": mid != 3, "message": "failed" if mid == 3 else "ok"}
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(external_login, "login_and_store", login)
+    job = Job(987, "external_login", {"member_ids": [7, 3, 9], "sequential_login": True})
+    external_login.batch_login_worker(job)
+    assert started == [7, 3, 9] and peak == 1
+    assert job.result == {"total": 3, "success": 2, "fail": 1}
+    assert [item["status"] for item in job.extra["items"]] == ["done", "failed", "done"]
+
+
+def test_sequential_login_cancel_does_not_start_remaining_accounts(SessionLocal, monkeypatch):
+    monkeypatch.setattr(external_login, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(external_login, "log_login", lambda message: None)
+    job = Job(987, "external_login", {"member_ids": [7, 3, 9], "sequential_login": True})
+    started = []
+
+    def login(mid, **kw):
+        started.append(mid)
+        job.cancel()
+        kw["check_cancelled"]()
+
+    monkeypatch.setattr(external_login, "login_and_store", login)
+    with pytest.raises(JobCancelled):
+        external_login.batch_login_worker(job)
+    assert started == [7]
+    assert job.success == job.fail == 0
+    assert [item["status"] for item in job.extra["items"]] == ["cancelled", "pending", "pending"]
 
 
 def test_email_overwrite_selects_code_and_retains_saved_data(db):

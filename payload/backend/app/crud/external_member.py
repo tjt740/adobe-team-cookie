@@ -26,7 +26,8 @@ def get_by_email(db: Session, email: str) -> ExternalMember | None:
 def get_many(db: Session, ids: list[int]) -> list[ExternalMember]:
     if not ids:
         return []
-    return list(db.scalars(select(ExternalMember).where(ExternalMember.id.in_(ids))))
+    rows = {row.id: row for row in db.scalars(select(ExternalMember).where(ExternalMember.id.in_(ids)))}
+    return [rows[mid] for mid in dict.fromkeys(ids) if mid in rows]
 
 
 def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, operator: str = "",
@@ -44,7 +45,7 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
     created = updated = skipped = failed = 0
     errors: list[str] = []
     seen: dict[str, ExternalMember] = {}  # 本次调用内已处理的邮箱(小写)-> 行对象
-    login_keys: set[str] = set()  # 本次新增/更新的邮箱(小写),导入后要跑登录
+    login_keys: dict[str, None] = {}  # 按首次出现的顺序登录，同批重复邮箱只登录一次
     for line_no, raw in enumerate((content or "").splitlines(), start=1):
         line = raw.strip()
         if not line:
@@ -78,7 +79,7 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
                 skipped += 1
                 continue
             updated += 1
-            login_keys.add(key)
+            login_keys[key] = None
         else:
             row = get_by_email(db, email)
             if row is not None:
@@ -92,7 +93,7 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
                 db.add(row)
                 created += 1
             seen[key] = row
-            login_keys.add(key)
+            login_keys[key] = None
         row.mail_password = fields.get("password") or row.mail_password
         # 导入行带了第 5 段就以它为准(覆盖此前自动写入的默认密码)
         row.adobe_password = fields.get("adobe_password") or row.adobe_password

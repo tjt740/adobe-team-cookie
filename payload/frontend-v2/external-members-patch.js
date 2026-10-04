@@ -134,7 +134,7 @@
       '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span></div>' +
       '<details class="extm-card extm-import-card" open><summary>导入外部子号</summary>' +
         '<div class="bd">' +
-          '<p class="tip">每行只填邮箱即可自动获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；登录成功后可勾选账号推送 Sub2。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
+          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；登录成功后可勾选账号推送 Sub2。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
           '<p class="tip">仅邮箱导入固定走验证码；普通账号可选择「手动输入」，收到邮件后在账号行填验证码。自动取码使用原邮箱配置或 supply.ink Token；带密码则优先密码登录，需要验证时使用所选取码方式。已有账号选择「覆盖」可更新设置。</p>' +
           '<div class="extm-row">' +
             '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
@@ -789,6 +789,7 @@
       var r = await api('/members/import', { method: 'POST', body: payload });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
       if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，展开账号行查看进度和日志';
+      if (r.sequential_login) msg += ' · 按导入顺序逐个自动取码登录';
       if (r.errors && r.errors.length) msg += ' · ' + r.errors.join('；');
       opMsg(msg, r.failed ? 'err' : 'ok'); if (!r.failed) ta.value = ''; await load(true);
     } catch (e) { opMsg(e.message, 'err'); }

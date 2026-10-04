@@ -85,18 +85,22 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
     )
 
 
+def _sequential_login(members):
+    return any(m.force_code_login and m.otp_mode == "auto" for m in members)
+
+
 def _start_login(members, db, operator):
     for member in members:
         member.operator = operator
     db.commit()
-    return JOBS.start(
-        "external_login", external_login.batch_login_worker,
-        meta={"member_ids": [m.id for m in members], "target": len(members), "operator": operator,
-              "member_emails": {str(m.id): m.email for m in members},
-              "member_profile_preferences": {str(m.id): m.profile_preference for m in members},
-              "member_code_login": {str(m.id): bool(m.force_code_login) for m in members},
-              "member_otp_modes": {str(m.id): m.otp_mode for m in members}},
-    )
+    meta = {"member_ids": [m.id for m in members], "target": len(members), "operator": operator,
+            "member_emails": {str(m.id): m.email for m in members},
+            "member_profile_preferences": {str(m.id): m.profile_preference for m in members},
+            "member_code_login": {str(m.id): bool(m.force_code_login) for m in members},
+            "member_otp_modes": {str(m.id): m.otp_mode for m in members}}
+    if _sequential_login(members):
+        meta["sequential_login"] = True
+    return JOBS.start("external_login", external_login.batch_login_worker, meta=meta)
 
 
 def _active_jobs(ids):
@@ -237,7 +241,9 @@ def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db)
             pending = [mid for mid in ids if mid not in active]
             job_ids = list(dict.fromkeys(j["id"] for j in active.values()))
             if pending:
-                job = _start_login(crud.get_many(db, pending), db, user.username)
+                members = crud.get_many(db, pending)
+                result["sequential_login"] = _sequential_login(members)
+                job = _start_login(members, db, user.username)
                 job_ids.insert(0, job.id)
             result["job_id"] = job_ids[0]
             result["job_ids"] = job_ids

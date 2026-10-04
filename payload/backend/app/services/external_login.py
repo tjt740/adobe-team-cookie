@@ -301,7 +301,11 @@ def batch_login_worker(job: Job) -> None:
         concurrency = max(1, int(setting_crud.get_settings(db).concurrency or 1))
     finally:
         db.close()
-    _log(f"任务 #{job.id}:开始登录 {len(member_ids)} 个外部子号,并发 {min(concurrency, len(member_ids))}")
+    if job.meta.get("sequential_login"):
+        concurrency = 1
+        _log(f"任务 #{job.id}:按导入顺序逐个获取验证码并登录 {len(member_ids)} 个外部子号")
+    else:
+        _log(f"任务 #{job.id}:开始登录 {len(member_ids)} 个外部子号,并发 {min(concurrency, len(member_ids))}")
 
     def _do(mid: int) -> None:
         if not job.begin_item():

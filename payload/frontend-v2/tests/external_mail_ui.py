@@ -49,7 +49,8 @@ async def main():
             if state["import_error"]:
                 data = dict(created=0, updated=0, skipped=0, failed=1, errors=["第 1 行:缺少 Adobe 密码"])
             else:
-                data = dict(created=1, updated=0, skipped=0, failed=0, errors=[], job_id=987)
+                data = dict(created=1, updated=0, skipped=0, failed=0, errors=[], job_id=987,
+                            sequential_login="----" not in request.post_data_json["content"])
         elif path == "/api/external/members/push-sub2":
             pushes.append(request.post_data_json)
             data = dict(message="已提交 1 个账号同步", queued=1, skipped=0)
@@ -91,11 +92,12 @@ async def main():
         await expect(page.locator("#extm-op")).to_contain_text("登录任务 #987")
         assert imports == [dict(content="one@example.com----Known9!", on_duplicate="skip")]
         await expect(page.locator("#extm-import")).to_have_value("")
-        await expect(page.get_by_text("每行只填邮箱即可自动获取验证码登录", exact=False)).to_be_visible()
+        await expect(page.get_by_text("按粘贴顺序逐个获取验证码登录", exact=False)).to_be_visible()
         await page.locator("#extm-import").fill("one@example.com\ntwo@example.com")
         await page.locator("#extm-do-import").click()
         await expect(page.locator("#extm-op")).to_contain_text("登录任务 #987")
         assert imports[-1] == dict(content="one@example.com\ntwo@example.com", on_duplicate="skip")
+        await expect(page.locator("#extm-op")).to_contain_text("按导入顺序逐个自动取码登录")
         await expect(page.locator("#extm-import")).to_have_value("")
         state["import_error"] = True
         await page.locator("#extm-import").fill("one@example.com----")
