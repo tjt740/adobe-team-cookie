@@ -15,6 +15,12 @@ class FrontendFiles(StaticFiles):
         return "index-okad.html" if headers.get("x-forwarded-prefix") == "/okad" else "index.html"
 
     async def get_response(self, path, scope):
+        # The reverse proxy strips ``/okad`` before forwarding.  StaticFiles
+        # serves ``index.html`` directly for the upstream root, so select the
+        # prefixed shell explicitly before it handles ``/``.  Extensionless
+        # Vue history routes still fall through to the same shell below.
+        if path in ("", "/", "."):
+            path = self.index_file(scope)
         try:
             response = await super().get_response(path, scope)
         except HTTPException as exc:
