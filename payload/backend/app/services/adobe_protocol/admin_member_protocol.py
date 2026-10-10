@@ -817,7 +817,7 @@ def member_id(item: Any) -> str:
     return ""
 
 
-def list_members(client: HttpClient, token: str, org_id: str, pages: int = 20, page_size: int = 100, search: str = "") -> list[dict[str, Any]]:
+def list_members(client: HttpClient, token: str, org_id: str, pages: int = 20, page_size: int = 200, search: str = "") -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for page in range(max(1, pages)):
         params = {
@@ -849,7 +849,7 @@ def find_member_id_by_email(client: HttpClient, token: str, org_id: str, email: 
             return str(m["member_id"])
     # Some Admin Console deployments ignore search_query/filterQuery and only
     # return the first page. Fall back to a bounded full scan for cleanup.
-    for m in list_members(client, token, org_id, pages=20, page_size=100):
+    for m in list_members(client, token, org_id, pages=20, page_size=200):
         if m.get("email") == target and m.get("member_id"):
             return str(m["member_id"])
     return ""

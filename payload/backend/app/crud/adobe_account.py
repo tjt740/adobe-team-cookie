@@ -7,7 +7,7 @@ from app.schemas.common import BatchImportResult
 
 
 def list_accounts(
-    db: Session, *, page: int = 1, size: int = 20, keyword: str = ""
+    db: Session, *, page: int = 1, size: int = 200, keyword: str = ""
 ) -> tuple[list[AdobeAccount], int]:
     stmt = select(AdobeAccount)
     if keyword:

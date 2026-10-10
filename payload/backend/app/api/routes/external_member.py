@@ -8,7 +8,7 @@ from app.crud import external_member as crud
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
-from app.schemas.common import BatchIds, MessageResult, Page
+from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
@@ -144,7 +144,7 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
 
 @router.get("/members", response_model=Page[ExternalMemberOut], summary="外部子号分页查询")
 def list_members(
-    page: int = 1, size: int = 20,
+    page: int = 1, size: int = DEFAULT_PAGE_SIZE,
     login_status: str | None = None, subscription_ok: bool | None = None,
     keyword: str = "", db: Session = Depends(get_db),
 ) -> Page[ExternalMemberOut]:

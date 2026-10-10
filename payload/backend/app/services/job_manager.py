@@ -365,7 +365,7 @@ class JobManager:
                     AND status IN ('running','pausing','paused','cancelling')
             """), {'now': int(time.time()), 'job_type': job_type})
 
-    def list_recent(self, limit: int = 30) -> list[Job]:
+    def list_recent(self, limit: int = 200) -> list[Job]:
         self._ensure_storage()
         with self._lock:
             running_or_memory = {jid: job for jid, job in self._jobs.items()}

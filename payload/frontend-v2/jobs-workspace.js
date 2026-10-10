@@ -80,7 +80,7 @@ const filtersText = filters => Object.entries(filters).filter(([k,v])=>v!==''&&v
 export default defineComponent({name:'JobsWorkspace',setup(){
   const router=useRouter(), route=useRoute();
   const jobs=ref([]), detail=ref(null), loading=ref(false), error=ref(''), actionError=ref(''), busy=ref('');
-  const selected=ref([]), keyword=ref(''), status=ref(''), type=ref(''), source=ref(''), auto=ref(true), limit=ref(100);
+  const selected=ref([]), keyword=ref(''), status=ref(''), type=ref(''), source=ref(''), auto=ref(true), limit=ref(200);
   const tab=ref('accounts'), accountQuery=ref(''), logQuery=ref(''), logLevel=ref(''), updated=ref('');
   let timer, disposed=false, listPending=false, sequence=0;
   const controllers=new Set();
@@ -186,7 +186,7 @@ export default defineComponent({name:'JobsWorkspace',setup(){
         `已选 ${selected.value.length} 项`,h('span',{class:'ws-muted'},`筛选结果 ${shown.value.length} 项`)]),
         h('div',{class:'ws-actions'},[h('small',{class:'ws-muted'},updated.value?`更新于 ${updated.value}`:''),confirmation('删除选中','delete',`删除选中的 ${selected.value.length} 个任务及其记录？`,{text:true,type:'error',disabled:!selected.value.length},0)])]),
       shown.value.length?h('div',{class:'task-grid'},shown.value.map(card)):h('div',{class:'ws-empty'},[h('b',{},loading.value?'正在读取任务…':'暂无匹配任务'),h('p',{},'从账号管理页面发起操作后，可在这里查看。')]),
-      h('footer',{class:'task-list-footer'},[h('span',{class:'ws-muted'},`显示最近 ${jobs.value.length} 项任务`),jobs.value.length>=limit.value?btn('加载更早任务',{loading:loading.value,onClick:()=>{limit.value+=100;loadList();}}):null])
+      h('footer',{class:'task-list-footer'},[h('span',{class:'ws-muted'},`显示最近 ${jobs.value.length} 项任务`),jobs.value.length>=limit.value?btn('加载更早任务',{loading:loading.value,onClick:()=>{limit.value+=200;loadList();}}):null])
     ];
   }
   function accountResults(job) {

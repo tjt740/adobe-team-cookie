@@ -117,7 +117,7 @@ def list_members(
     db: Session,
     *,
     page: int = 1,
-    size: int | None = 20,
+    size: int | None = 200,
     login_status: str | None = None,
     subscription_ok: bool | None = None,
     keyword: str = "",

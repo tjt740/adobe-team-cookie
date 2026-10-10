@@ -183,7 +183,7 @@ def _find(cfg, email, account_id, *, relink=False):
     matches = []
     fetched = 0
     for page in range(1, 201):
-        data = _request(cfg, 'GET', f'/admin/accounts?page={page}&page_size=100&platform=adobe')
+        data = _request(cfg, 'GET', f'/admin/accounts?page={page}&page_size=200&platform=adobe')
         if not isinstance(data, dict) or not isinstance(data.get('items'), list) or not isinstance(data.get('total'), int):
             raise SyncError('Sub2 账号列表不完整，已停止推送')
         items = data['items']

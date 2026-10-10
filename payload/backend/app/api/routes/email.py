@@ -14,6 +14,8 @@ from app.schemas.common import (
     BatchIds,
     BatchImportRequest,
     BatchImportResult,
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
     MessageResult,
     Page,
 )
@@ -37,7 +39,7 @@ router = APIRouter(
 @router.get("", response_model=Page[EmailOut], summary="分页查询")
 def list_emails(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=200),
+    size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     keyword: str = "",
     is_used: bool | None = None,
     db: Session = Depends(get_db),

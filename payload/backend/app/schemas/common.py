@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
+DEFAULT_PAGE_SIZE = 200
+MAX_PAGE_SIZE = 500
+
 
 class Page(BaseModel, Generic[T]):
     items: list[T]

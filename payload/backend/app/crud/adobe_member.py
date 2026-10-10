@@ -9,7 +9,7 @@ from app.models.adobe_member import AdobeMember
 
 
 def list_by_admin(
-    db: Session, admin_id: int, *, page: int = 1, size: int = 50, keyword: str = ""
+    db: Session, admin_id: int, *, page: int = 1, size: int = 200, keyword: str = ""
 ) -> tuple[list[AdobeMember], int]:
     # 子号列表不含母号自身镜像行
     stmt = select(AdobeMember).where(
@@ -239,7 +239,7 @@ def list_pool(
     db: Session,
     *,
     page: int = 1,
-    size: int = 50,
+    size: int = 200,
     keyword: str = "",
     registered_only: bool = True,
     pool_type: str = "",

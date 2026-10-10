@@ -1075,7 +1075,7 @@ def fetch_members(*, token: str, org_id: str, proxy_url: str = "",
                   search: str = "", pages: int = 20) -> list[dict[str, Any]]:
     client = client_from_state({"proxy": proxy_url})
     try:
-        return list_members(client, token, org_id, pages=pages, page_size=100,
+        return list_members(client, token, org_id, pages=pages, page_size=200,
                             search=search)
     finally:
         client.close()

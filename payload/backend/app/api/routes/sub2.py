@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.db.session import get_db
 from app.models.adobe_account import AdobeAccount
 from app.models.adobe_member import AdobeMember
 from app.models.setting import Setting
+from app.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.services import (
     adobe_admin, firefly, firefly_image, log_store, pool_login, proxy_pool, sub2_client,
 )
@@ -380,7 +381,12 @@ def groups(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/accounts")
-def accounts(page: int = 1, size: int = 50, platform: str = "", db: Session = Depends(get_db)) -> dict:
+def accounts(
+    page: int = Query(1, ge=1),
+    size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    platform: str = "",
+    db: Session = Depends(get_db),
+) -> dict:
     cfg = _get_config(db, platform or None)
     res = sub2_client.list_accounts_page(cfg, platform=cfg["platform"], page=page, size=size)
     if not res.get("ok"):
@@ -492,7 +498,7 @@ def _list_all_raw(cfg: dict) -> list | None:
         for attempt in range(3):
             try:
                 code, raw = sub2_client._request(
-                    "GET", f"{base}/admin/accounts?platform={platform}&page={pg}&page_size=100", token, timeout=40)
+                    "GET", f"{base}/admin/accounts?platform={platform}&page={pg}&page_size=200", token, timeout=40)
                 if code == 200:
                     break
                 raw = None

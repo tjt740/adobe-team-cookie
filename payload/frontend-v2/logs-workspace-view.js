@@ -13,6 +13,6 @@ export function createLogsWorkspace({s,a}){return ()=>h('section',{id:'logs-work
     h('label',{class:'ws-field'},[h('span',{},'级别'),h(Select,{value:s.level.value,options:s.levels,'onUpdate:value':v=>{s.level.value=v;a.refresh();}})]),btn('搜索',{onClick:a.refresh,type:'primary',secondary:true})]),
   h('div',{class:'ws-batch'},[h('span',{class:'ws-muted'},`最近 ${s.rows.value.length} 条记录`),h('div',{class:'ws-actions'},[
     h('label',{class:'ws-switch'},[h(Switch,{size:'small',value:s.auto.value,'onUpdate:value':v=>{s.auto.value=v;a.auto(v);}}),'自动刷新']),btn('刷新',{loading:s.loading.value,onClick:a.refresh})])]),
-  h(Table,{columns:s.columns.value,data:s.rows.value,loading:s.loading.value,rowKey:r=>r.id,scrollX:900,maxHeight:600,pagination:{pageSize:50}},
+  h(Table,{columns:s.columns.value,data:s.rows.value,loading:s.loading.value,rowKey:r=>r.id,scrollX:900,maxHeight:600,pagination:{pageSize:200,pageSizes:[200,300,400,500],showSizePicker:true}},
     {empty:()=>h('div',{class:'ws-empty'},'暂无系统日志')})
 ]);}

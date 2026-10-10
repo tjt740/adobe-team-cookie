@@ -23,7 +23,7 @@ def _read(cfg):
     fetched = 0
     for page in range(1, 201):
         data = external_sub2._request(
-            cfg, 'GET', f'/admin/accounts?page={page}&page_size=100&platform=adobe')
+            cfg, 'GET', f'/admin/accounts?page={page}&page_size=200&platform=adobe')
         if (not isinstance(data, dict) or not isinstance(data.get('items'), list)
                 or type(data.get('total')) is not int or data['total'] < 0):
             raise external_sub2.SyncError('Sub2 账号列表不完整，暂时无法确认库存')

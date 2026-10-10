@@ -106,7 +106,7 @@ def list_groups(cfg: dict) -> dict:
     return {"ok": True, "groups": groups}
 
 
-def list_existing(cfg: dict, platform: str = "", max_pages: int = 200, page_size: int = 100) -> dict:
+def list_existing(cfg: dict, platform: str = "", max_pages: int = 200, page_size: int = 200) -> dict:
     """拉取 Sub2API 已有账号的 account_id/邮箱集合(推送前去重)。
 
     任何一页拉取失败(网络/非200/解析失败)都返回 ok=False——绝不把"拉取失败"
@@ -167,7 +167,7 @@ def list_existing(cfg: dict, platform: str = "", max_pages: int = 200, page_size
             "message": "账号列表不完整，已停止推送" if truncated else ""}
 
 
-def list_accounts_full(cfg: dict, platform: str = "", max_pages: int = 200, page_size: int = 100) -> dict:
+def list_accounts_full(cfg: dict, platform: str = "", max_pages: int = 200, page_size: int = 200) -> dict:
     """拉 Sub2 全量账号记录(含 Sub2 数字 id、name/邮箱、Adobe account_id),用于测活+删除。"""
     base = api_base(cfg.get("base_url", ""))
     token = cfg.get("admin_token", "")
@@ -219,7 +219,7 @@ def list_accounts_full(cfg: dict, platform: str = "", max_pages: int = 200, page
     return {"ok": True, "accounts": out, "truncated": truncated}
 
 
-def list_accounts_page(cfg: dict, platform: str = "", page: int = 1, size: int = 50) -> dict:
+def list_accounts_page(cfg: dict, platform: str = "", page: int = 1, size: int = 200) -> dict:
     """分页列 Sub2 账号(给管理表格用),返回精简字段 + total。"""
     base = api_base(cfg.get("base_url", ""))
     token = cfg.get("admin_token", "")

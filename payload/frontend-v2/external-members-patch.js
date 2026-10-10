@@ -242,7 +242,7 @@
     if (st.profileSaving.size || st.noteSaving) return Promise.resolve();
     var seq = ++st.loadSeq;
     if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="12" class="extm-empty">加载中…</td></tr>';
-    return api("/members?" + qs().concat(["size=1000"]).join("&")).then(function (d) {
+    return api("/members?" + qs().concat(["size=500"]).join("&")).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.rows = d.items || [];
       var visible = new Set(st.rows.map(function (r) { return r.id; }));

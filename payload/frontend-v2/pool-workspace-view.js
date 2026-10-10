@@ -123,8 +123,8 @@ export function createPoolWorkspace({h, ref, Button, Select, Input, Switch, Tabl
     sub2.notice(), sub2.panel(),
     h(Table, {class: 'pool-table', columns: columns(), data: s.rows.value, loading: s.loading.value,
       rowKey: row => row.id, checkedRowKeys: s.selected.value, 'onUpdate:checkedRowKeys': v => s.selected.value = v,
-      scrollX: 1124, remote: true, pagination: {page: s.pagination.page, pageSize: s.pagination.pageSize,
-        itemCount: s.pagination.itemCount, pageSizes: [50, 100, 200, 500], showSizePicker: true,
+      scrollX: 1124, remote: true, pagination: {page: s.pagination.page, pageSize: s.pagination.pageSize || 200,
+        itemCount: s.pagination.itemCount, pageSizes: [200, 300, 400, 500], showSizePicker: true,
         prefix: p => `共 ${p.itemCount} 个账号`, onUpdatePage: a.pageChanged, onUpdatePageSize: a.pageSizeChanged}},
       {empty: () => h('div', {class: 'pool-empty'}, ['暂无匹配账号', h('small', {}, '导入邮箱，或调整筛选条件后查看。')])})
   ]);

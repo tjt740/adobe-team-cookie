@@ -115,7 +115,7 @@ def list_emails(
     db: Session,
     *,
     page: int = 1,
-    size: int = 20,
+    size: int = 200,
     keyword: str = "",
     is_used: bool | None = None,
 ) -> tuple[list[Email], int]:

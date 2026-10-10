@@ -36,6 +36,8 @@ from app.schemas.common import (
     BatchIds,
     BatchImportRequest,
     BatchImportResult,
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
     MessageResult,
     Page,
 )
@@ -77,7 +79,7 @@ def _to_item(member, admin_email: str) -> PoolItemOut:
 @router.get("", response_model=Page[PoolItemOut], summary="号池分页查询")
 def list_pool(
     page: int = Query(1, ge=1),
-    size: int = Query(50, ge=1, le=500),
+    size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     keyword: str = "",
     registered_only: bool = True,
     pool_type: str = Query("", pattern="^(|all|imported|sub|admin)$"),

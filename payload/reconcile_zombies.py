@@ -47,7 +47,7 @@ sub2_fps = set()
 base, token = sub2_client.api_base(cfg.get("base_url", "")), cfg.get("admin_token", "")
 page = 1
 while True:
-    url = f"{base}/admin/accounts?page={page}&page_size=100" + (f"&platform={plat}" if plat else "")
+    url = f"{base}/admin/accounts?page={page}&page_size=200" + (f"&platform={plat}" if plat else "")
     try:
         code, raw = sub2_client._request("GET", url, token, timeout=30)
         dd = json.loads(raw)

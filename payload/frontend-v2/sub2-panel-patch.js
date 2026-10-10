@@ -23,7 +23,7 @@
   var token = localStorage.getItem(TK) || "";
   var NAV_ID = "sub2-nav-mng", PANEL_ID = "sub2-panel";
   var st = {
-    all: [], view: [], page: 1, size: 20, sel: new Set(), cfg: null, groups: [],
+    all: [], view: [], page: 1, size: 200, sel: new Set(), cfg: null, groups: [],
     busy: false, q: "", statusF: "", sortKey: "", sortDir: 1, usage: {},
   };
 
@@ -170,7 +170,7 @@
             '<select class="s2-in" id="s2-statusf"><option value="">全部状态</option><option value="ok">正常</option><option value="bad">异常</option></select>' +
             '<div class="sp"></div>' +
             '<span style="font-size:12px;color:#909399">每页</span>' +
-            '<select class="s2-in" id="s2-pagesize"><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="99999">全部</option></select>' +
+            '<select class="s2-in" id="s2-pagesize"><option value="200">200</option><option value="300">300</option><option value="400">400</option><option value="500">500</option></select>' +
           '</div>' +
           '<div class="s2-tw"><table class="s2-t"><thead><tr>' +
             '<th style="width:38px"></th>' +
@@ -201,7 +201,7 @@
     el("s2-gids").addEventListener("input", renderGroups);
     el("s2-q").addEventListener("input", debounce(function () { st.q = el("s2-q").value.trim().toLowerCase(); st.page = 1; applyView(); }, 200));
     el("s2-statusf").addEventListener("change", function () { st.statusF = el("s2-statusf").value; st.page = 1; applyView(); });
-    el("s2-pagesize").addEventListener("change", function () { st.size = parseInt(el("s2-pagesize").value, 10) || 20; st.page = 1; applyView(); });
+    el("s2-pagesize").addEventListener("change", function () { st.size = parseInt(el("s2-pagesize").value, 10) || 200; st.page = 1; applyView(); });
     el("s2-selall").onchange = function (e) { curPageItems().forEach(function (a) { if (e.target.checked) st.sel.add(String(a.id)); else st.sel.delete(String(a.id)); }); renderTable(); };
     el("s2-selall2").onclick = function () { st.view.forEach(function (a) { st.sel.add(String(a.id)); }); setMsg("s2-opmsg", "已选中筛选结果 " + st.sel.size + " 个", "ok"); renderTable(); };
     el("s2-selclr").onclick = function () { st.sel.clear(); renderTable(); setMsg("s2-opmsg", ""); };
@@ -252,10 +252,10 @@
     st.all = [];
     var acc = [];
     function page(n) {
-      return api("/accounts?page=" + n + "&size=100", { timeout: 60000 }).then(function (r) {
+      return api("/accounts?page=" + n + "&size=500", { timeout: 60000 }).then(function (r) {
         if (!r.ok) throw new Error(r.message || "加载失败");
         var items = r.items || []; acc = acc.concat(items);
-        if (items.length >= 100 && n < 200) return page(n + 1);
+        if (items.length >= 500 && n < 200) return page(n + 1);
         return acc;
       });
     }
