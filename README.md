@@ -5,6 +5,7 @@ Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 
 ## 当前生产部署
 
 - 地址：https://47.106.176.71:9500（HTTP 自动跳转 HTTPS）
+- 迁移后的同机路由：`creative.cheap/` 保持 Sub2API 原平台，okad 管理平台位于 `creative.cheap/okad/`；两者共用服务器但使用各自的服务和数据。
 - 目录：`/home/admin/adobe-team-cookie`
 - 运行方式：Docker Compose，开机自动恢复
 - 数据库：`data/app.db`，升级保留

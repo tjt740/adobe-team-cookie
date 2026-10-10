@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <base href="/okad/" />
+    <link rel="icon" type="image/svg+xml" href="/okad/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>okad 管理平台</title>
+    <script>
+      (function () {
+        'use strict';
+        var prefix = '/okad';
+        function qualify(value) {
+          return typeof value === 'string' && value.indexOf('/api/') === 0 ? prefix + value : value;
+        }
+        var fetchImpl = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          if (typeof input === 'string') input = qualify(input);
+          else if (input && input.url && qualify(input.url) !== input.url) input = new Request(qualify(input.url), input);
+          return fetchImpl(input, init);
+        };
+        var open = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          arguments[1] = qualify(url);
+          return open.apply(this, arguments);
+        };
+      })();
+    </script>
+    <script type="module" crossorigin src="/okad/assets/index-CrrzYg-U.js"></script>
+    <link rel="stylesheet" crossorigin href="/okad/assets/index-vGseNDSC.css">
+    <link rel="stylesheet" href="/okad/pool-workspace.css?v=20260926-ui">
+    <link rel="stylesheet" href="/okad/workspace-theme.css?v=20260926-unified">
+    <script defer src="/okad/workspace-theme.js?v=20260928-admin-users"></script>
+    <script defer src="/okad/login-hints.js?v=20261005-hidden-passwords"></script>
+    <script defer src="/okad/ui-icons.js?v=20261005-company-tag"></script>
+    <script defer src="/okad/sidebar-navigation.js?v=20260926-menu-routes"></script>
+    <script defer src="/okad/remote-cleanup-patch.js?v=202607182015"></script>
+    <script defer src="/okad/pool-export-status-patch.js?v=202607182015"></script>
+    <script defer src="/okad/sub2-panel-patch.js?v=20261010-pagination-200"></script>
+    <script defer src="/okad/adobe-login-async-patch.js?v=202607182015"></script>
+    <script defer src="/okad/sub2-stock-status-patch.js?v=20260926-pool-cookie"></script>
+    <script defer src="/okad/local-pool-settings-patch.js?v=202609220400"></script>
+    <script defer src="/okad/jobs-control-patch.js?v=20260922-task-controls"></script>
+    <script defer src="/okad/external-members-patch.js?v=20261010-pagination-200"></script>
+    <script defer src="/okad/external-apikey-patch.js?v=202609220400"></script>
+    <script defer src="/okad/captcha-settings-patch.js?v=202609220400"></script>
+    <script defer src="/okad/clash-settings-patch.js?v=20260922-proxy-switch"></script>
+    <script defer src="/okad/user-management-patch.js?v=20260928-admin-users"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
