@@ -1,4 +1,4 @@
-"""Private, opt-in login hints. Plaintext credentials stay outside source and static assets."""
+"""Opt-in login hints. Plaintext credentials stay outside source and static assets."""
 import json
 from pathlib import Path
 import tempfile
@@ -28,6 +28,18 @@ def public_local_request(request, config: dict) -> bool:
             and request.url.hostname in ("localhost", "127.0.0.1", "::1")
             and request.client is not None
             and request.client.host in ("127.0.0.1", "::1"))
+
+
+def public_online_request(request, config: dict) -> bool:
+    """Allow the production login page to reveal only the online hint.
+
+    This is deliberately an explicit configuration switch and is restricted to
+    the production host.  The route filters the response to the online entry so
+    enabling it never exposes the local development credential.
+    """
+    return (config.get("public_on_online") is True
+            and config.get("current_environment") == "online"
+            and request.url.hostname in ("creative.cheap", "www.creative.cheap"))
 
 
 def entries(db, config: dict) -> list[dict]:

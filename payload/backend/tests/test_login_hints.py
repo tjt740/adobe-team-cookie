@@ -42,6 +42,27 @@ def test_online_hints_are_private_and_never_cached(client, db, hints):
     assert client.get("/api/auth/login-hints", headers={"Authorization": "Bearer " + token}).status_code == 401
 
 
+def test_online_login_page_can_reveal_only_online_hint_when_explicitly_enabled(client, db, hints):
+    _, config = hints
+    config["public_on_online"] = True
+    hints[0].write_text(json.dumps(config))
+    row = user(db)
+    result = client.get(
+        "/api/auth/login-hints",
+        headers={"Host": "creative.cheap"},
+    )
+    assert result.status_code == 200
+    assert [entry["environment"] for entry in result.json()["entries"]] == ["online"]
+    assert result.json()["entries"][0]["password"] == "Online9!"
+
+
+def test_online_public_switch_does_not_apply_to_other_host(client, db, hints):
+    _, config = hints
+    config["public_on_online"] = True
+    hints[0].write_text(json.dumps(config))
+    assert client.get("/api/auth/login-hints", headers={"Host": "other.example.com"}).status_code == 401
+
+
 def test_non_admin_cannot_reveal_hints(client, db, hints):
     row = user(db, superuser=False)
     token = create_access_token(row.id)

@@ -19,13 +19,17 @@ _optional_bearer = OAuth2PasswordBearer(tokenUrl="/api/auth/login/oauth", auto_e
 def credential_hints(request: Request, token: str | None = Depends(_optional_bearer),
                      db: Session = Depends(get_db)) -> JSONResponse:
     config = login_hints.read_config()
-    if not login_hints.public_local_request(request, config):
+    public_local = login_hints.public_local_request(request, config)
+    public_online = login_hints.public_online_request(request, config)
+    if not public_local and not public_online:
         if not token:
             raise HTTPException(status_code=401, detail="请先登录管理员账号后查看登录密码")
         user = get_current_user(token=token, db=db)
         if not user.is_superuser:
             raise HTTPException(status_code=403, detail="仅管理员可以查看登录密码")
     data = login_hints.entries(db, config)
+    if public_online:
+        data = [entry for entry in data if entry["environment"] == "online"]
     if not data:
         raise HTTPException(status_code=404, detail="尚未登记登录密码")
     return JSONResponse({"entries": data}, headers={"Cache-Control": "private, no-store"})
