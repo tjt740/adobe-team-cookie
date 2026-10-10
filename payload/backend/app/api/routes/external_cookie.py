@@ -84,7 +84,11 @@ async def refresh_cookie(
         # 仍占用事件循环线程(per-email 锁本身是同步原语,不能直接 await)。
         with _email_lock(email):
             return external_login.login_and_store(
-                member_id, log=lambda m2: _log("INFO", f"[{email}] {m2}")
+                member_id, log=lambda m2: _log("INFO", f"[{email}] {m2}"),
+                # The caller is Sub2's cookie-refresh flow.  Associate this
+                # email with an already existing remote account when the local
+                # link was not recorded yet; never create a new account here.
+                discover_existing_sub2=True,
             )
 
     try:

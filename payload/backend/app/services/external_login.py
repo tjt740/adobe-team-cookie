@@ -138,7 +138,8 @@ def _login_with_proxy_retry(
 def login_and_store(member_id: int, *, log=None, check_cancelled=None,
                     profile_preference: ProfilePreference | None = None,
                     force_code_login: bool | None = None,
-                    otp_mode: str | None = None) -> dict:
+                    otp_mode: str | None = None,
+                    discover_existing_sub2: bool = False) -> dict:
     lf = log if callable(log) else (lambda _m: None)
     db = SessionLocal()
     try:
@@ -214,7 +215,10 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
     # Local login stays successful even if the optional downstream sync fails.
     try:
         from app.services import external_sub2
-        external_sub2.after_login(member_id, session_factory=SessionLocal)
+        external_sub2.after_login(
+            member_id, session_factory=SessionLocal,
+            discover_existing=discover_existing_sub2,
+        )
     except Exception:
         log_store.STORE.add("WARNING", "external_sub2", f"外部子号 #{member_id} 登录成功，Sub2 同步未能提交，请手动重试")
     return {"ok": True, "cookie": cookie, "credits_available": available,

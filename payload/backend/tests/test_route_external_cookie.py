@@ -73,14 +73,18 @@ def test_success_200_ok_true(client, db, monkeypatch):
     _set_key(db)
     db.add(ExternalMember(email="u@ex.com", client_id="c", refresh_token="M.t"))
     db.commit()
-    monkeypatch.setattr(ec.external_login, "login_and_store", lambda mid, **k: {
-        "ok": True, "cookie": "k=v", "credits_available": 4000.0,
-        "credits_total": 4000.0, "code": "", "message": "",
-    })
+    calls = []
+    monkeypatch.setattr(ec.external_login, "login_and_store", lambda mid, **k: (
+        calls.append((mid, k)) or {
+            "ok": True, "cookie": "k=v", "credits_available": 4000.0,
+            "credits_total": 4000.0, "code": "", "message": "",
+        }
+    ))
     r = client.post(URL, json={"email": "U@EX.COM", "extra": "ignored"}, headers={"X-API-Key": "secret"})
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True and body["cookie"] == "k=v" and body["email"] == "U@EX.COM"
+    assert calls[0][1]["discover_existing_sub2"] is True
 
 
 def test_login_failed_200_ok_false(client, db, monkeypatch):

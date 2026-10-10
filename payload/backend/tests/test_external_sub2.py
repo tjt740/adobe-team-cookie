@@ -101,6 +101,42 @@ def test_unlinked_accounts_never_auto_push(db, setup_sync, remote, monkeypatch, 
     assert calls == [] and remote.calls == []
 
 
+def test_cookie_refresh_can_discover_existing_remote_account(db, setup_sync, remote,
+                                                             monkeypatch, SessionLocal):
+    """The authenticated cookie-refresh path may bind an existing Sub2 account
+    even when the local link was not recorded yet, but it must not create one.
+    """
+    row = member(db)
+    remote.accounts[10] = {
+        'id': 10, 'name': row.email, 'platform': 'adobe', 'type': 'oauth',
+        'credentials': {'email': row.email, 'cookie': 'old-cookie'},
+        'extra': {}, 'group_ids': [2],
+    }
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: [sync._run(mid, target) for mid in ids])
+
+    sync.after_login(row.id, session_factory=SessionLocal, discover_existing=True)
+
+    db.refresh(row)
+    link = row.sub2_links[TARGET]
+    assert link['status'] == 'synced' and link['account_id'] == 10
+    assert remote.accounts[10]['credentials']['cookie'] == row.cookie
+    assert not any(method == 'POST' and path == '/admin/accounts'
+                   for method, path, _ in remote.calls)
+
+
+def test_cookie_refresh_discovery_does_not_create_missing_remote_account(
+        db, setup_sync, remote, monkeypatch, SessionLocal):
+    row = member(db)
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: [sync._run(mid, target) for mid in ids])
+
+    sync.after_login(row.id, session_factory=SessionLocal, discover_existing=True)
+
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['status'] == 'failed'
+    assert '未自动创建' in row.sub2_links[TARGET]['message']
+    assert not remote.accounts
+
+
 def test_no_automatic_transfer_to_a_different_destination(db, setup_sync, remote, monkeypatch, SessionLocal):
     row = member(db, sub2_links={TARGET: {'status': 'synced', 'account_id': 10}})
     monkeypatch.setattr(sync, 'config', lambda db: {**CFG, 'base_url': 'https://other.example'})

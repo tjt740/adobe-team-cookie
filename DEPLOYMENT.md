@@ -411,6 +411,7 @@ sudo bash install.sh
 - **导入格式**:每行 `邮箱----密码----ClientID----RefreshToken`(密码/ClientID/RefreshToken 均为**微软邮箱** OAuth 凭据,用于收 Adobe 验证码;复用 `_parse_email_line`,亦兼容 `|` 分隔与字段乱序)。
 - **列表字段**:邮箱、积分(可用/总量,如 `4000/4000`)、登录状态、是否掉订阅(配额总量 < 1000 判掉),可按登录状态 / 订阅状态筛选。
 - **对外接口**:`POST /api/v1/adobe/cookie/refresh`,鉴权 `X-API-Key`(设置页 `external_api_key`),契约见 `self-cookie-provider-api.md`。每次调用**无条件重新登录**该邮箱,拿到最新 cookie 后**同时存库并返回**;业务失败一律 `200 + {ok:false, code}`,仅传输层错误用 401/400/5xx。
+- **Sub2 联动**:对外刷新请求成功后会异步按邮箱查找已有的 Sub2 Adobe 账号并更新 Cookie;本地没有关联编号也能完成绑定。远端没有同邮箱账号时只记录失败,不会通过刷新接口自动创建新账号。
 - **代理**:设置页 `external_proxy_url`(每行一个,支持大量条目,已做 split 缓存);每次登录随机取一个出口。
 - **cookie 刷新时机**:①导入后「批量登录」任务 ②对外接口被调用时 ③列表「重登」按钮。**无定时心跳**,列表中的积分/状态是该号最后一次登录时的快照。
 

@@ -75,7 +75,8 @@ def _hash(cookie):
     return hashlib.sha256(cookie.encode()).hexdigest()
 
 
-def prepare(db, ids, *, automatic=False, relink=False, operator=''):
+def prepare(db, ids, *, automatic=False, relink=False, operator='',
+            discover_existing=False):
     if automatic and relink:
         raise SyncError('自动同步不能重新创建已删除的账号')
     cfg = config(db)
@@ -87,11 +88,17 @@ def prepare(db, ids, *, automatic=False, relink=False, operator=''):
         for mid in dict.fromkeys(ids):
             member = db.get(ExternalMember, mid)
             link = (member.sub2_links or {}).get(target, {}) if member else {}
-            if automatic and not link:
+            if automatic and not link and not discover_existing:
                 continue  # Never send an unrequested account or switch destinations.
             if not member or member.login_status != 'ok' or not (member.cookie or '').strip():
                 skipped.append(mid)
                 continue
+            if automatic and discover_existing:
+                # A trusted cookie-refresh caller may ask us to update an already
+                # existing Sub2 account by email. Keep this opt-in and mark the
+                # link so _sync can fail closed instead of creating a new account,
+                # including when a stale local link has no remote account id yet.
+                link = {**link, 'discover_existing': True}
             if relink:
                 if link.get('status') in ('pending', 'syncing'):
                     skipped.append(mid)
@@ -119,9 +126,12 @@ def submit(ids, target):
             raise
 
 
-def after_login(member_id, session_factory=SessionLocal):
+def after_login(member_id, session_factory=SessionLocal, *, discover_existing=False):
     with session_factory() as db:
-        target, ids, _ = prepare(db, [member_id], automatic=True)
+        target, ids, _ = prepare(
+            db, [member_id], automatic=True,
+            discover_existing=discover_existing,
+        )
     submit(ids, target)
 
 
@@ -210,6 +220,8 @@ def _sync(cfg, email, cookie, link):
         # settings, clears authentication errors and invalidates token caches.
         data = _request(cfg, 'POST', f"/admin/accounts/{account['id']}/apply-oauth-credentials",
                         {'type': 'oauth', 'credentials': credentials, 'extra': marker})
+    elif link.get('discover_existing'):
+        raise SyncError('Sub2 未找到同邮箱账号，未自动创建新账号')
     else:
         groups = _request(cfg, 'GET', '/admin/groups/all')
         valid = {g['id'] for g in groups if g.get('platform') == 'adobe' and g.get('status') == 'active'}
@@ -263,6 +275,7 @@ def _run(mid, target):
                         latest = {**latest, 'previous_account_id': latest.get('account_id')}
                     latest = {**latest, 'account_id': remote_id, 'cookie_hash': _hash(cookie),
                               'synced_at': datetime.now(timezone.utc).isoformat()}
+                    latest.pop('discover_existing', None)
                 changed = bool(member.cookie) and member.cookie != cookie
                 latest = {**latest, 'status': 'pending' if changed else ('failed' if error else 'synced'),
                           'relink_requested': False,
