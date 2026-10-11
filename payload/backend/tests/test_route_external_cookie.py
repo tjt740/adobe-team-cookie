@@ -85,6 +85,7 @@ def test_success_200_ok_true(client, db, monkeypatch):
     body = r.json()
     assert body["ok"] is True and body["cookie"] == "k=v" and body["email"] == "U@EX.COM"
     assert calls[0][1]["discover_existing_sub2"] is True
+    assert calls[0][1]["network_retries"] == 0
 
 
 def test_login_failed_200_ok_false(client, db, monkeypatch):

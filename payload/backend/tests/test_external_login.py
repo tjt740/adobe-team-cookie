@@ -236,6 +236,23 @@ def test_login_network_error_twice_gives_up(db, monkeypatch, SessionLocal):
     assert m.login_status == "rate_limited"
 
 
+def test_automatic_cookie_recovery_does_not_retry_network_login(db, monkeypatch, SessionLocal):
+    member = _seed(db, email="budget@ex.com", cookie="old=1")
+    monkeypatch.setattr(el, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(el.setting_crud, "get_settings", _proxy_settings("10.9.2.1:1\n10.9.2.2:2"))
+    calls = []
+
+    def failed_login(**kwargs):
+        calls.append(kwargs["proxy_url"])
+        raise RuntimeError("proxy read timeout")
+
+    monkeypatch.setattr(el.firefly, "register_account", failed_login)
+    assert el.login_and_store(member.id, network_retries=0)["ok"] is False
+    assert len(calls) == 1
+    db.refresh(member)
+    assert member.cookie == "old=1"
+
+
 def test_login_account_error_not_retried(db, monkeypatch, SessionLocal):
     """账号/验证码类错误不重试:换 IP 救不回来,还白耗一次验证码。"""
     m = _seed(db, email="net3@ex.com")

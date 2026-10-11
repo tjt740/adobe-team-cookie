@@ -89,6 +89,9 @@ async def refresh_cookie(
                 # email with an already existing remote account when the local
                 # link was not recorded yet; never create a new account here.
                 discover_existing_sub2=True,
+                # Sub2 owns the durable two-attempt budget and cooldown.
+                # One callback must represent exactly one login attempt.
+                network_retries=0,
             )
 
     try:

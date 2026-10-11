@@ -79,6 +79,7 @@ def _login_with_proxy_retry(
     otp_poller=None,
     profile_preference: ProfilePreference = "",
     on_credentials=None,
+    network_retries: int = MAX_NETWORK_RETRIES,
 ) -> tuple[dict | None, Exception | None]:
     """跑协议登录,网络/代理失败时换一个出口 IP 再试。返回 ``(rec, last_exc)``。
 
@@ -95,13 +96,13 @@ def _login_with_proxy_retry(
         if on_credentials:
             on_credentials(**values)
 
-    for attempt in range(MAX_NETWORK_RETRIES + 1):
+    for attempt in range(network_retries + 1):
         proxy = proxy_pool.random_proxy(proxy_raw, exclude=used)
         if attempt == 0:
             lf(f"[{email}] 协议登录(proxy={'有' if proxy else '无'})…")
         else:
             tag = "已换代理 IP" if proxy and proxy != used else "无其它出口,原线路"
-            lf(f"[{email}] 网络重试 {attempt}/{MAX_NETWORK_RETRIES}({tag})…")
+            lf(f"[{email}] 网络重试 {attempt}/{network_retries}({tag})…")
         used = proxy
         started = time.monotonic()
         try:
@@ -121,7 +122,7 @@ def _login_with_proxy_retry(
             if not _is_network_error(str(e)):
                 break  # 账号/验证码/打码类错误:换 IP 也没用
             proxy_pool.report_failure(proxy, str(e))
-            if attempt >= MAX_NETWORK_RETRIES:
+            if attempt >= network_retries:
                 break
             elapsed = time.monotonic() - started
             if elapsed > RETRY_MAX_ELAPSED:
@@ -139,7 +140,8 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
                     profile_preference: ProfilePreference | None = None,
                     force_code_login: bool | None = None,
                     otp_mode: str | None = None,
-                    discover_existing_sub2: bool = False) -> dict:
+                    discover_existing_sub2: bool = False,
+                    network_retries: int = MAX_NETWORK_RETRIES) -> dict:
     lf = log if callable(log) else (lambda _m: None)
     db = SessionLocal()
     try:
@@ -184,6 +186,7 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
         otp_poller=otp_poller,
         profile_preference=profile_preference,
         on_credentials=lambda **values: _save_credentials(member_id, **values),
+        network_retries=network_retries,
     )
     if check_cancelled:
         check_cancelled()
