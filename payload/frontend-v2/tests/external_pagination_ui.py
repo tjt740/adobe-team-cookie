@@ -180,13 +180,16 @@ async def main():
                             {'login_status': None, 'subscription_ok': None, 'keyword': ''}),
                            ('/api/external/members/export', {})]
 
-        # Footer stays available without scrolling through hundreds of rows.
-        await page.locator('#extm-embed').evaluate('(node) => { node.scrollTop = 0; }')
+        # Table rows scroll independently; the footer reserves its own space.
+        await page.locator('.extm-pagination').scroll_into_view_if_needed()
         await expect(page.locator('.extm-pagination')).to_be_in_viewport()
         await page.set_viewport_size({'width': 900, 'height': 800})
+        await page.locator('.extm-pagination').scroll_into_view_if_needed()
         await expect(size).to_be_in_viewport()
         box = await page.locator('.extm-pagination').bounding_box()
         assert box['x'] >= 0 and box['x'] + box['width'] <= 901, box
+        table_box = await page.locator('.extm-tw').bounding_box()
+        assert table_box['y'] + table_box['height'] <= box['y'] + 1, (table_box, box)
         output = ROOT / '.local'
         output.mkdir(exist_ok=True)
         await page.screenshot(path=str(output / 'external-pagination.png'))
