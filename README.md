@@ -2,6 +2,19 @@
 
 Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 界面。
 
+## 移动端展示
+
+沿用现有 Vue / Naive UI 组件，公共适配位于 `payload/frontend-v2/mobile-workspace.css` 和 `mobile-workspace.js`。800px 及以下使用抽屉导航；表单和按钮自动换行，宽表格在自己的区域内左右滑动，手机端不固定操作列以免遮住账号。弹窗支持内部滚动，并跟随可视区域调整高度；输入字号不小于 16px，主要按钮点击区域不小于 44px。根路径和 `/okad/` 挂载入口共用同一套适配。
+
+移动端回归使用本地静态资源和模拟数据，覆盖 320、375、390、430、768、800px，以及 1440px 桌面宽度；检查主要管理页面（含可选监控页最多 11 页）、长文本、触屏导航、桌面折叠后切换手机、分页、表格操作、弹窗、登录和深色主题：
+
+```bash
+payload/backend/.venv/bin/python payload/frontend-v2/tests/mobile_workspace_ui.py
+MOBILE_BROWSER=webkit payload/backend/.venv/bin/python payload/frontend-v2/tests/mobile_workspace_ui.py
+```
+
+运行前需在该 Python 环境安装 Playwright 及相应 Chromium / WebKit 浏览器。浏览器模拟检查之外，发布验收还应在真实 iOS / Android 设备检查系统键盘、缩放和安全区。
+
 ## 当前生产部署
 
 - 唯一生产服务器：`173.234.15.150`，地址：<https://creative.cheap/okad/>。旧服务器不再作为发布目标。

@@ -46,6 +46,7 @@
     document.querySelectorAll('.okad-nav-custom[aria-describedby]').forEach(function (it) { it.removeAttribute('aria-describedby'); });
   }
   function showTip(it) {
+    if (window.matchMedia('(max-width: 800px)').matches) return;
     if (!collapsed()) return;
     if (!tip) {
       tip = document.createElement('div'); tip.id = 'okad-nav-tooltip'; tip.setAttribute('role', 'tooltip');
@@ -67,6 +68,7 @@
   }
   function navigate(path) {
     hideTip();
+    if (window.OKAD_MOBILE) window.OKAD_MOBILE.close();
     return routerReady.then(function (router) {
       path = window.OKAD_ROUTE.route(path);
       var route = router.currentRoute.value;
@@ -205,7 +207,7 @@
     close: closePage,
     rect: function () {
       var s = document.querySelector('.n-layout-sider'), h = document.querySelector('.n-layout-header');
-      return { left:s ? Math.max(0, Math.round(s.getBoundingClientRect().right)) : 0,
+      return { left:s && !window.matchMedia('(max-width: 800px)').matches ? Math.max(0, Math.round(s.getBoundingClientRect().right)) : 0,
         top:h ? Math.max(0, Math.round(h.getBoundingClientRect().bottom)) : 0 };
     }
   };
