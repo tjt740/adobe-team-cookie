@@ -433,7 +433,7 @@ def submit_recovery(db, request_id, email, source_key='', automatic=True):
     key,row=capability(db,email,source_key,automatic)
     cfg=settings(db)
     now=time.time()
-    job=RecoveryJob(id=request_id,source_key=key,email=row.email,
+    job=RecoveryJob(id=request_id,source_key=key,email=row.email,automatic=int(automatic),
         target=cfg['site_id']+'|'+target(cfg),created_at=now,updated_at=now)
     db.add(job)
     try:db.commit()
@@ -452,6 +452,7 @@ def run_recovery(identifier):
         job=db.get(RecoveryJob,identifier)
         key,email=job.source_key,job.email
         requested_at=job.created_at
+        automatic=bool(job.automatic)
         cfg=settings(db)
         if cfg['site_id']+'|'+target(cfg)!=job.target:
             job.state,job.code,job.message='failed','destination_changed','目标已改变，未登录'
@@ -460,14 +461,14 @@ def run_recovery(identifier):
         with login_destination(cfg):
             if key.startswith('external:'):
                 from app.services.external_login import login_and_store
-                result=login_and_store(int(key.split(':')[1]),request_started_at=requested_at,network_retries=0,sync_to_sub2=False)
+                result=login_and_store(int(key.split(':')[1]),request_started_at=requested_at,automatic=automatic,network_retries=0,sync_to_sub2=False)
             else:
-                result=login_pool(int(key.split(':')[1]),request_started_at=requested_at)
+                result=login_pool(int(key.split(':')[1]),request_started_at=requested_at,automatic=automatic)
         with SessionLocal() as db:
             job=db.get(RecoveryJob,identifier)
             job.state='done' if result.get('ok') else 'failed'
             job.code=result.get('code') or ''
-            job.message='登录完成，后续同步独立重试' if result.get('ok') else '登录未完成，请检查账号资料与取信配置'
+            job.message='登录完成，后续同步独立重试' if result.get('ok') else (result.get('message') or '登录未完成，请检查账号资料与取信配置')[:255]
             job.updated_at=time.time()
             db.commit()
     except Exception:
@@ -477,7 +478,7 @@ def run_recovery(identifier):
             job.updated_at=time.time();db.commit()
 
 
-def login_pool(mid, session_factory=None, *, request_started_at=None):
+def login_pool(mid, session_factory=None, *, request_started_at=None, automatic=False):
     session_factory = session_factory or SessionLocal
     from app.services import login_coordinator, pool_login, firefly, proxy_pool
     from app.crud import setting as setting_crud
@@ -518,7 +519,7 @@ def login_pool(mid, session_factory=None, *, request_started_at=None):
     with login_destination(destination):
         return login_coordinator.run('pool:'+str(mid),email,execute,session_factory,
                                      lambda db:{'cookie':source(db,'pool:'+str(mid)).cookie},
-                                     requested_at=request_started_at)
+                                     requested_at=request_started_at,automatic=automatic)
 
 
 def job_result(job):

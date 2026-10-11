@@ -245,3 +245,28 @@ def test_sources_exposes_delivery_timestamp_without_credentials(client, db, wire
     assert row['delivery']['updated_at'] > 0
     assert 'old-cookie' not in str(response)
     assert 'fixture-key' not in str(response)
+
+
+def test_legacy_callback_sequential_requests_respect_email_cooldown(client, db, wired, monkeypatch):
+    calls=[]
+    def login(**options):
+        calls.append(1)
+        return {'cookie':'fresh-cookie','access_token':'fake-token','credits':4000,'credits_total':4000}
+    monkeypatch.setattr(external_login.firefly,'register_account',login)
+    monkeypatch.setattr(external_sub2,'after_login',lambda *a,**kw:None)
+    options=dict(headers={'X-API-Key':'callback-key'},json={'email':'one@fixture.invalid'})
+    first=client.post('/api/v1/adobe/cookie/refresh',**options).json()
+    second=client.post('/api/v1/adobe/cookie/refresh',**options).json()
+    assert first['ok']
+    assert second['code']=='login_cooldown' and not second['ok']
+    assert second['retry_after'] > time.time()+890
+    assert len(calls)==1
+
+
+def test_v2_job_preserves_automatic_or_manual_policy(db,wired,monkeypatch):
+    seen=[]
+    monkeypatch.setattr(external_login,'login_and_store',lambda *a,**kw:seen.append(kw['automatic']) or {'ok':True})
+    for automatic in (True,False):
+        job=link.submit_recovery(db,'policy-'+str(automatic),'one@fixture.invalid',automatic=automatic)
+        link.run_recovery(job.id)
+    assert seen==[True,False]

@@ -137,7 +137,7 @@ def _login_with_proxy_retry(
     return None, last_exc
 
 
-def login_and_store(member_id: int, *, request_started_at=None, **options) -> dict:
+def login_and_store(member_id: int, *, request_started_at=None, automatic=False, **options) -> dict:
     from app.services import login_coordinator, reliable_integration
     with SessionLocal() as db:
         member = crud.get(db, member_id)
@@ -152,7 +152,7 @@ def login_and_store(member_id: int, *, request_started_at=None, **options) -> di
     with reliable_integration.login_destination(destination):
         return login_coordinator.run(f'external:{member_id}', email,
             lambda: _login_and_store(member_id, **options), SessionLocal, saved,
-            requested_at=request_started_at)
+            requested_at=request_started_at, automatic=automatic)
 
 
 def _login_and_store(member_id: int, *, log=None, check_cancelled=None,

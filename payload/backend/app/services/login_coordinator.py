@@ -30,7 +30,7 @@ def assert_owner(db):
             raise RuntimeError('登录任务已失去所有权，未保存旧结果')
 
 
-def run(source_key, email, action, session_factory, read_result, *, requested_at=None):
+def run(source_key, email, action, session_factory, read_result, *, requested_at=None, automatic=False):
     email = email.strip().lower()
     requested_at = time.time() if requested_at is None else requested_at
     owner = uuid.uuid4().hex
@@ -46,6 +46,16 @@ def run(source_key, email, action, session_factory, read_result, *, requested_at
                 if result.get('ok'):
                     result.update(read_result(db))
                 return result
+            # Every completed login contributes a durable per-email cooldown.
+            # Explicit human logins may bypass it; automatic callers may not.
+            # Keep successful overlapping callers on the join path above.
+            if automatic and row and row.expires_at <= now:
+                retry_after = ((row.result or {}).get('retry_after') or
+                               row.expires_at + (900 if (row.result or {}).get('ok') else 300))
+                if retry_after > now:
+                    return {'ok': False, 'cookie': '', 'code': 'login_cooldown',
+                            'retry_after': retry_after,
+                            'message': f'自动登录冷却中，约 {int(retry_after-now)+1} 秒后可重试'}
             if not row:
                 db.add(LoginLease(email=email, owner=owner, source_key=source_key, expires_at=now+90))
                 try:
@@ -94,6 +104,7 @@ def run(source_key, email, action, session_factory, read_result, *, requested_at
         with session_factory() as db:
             safe = {key: result.get(key) for key in ('ok', 'code')}
             safe['message'] = '' if result.get('ok') else '登录未完成，请查看账号任务'
+            safe['retry_after'] = time.time() + (900 if result.get('ok') else 300)
             db.execute(update(LoginLease).where(LoginLease.email==email, LoginLease.owner==owner)
                        .values(result=safe, expires_at=time.time()))
             db.commit()

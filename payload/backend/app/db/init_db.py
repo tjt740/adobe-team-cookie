@@ -15,6 +15,7 @@ from app.models import user as _user_model  # noqa: F401
 
 # 针对已存在的表新增的列(SQLite 轻量迁移):表名 -> {列名: 列定义}
 _MIGRATIONS: dict[str, dict[str, str]] = {
+    "integration_recovery_jobs": {"automatic": "INTEGER NOT NULL DEFAULT 1"},
     "users": {"token_version": "INTEGER NOT NULL DEFAULT 0"},
     "adobe_accounts": {
         "is_valid": "BOOLEAN",
