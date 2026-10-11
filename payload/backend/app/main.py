@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     init_db()
     from app.services.job_manager import JOBS
     JOBS.recover_interrupted('pool_cookie_sub2')
+    JOBS.recover_interrupted('external_login')
     from app.services import external_sub2
     external_sub2.resume_pending()
     log_store.STORE.add("INFO", "system", "服务启动完成")

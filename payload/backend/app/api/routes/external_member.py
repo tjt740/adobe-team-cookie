@@ -90,10 +90,13 @@ def _sequential_login(members):
 
 
 def _start_login(members, db, operator):
+    cfg = external_sub2.config(db)
     for member in members:
         member.operator = operator
     db.commit()
     meta = {"member_ids": [m.id for m in members], "target": len(members), "operator": operator,
+            "batch_size": external_login.LOGIN_BATCH_SIZE, "push_to_sub2": True,
+            "sub2_target": external_sub2.destination(cfg),
             "member_emails": {str(m.id): m.email for m in members},
             "member_profile_preferences": {str(m.id): m.profile_preference for m in members},
             "member_code_login": {str(m.id): bool(m.force_code_login) for m in members},
@@ -276,7 +279,7 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
         pending = [m for m in members if m.id not in active]
         job = _start_login(pending, db, user.username) if pending else None
     if job:
-        message = f"已提交 {len(pending)} 个账号重登，跳过 {len(active)} 个任务未结束的账号"
+        message = f"已提交 {len(pending)} 个账号，每批最多 20 个，登录成功后自动推送 Sub2；跳过 {len(active)} 个任务未结束的账号"
     else:
         message = "当前范围暂无外部子号" if not total else f"当前范围的 {len(active)} 个账号任务未结束，无需重复提交"
     return {"job": JobStatusOut(**job.to_dict()) if job else None,

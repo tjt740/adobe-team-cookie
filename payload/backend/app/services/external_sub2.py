@@ -93,6 +93,9 @@ def prepare(db, ids, *, automatic=False, relink=False, operator='',
             if not member or member.login_status != 'ok' or not (member.cookie or '').strip():
                 skipped.append(mid)
                 continue
+            if not automatic:
+                link = dict(link)
+                link.pop('discover_existing', None)
             if automatic and discover_existing:
                 # A trusted cookie-refresh caller may ask us to update an already
                 # existing Sub2 account by email. Keep this opt-in and mark the
@@ -133,6 +136,41 @@ def after_login(member_id, session_factory=SessionLocal, *, discover_existing=Fa
             discover_existing=discover_existing,
         )
     submit(ids, target)
+
+
+def queue_login_push(member_id, expected_target, *, session_factory=SessionLocal):
+    """A user-started login may create/link an account at its recorded destination.
+
+    Login success is independent of synchronization. Queue failures remain visible
+    and never send credentials to a destination changed after the task was started.
+    """
+    error = ''
+    try:
+        with session_factory() as db:
+            cfg = config(db)
+            validate_config(cfg)
+            if not expected_target or destination(cfg) != expected_target:
+                raise SyncError('Sub2 地址已改变，请在当前目标手动推送')
+            target, ids, _ = prepare(db, [member_id])
+        if not ids:
+            raise SyncError('账号未就绪，未提交 Sub2 推送')
+        submit(ids, target)
+        return {'status': 'pending', 'message': '已提交 Sub2 推送，可查看账号同步状态'}
+    except SyncError as exc:
+        error = str(exc)
+    except Exception:
+        error = 'Sub2 推送队列暂不可用，请手动重试'
+    try:
+        with _lock, session_factory() as db:
+            member = db.get(ExternalMember, member_id)
+            if member:
+                link = (member.sub2_links or {}).get(expected_target, {})
+                _store(member, expected_target, {**link, 'status': 'failed', 'message': error})
+                db.commit()
+    except Exception:
+        pass  # Keep the successful login and report the queue failure in its job.
+    log_store.STORE.add('WARNING', 'external_sub2', f'外部子号 #{member_id} {error}')
+    return {'status': 'failed', 'message': error}
 
 
 def resume_pending():

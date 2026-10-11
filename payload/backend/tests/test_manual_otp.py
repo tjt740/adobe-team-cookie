@@ -156,6 +156,10 @@ def test_manual_login_continues_cookie_storage_and_sub2_without_auto_mail(
     monkeypatch.setattr(supply_mail, "SupplyMailbox", lambda *a, **kw: pytest.fail("manual mode must not contact supply.ink"))
     synced = []
     monkeypatch.setattr(external_sub2, "after_login", lambda mid, **kw: synced.append(mid))
+    def push_after_login(mid, target, **kw):
+        synced.append(mid)
+        return {'status': 'pending', 'message': '已提交 Sub2 推送'}
+    monkeypatch.setattr(external_sub2, "queue_login_push", push_after_login)
     replies = iter([{"errorCode":"challenge_required"}, {"token":"verified-password"}])
     def post(*a, **kw):
         data = next(replies)

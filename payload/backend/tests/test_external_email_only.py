@@ -133,6 +133,10 @@ def test_email_import_runs_code_mail_login_and_preserves_mode_after_password_gen
     monkeypatch.setattr(external_login, "FORCE_CODE_LOGIN", False)
     synced = []
     monkeypatch.setattr(external_sub2, "after_login", lambda mid, **kw: synced.append(mid))
+    def push_after_login(mid, target, **kw):
+        synced.append(mid)
+        return {'status': 'pending', 'message': '已提交 Sub2 推送'}
+    monkeypatch.setattr(external_sub2, "queue_login_push", push_after_login)
     codes = []
 
     class Mailbox:

@@ -314,3 +314,52 @@ def test_request_errors_do_not_echo_credentials(monkeypatch):
     with pytest.raises(sync.SyncError) as exc:
         sync._request(CFG, 'POST', '/admin/accounts', {'credentials': {'cookie': 'secret-cookie'}})
     assert 'secret' not in str(exc.value)
+
+
+def test_login_workflow_pushes_unlinked_success_and_reuses_email_match(db, setup_sync, remote, monkeypatch, SessionLocal):
+    row = member(db)
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: [sync._run(mid, target) for mid in ids])
+    result = sync.queue_login_push(row.id, TARGET, session_factory=SessionLocal)
+    assert result['status'] == 'pending'
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['status'] == 'synced'
+    assert len(remote.accounts) == 1
+    row.sub2_links = {}
+    row.cookie = 'newest-cookie'
+    db.commit()
+    sync.queue_login_push(row.id, TARGET, session_factory=SessionLocal)
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['account_id'] == 10
+    assert len(remote.accounts) == 1 and remote.accounts[10]['credentials']['cookie'] == 'newest-cookie'
+
+
+def test_login_workflow_can_push_after_previous_discovery_found_nothing(db, setup_sync, remote, monkeypatch, SessionLocal):
+    row = member(db, sub2_links={TARGET: {'status': 'failed', 'discover_existing': True}})
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: [sync._run(mid, target) for mid in ids])
+    sync.queue_login_push(row.id, TARGET, session_factory=SessionLocal)
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['status'] == 'synced' and len(remote.accounts) == 1
+
+
+def test_login_push_does_not_follow_changed_destination_or_recreate_deleted_account(db, setup_sync, remote, monkeypatch, SessionLocal):
+    row = member(db, sub2_links={TARGET: {'status': 'synced', 'account_id': 99}})
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: [sync._run(mid, target) for mid in ids])
+    sync.queue_login_push(row.id, TARGET, session_factory=SessionLocal)
+    db.refresh(row)
+    assert row.sub2_links[TARGET]['status'] == 'failed' and not remote.accounts
+    remote.calls.clear()
+    monkeypatch.setattr(sync, 'config', lambda db: {**CFG, 'base_url': 'https://other.example'})
+    result = sync.queue_login_push(row.id, TARGET, session_factory=SessionLocal)
+    db.refresh(row)
+    assert result['status'] == 'failed' and '地址已改变' in result['message']
+    assert not remote.calls and row.login_status == 'ok' and row.cookie == 'ims_sid=fresh'
+
+
+def test_login_push_records_configuration_failure_without_losing_cookie(db, setup_sync, monkeypatch, SessionLocal):
+    row = member(db)
+    monkeypatch.setattr(sync, 'config', lambda db: {**CFG, 'admin_token': ''})
+    result = sync.queue_login_push(row.id, TARGET, session_factory=SessionLocal)
+    db.refresh(row)
+    assert result['status'] == 'failed'
+    assert row.sub2_links[TARGET]['status'] == 'failed'
+    assert row.login_status == 'ok' and row.cookie == 'ims_sid=fresh'

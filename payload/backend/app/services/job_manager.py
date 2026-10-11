@@ -344,6 +344,9 @@ class JobManager:
                     if job.cancelled:
                         job.status = "cancelled"
                         job.logs.append(f"{time.strftime('%H:%M:%S')} 任务已终止，已完成的结果和日志已保留")
+                        for item in job.extra.get('items', []):
+                            if item.get('status') in ('pending', 'running'):
+                                item.update(status='cancelled', message='本次任务已终止，已保存的数据保留')
                     job.finished_at = int(time.time())
                     job._condition.notify_all()
                 job.persist()
@@ -358,12 +361,24 @@ class JobManager:
         """Startup only: make interrupted tasks retryable without replaying writes."""
         self._ensure_storage()
         with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE job_records SET status='error', finished_at=:now,
-                    error='服务已重启，任务中断；已保存的数据保留，请重新勾选重试'
+            rows = conn.execute(text("""
+                SELECT * FROM job_records
                 WHERE type=:job_type AND deleted=0
                     AND status IN ('running','pausing','paused','cancelling')
-            """), {'now': int(time.time()), 'job_type': job_type})
+            """), {'job_type': job_type}).mappings().all()
+            for row in rows:
+                extra = _json_loads(row['extra_json'], {})
+                for item in extra.get('items', []):
+                    if item.get('status') in ('pending', 'running'):
+                        item.update(status='interrupted', message='服务重启，本次登录中断；可重新勾选重试')
+                message = '服务已重启，任务中断；已保存的数据保留，请重新勾选重试'
+                logs = _json_loads(row['logs_json'], [])
+                logs.append(f"{time.strftime('%H:%M:%S')} {message}")
+                conn.execute(text("""
+                    UPDATE job_records SET status='error', finished_at=:now, error=:error,
+                        extra_json=:extra, logs_json=:logs WHERE id=:id
+                """), {'id': row['id'], 'now': int(time.time()), 'error': message,
+                       'extra': _json_dumps(extra), 'logs': _json_dumps(logs[-1000:])})
 
     def list_recent(self, limit: int = 200) -> list[Job]:
         self._ensure_storage()
@@ -403,6 +418,9 @@ class JobManager:
                            j.error, j.created_at, j.finished_at,
                            json_extract(j.meta_json, '$.operator') AS operator,
                            json_array_length(j.logs_json) AS log_total,
+                           (SELECT i.value FROM json_each(j.extra_json, '$.items') AS i
+                            WHERE json_extract(i.value, '$.id')=e.id LIMIT 1) AS item_json,
+                           json_extract(j.extra_json, '$.batch') AS batch_json,
                            CAST(m.value AS INTEGER) AS member_id,
                            ROW_NUMBER() OVER (
                                PARTITION BY m.value ORDER BY j.id DESC
@@ -422,6 +440,12 @@ class JobManager:
             data = Job.from_record(dict(row)).to_dict()
             data["operator"] = row["operator"] or ""
             data["log_total"] = int(row["log_total"] or 0)
+            item = _json_loads(row['item_json'], {})
+            data['item_status'] = item.get('status')
+            data['item_message'] = item.get('message', '')
+            batch = _json_loads(row['batch_json'], None)
+            if batch:
+                data['extra']['batch'] = batch
             # Summary responses have no credentials, metadata or log bodies.
             data.pop("meta", None)
             out.setdefault(int(row["member_id"]), []).append(data)

@@ -25,6 +25,7 @@ SUBSCRIPTION_MIN = 1000.0
 # 网络/代理失败时的额外重试轮数(每轮换一个出口 IP)。账号类错误不重试:
 # 重试也救不回来,还会白耗一次验证码、加重 Adobe 对该邮箱来源的发码风控。
 MAX_NETWORK_RETRIES = 1
+LOGIN_BATCH_SIZE = 20
 
 # 全部改走验证码登录(不用密码)。默认 false:知道密码就用密码,省一次发码 ——
 # 每多收一次验证码都会加重 Adobe 对该邮箱来源的发码风控。密码被拒时本来就会
@@ -141,7 +142,8 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
                     force_code_login: bool | None = None,
                     otp_mode: str | None = None,
                     discover_existing_sub2: bool = False,
-                    network_retries: int = MAX_NETWORK_RETRIES) -> dict:
+                    network_retries: int = MAX_NETWORK_RETRIES,
+                    sync_to_sub2: bool = True) -> dict:
     lf = log if callable(log) else (lambda _m: None)
     db = SessionLocal()
     try:
@@ -218,10 +220,11 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
     # Local login stays successful even if the optional downstream sync fails.
     try:
         from app.services import external_sub2
-        external_sub2.after_login(
-            member_id, session_factory=SessionLocal,
-            discover_existing=discover_existing_sub2,
-        )
+        if sync_to_sub2:
+            external_sub2.after_login(
+                member_id, session_factory=SessionLocal,
+                discover_existing=discover_existing_sub2,
+            )
     except Exception:
         log_store.STORE.add("WARNING", "external_sub2", f"外部子号 #{member_id} 登录成功，Sub2 同步未能提交，请手动重试")
     return {"ok": True, "cookie": cookie, "credits_available": available,
@@ -296,7 +299,7 @@ def batch_login_worker(job: Job) -> None:
         job.log(message)
         log_login(message)
 
-    member_ids = [int(x) for x in (job.meta.get("member_ids") or [])]
+    member_ids = list(dict.fromkeys(int(x) for x in (job.meta.get("member_ids") or [])))
     job.set_extra('items', [{'id': mid, 'email': (job.meta.get('member_emails') or {}).get(str(mid), ''),
                              'status': 'pending', 'message': '等待登录'} for mid in member_ids])
     job.target = len(member_ids)
@@ -305,7 +308,7 @@ def batch_login_worker(job: Job) -> None:
         return
     db = SessionLocal()
     try:
-        concurrency = max(1, int(setting_crud.get_settings(db).concurrency or 1))
+        concurrency = min(LOGIN_BATCH_SIZE, max(1, int(setting_crud.get_settings(db).concurrency or 1)))
     finally:
         db.close()
     if job.meta.get("sequential_login"):
@@ -327,10 +330,18 @@ def batch_login_worker(job: Job) -> None:
             otp_modes = job.meta.get('member_otp_modes') or {}
             if str(mid) in otp_modes:
                 options['otp_mode'] = otp_modes[str(mid)]
+            if job.meta.get('push_to_sub2'):
+                options['sync_to_sub2'] = False
             res = login_and_store(mid, log=_log, check_cancelled=job.check_cancelled, **options)
             job.bump(success=1) if res["ok"] else job.bump(fail=1)
+            message = res.get('message') or ('登录成功' if res['ok'] else '登录失败，请查看执行记录')
+            if res['ok'] and job.meta.get('push_to_sub2'):
+                from app.services import external_sub2
+                push = external_sub2.queue_login_push(
+                    mid, job.meta.get('sub2_target', ''), session_factory=SessionLocal)
+                message = '登录成功；' + push['message']
             job.record_item(mid, status='done' if res['ok'] else 'failed',
-                            message=res.get('message') or ('登录成功' if res['ok'] else '登录失败，请查看执行记录'))
+                            message=message)
         except JobCancelled:
             job.record_item(mid, status='cancelled', message='本次登录已终止')
             return
@@ -345,7 +356,15 @@ def batch_login_worker(job: Job) -> None:
             job.end_item()
 
     with ThreadPoolExecutor(max_workers=min(concurrency, len(member_ids))) as ex:
-        for _ in ex.map(_do, member_ids):
-            pass
+        batches = (len(member_ids) + LOGIN_BATCH_SIZE - 1) // LOGIN_BATCH_SIZE
+        for offset in range(0, len(member_ids), LOGIN_BATCH_SIZE):
+            job.check_cancelled()
+            batch = member_ids[offset:offset + LOGIN_BATCH_SIZE]
+            index = offset // LOGIN_BATCH_SIZE + 1
+            job.set_extra('batch', {'index': index, 'total': batches, 'size': LOGIN_BATCH_SIZE})
+            _log(f"第 {index}/{batches} 批：登录 {len(batch)} 个账号，每批最多 {LOGIN_BATCH_SIZE} 个，并发 {min(concurrency, len(batch))}")
+            for _ in ex.map(_do, batch):
+                pass
+            _log(f"第 {index}/{batches} 批处理结束")
     job.result = {"total": len(member_ids), "success": job.success, "fail": job.fail}
     _log(f"任务 #{job.id} 完成:成功 {job.success} / 失败 {job.fail}")

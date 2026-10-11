@@ -134,7 +134,7 @@
       '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span></div>' +
       '<details class="extm-card extm-import-card" open><summary>导入外部子号</summary>' +
         '<div class="bd">' +
-          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；登录成功后可勾选账号推送 Sub2。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
+          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 20 个，登录成功后自动推送 Sub2；推送失败可单独重试。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
           '<p class="tip">仅邮箱导入固定走验证码；普通账号可选择「手动输入」，收到邮件后在账号行填验证码。自动取码使用原邮箱配置或 supply.ink Token；带密码则优先密码登录，需要验证时使用所选取码方式。已有账号选择「覆盖」可更新设置。</p>' +
           '<div class="extm-row">' +
             '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
@@ -229,6 +229,21 @@
   function rowById(id) { return st.rows.find(function (r) { return r.id === id; }); }
   function activeJob(j) { return !!j && ["running", "pausing", "paused", "cancelling"].includes(j.status); }
   function running(r) { return st.pending.has(r.id) || activeJob(r.latest_job) || !!r.otp_challenge; }
+  function loginProgress(r) {
+    var job = r.latest_job, item = job && job.extra && (job.extra.items || []).find(function (i) { return i.id === r.id; });
+    var phase = st.pending.has(r.id) ? 'submitting' : r.otp_challenge ? 'otp' : job && (job.item_status || (item && item.status));
+    if (activeJob(job) && (!phase || ['pending', 'running'].includes(phase))) {
+      phase = ['paused', 'pausing', 'cancelling'].includes(job.status) ? job.status : (phase || 'running');
+    }
+    var states = {submitting:['提交中','warn',true], pending:['排队中','mut',false], running:['登录中','info',true],
+      otp:['等待验证码','warn',false], done:['本轮成功','ok',false], failed:['本轮失败','bad',false],
+      interrupted:['已中断','warn',false], cancelled:['已终止','mut',false], paused:['已暂停','warn',false],
+      pausing:['暂停中','warn',false], cancelling:['终止中','warn',false]};
+    var state = states[phase];
+    return state ? {label:state[0], tone:state[1], spinning:state[2],
+      message:st.pending.has(r.id) ? '正在提交任务…' : r.otp_challenge ? '等待手动验证码' :
+        (job && job.item_message) || (item && item.message) || (job ? '任务 #' + job.id + ' · 展开查看进度' : '')} : null;
+  }
   function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
   function jobPill(job) {
     var m = { running: ["info", "运行中"], pausing: ["warn", "暂停中"], paused: ["warn", "已暂停"], cancelling: ["warn", "终止中"], done: [job.fail ? "bad" : "ok", job.fail ? (job.success ? "部分失败" : "失败") : "已完成"], error: ["bad", "失败"], cancelled: ["mut", "已终止"] }[job.status] || ["mut", job.status];
@@ -296,9 +311,9 @@
     st.rows.forEach(function (r) {
       var tr = body.querySelector('tr[data-member="' + r.id + '"]');
       if (!tr) { tr = document.createElement("tr"); tr.dataset.member = r.id; }
-      var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id);
+      var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id), progress = loginProgress(r);
       tr.className = expanded ? "extm-expanded" : "";
-      var message = r.otp_challenge ? '等待手动验证码' : busy ? (st.pending.has(r.id) ? "正在提交任务…" : r.latest_job ? "任务 #" + r.latest_job.id + " · 展开查看实时进度" : '正在登录…') : r.message;
+      var message = progress ? progress.message : r.message;
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
@@ -307,13 +322,13 @@
         '<td><div class="extm-status">' +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
-          (r.otp_challenge ? '<span class="extm-pill warn">等待验证码</span>' : busy ? (r.latest_job ? jobPill(r.latest_job) : '<span class="extm-pill warn">提交中</span>') : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
+          (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
           (!busy && r.login_status === 'ok' && (!message || message.trim() === '登录成功') ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
         '<td>' + subPill(r) + '</td>' +
         '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
         '<td><span class="extm-note-text' + (r.note ? '' : ' extm-note-empty') + '" title="' + esc(r.note || '暂无备注') + '">' + esc(r.note || '—') + '</span></td>' +
         '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
-        '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + busy + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? ((r.latest_job && r.latest_job.status === 'paused') ? '' : spinner()) + (st.pending.has(r.id) ? '提交中' : ({paused:'已暂停',pausing:'暂停中',cancelling:'终止中'}[(r.latest_job || {}).status] || '登录中')) : '重登') + '</button>') +
+        '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
         '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
       if (tr !== cursor) body.insertBefore(tr, cursor);
@@ -662,6 +677,9 @@
     panel.querySelector('[data-action="clear-logs"]').disabled = !job || !job.log_total || d.action;
     setHTML(panel.querySelector(".extm-job-title"), job ? '<strong>外部子号登录 · #' + job.id + '</strong>' + jobPill(job) : '<span class="extm-msg mut">' + (d.loading ? '正在加载…' : '选择历史任务查看详情') + '</span>');
     setHTML(panel.querySelector(".extm-job-meta"), job ? '<span>操作人 <b>' + esc(job.operator || '—') + '</b></span><span>开始 <b>' + esc(fmtTime(job.created_at)) + '</b></span>' + (job.finished_at ? '<span>结束 <b>' + esc(fmtTime(job.finished_at)) + '</b></span>' : '') : '');
+    var batch = job && job.extra && job.extra.batch;
+    var oldBatch = panel.querySelector('[data-login-batch]'); if (oldBatch) oldBatch.remove();
+    if (batch) panel.querySelector('.extm-job-meta').insertAdjacentHTML('beforeend', '<span data-login-batch>批次 <b>' + esc(batch.index) + '/' + esc(batch.total) + ' · 每批最多 ' + esc(batch.size) + ' 个</b></span>');
     var pct = job && job.target ? Math.min(100, Math.round((job.success + job.fail) / job.target * 100)) : 0;
     var progress = panel.querySelector('.extm-progress'); progress.setAttribute('aria-valuenow', pct); progress.setAttribute('aria-valuemin', '0'); progress.setAttribute('aria-valuemax', '100');
     progress.firstElementChild.style.width = pct + '%'; progress.firstElementChild.className = job && (job.fail || job.status === 'error') ? 'failed' : '';
@@ -788,7 +806,7 @@
       if (el('extm-otp-mode').value) payload.otp_mode = el('extm-otp-mode').value;
       var r = await api('/members/import', { method: 'POST', body: payload });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
-      if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，展开账号行查看进度和日志';
+      if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 20 个，成功后自动推送 Sub2';
       if (r.sequential_login) msg += ' · 按导入顺序逐个自动取码登录';
       if (r.errors && r.errors.length) msg += ' · ' + r.errors.join('；');
       opMsg(msg, r.failed ? 'err' : 'ok'); if (!r.failed) ta.value = ''; await load(true);
@@ -807,7 +825,7 @@
       ids.forEach(function (id) { var row = rowById(id); if (row) row.latest_job = job; });
       if (expandFirst) st.expanded.add(ids[0]);
       ids.forEach(function (id) { detailState(id).selected = job.id; });
-      toast('success', '已提交登录任务 #' + job.id + '，可在行内查看进度和日志');
+      toast('success', '已提交登录任务 #' + job.id + '，每批最多 20 个，成功后自动推送 Sub2');
     } catch (e) { toast('error', e.message); }
     finally { ids.forEach(function (id) { st.pending.delete(id); }); renderRows(); await load(true); }
     if (st.expanded.has(ids[0])) await refreshDetail(ids[0], true);

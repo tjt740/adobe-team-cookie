@@ -223,6 +223,8 @@ class CleanupMembersRequest(BaseModel):
 
 
 class JobStatusOut(BaseModel):
+    item_status: str | None = None
+    item_message: str = ""
     id: int
     type: str
     operator: str = ""
