@@ -67,7 +67,7 @@ def configure(body: ConfigIn,db=Depends(get_db)):
     cfg=link.settings(db)
     cfg['base_url']=body.base_url.strip()
     if body.integration_key:cfg['integration_key']=body.integration_key.strip()
-    try:remote=link.request(cfg,'GET','/capabilities') if body.enabled else None
+    try:remote=link.request(cfg,'GET','/capabilities',timeout=(5,12)) if body.enabled else None
     except link.IntegrationError as exc:raise HTTPException(400,str(exc)) from None
     if remote and (remote.get('protocol')!=2 or not remote.get('site_id')):
         raise HTTPException(400,'对方不支持联动协议 v2')
@@ -116,7 +116,7 @@ def retry_sync(body: SourceAction,db=Depends(get_db)):
 def login(body: SourceAction,db=Depends(get_db)):
     try:
         row=link.source(db,body.source_key)
-        job=link.submit_recovery(db,uuid.uuid4().hex,row.email,body.source_key,automatic=False)
+        job=link.submit_recovery(db,uuid.uuid4().hex,row.email,body.source_key,automatic=True)
         return link.job_result(job)
     except link.IntegrationError as exc:raise HTTPException(400,str(exc)) from None
 
@@ -159,7 +159,7 @@ def sources(page: int=1,db=Depends(get_db)):
             'has_cookie':bool(has_cookie),'auto_recovery':not reason,'recovery_message':reason,'recovery_code':reason_code,
             'version':credential.version if credential else 0,
             'delivery':{'state':delivery.state,'message':delivery.message,'account_id':delivery.account_id,
-                'next_at':delivery.next_at,'receipt':delivery.receipt} if delivery else None})
+                'next_at':delivery.next_at,'updated_at':delivery.updated_at,'receipt':delivery.receipt} if delivery else None})
     return {'items':values,'total':external_count+pool_count,'page':page}
 
 

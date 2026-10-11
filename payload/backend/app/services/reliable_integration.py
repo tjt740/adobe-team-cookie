@@ -56,7 +56,7 @@ def target(cfg):
     return api_base(cfg.get('base_url', '')).rstrip('/')
 
 
-def request(cfg, method, path, body=None):
+def request(cfg, method, path, body=None, *, timeout=(5, 70)):
     if not cfg.get('integration_key'):
         raise IntegrationError('configuration', '未配置 Sub2 专用联动密钥')
     address = target(cfg)
@@ -75,7 +75,7 @@ def request(cfg, method, path, body=None):
             client.trust_env = False
             response = client.request(method, address+'/integrations/okad'+path,
                 headers={'X-Integration-Key': cfg['integration_key']}, json=body,
-                timeout=(5, 70), allow_redirects=False)
+                timeout=timeout, allow_redirects=False)
     except requests.RequestException:
         raise IntegrationError('transport', '联动连接暂不可用，保留 Cookie 后重试', True) from None
     if response.status_code == 409:
@@ -207,6 +207,9 @@ def record_cookie(db, key, email, cookie, *, allow_create=False, account_id=None
 
 
 def queue_source(db, key, allow_create=False, account_id=None):
+    cfg = settings(db)
+    if not cfg['enabled'] or not cfg['site_id'] or not cfg['integration_key']:
+        raise IntegrationError('configuration', '可靠联动尚未启用，请先测试连接并保存配置；也可使用外部子号的原有推送入口')
     # Acquire before reading the Cookie, otherwise an upload can rotate it while
     # this caller waits for another writer, assigning a new version to stale data.
     try:

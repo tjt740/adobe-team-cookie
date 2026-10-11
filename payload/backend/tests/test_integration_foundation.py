@@ -216,3 +216,32 @@ def test_late_inventory_cannot_replace_new_pending_cookie(db,wired,monkeypatch):
     monkeypatch.setattr(link,'request',request)
     link.reconcile_inventory();db.refresh(d)
     assert d.version==2 and d.state=='pending'
+
+@pytest.mark.parametrize('action', ['push', 'retry-sync'])
+@pytest.mark.parametrize('missing', ['enabled', 'site_id', 'integration_key'])
+def test_unconfigured_action_does_not_report_success_or_change_cookie(client, db, wired, monkeypatch, action, missing):
+    from app.models.integration import CredentialState
+    monkeypatch.setattr(link, 'settings', lambda db: {**CFG, missing: False if missing == 'enabled' else ''})
+    response = client.post('/api/integration/' + action, json={'source_key': f'external:{wired}'})
+    assert response.status_code == 400
+    assert '尚未启用' in response.json()['detail']
+    db.expire_all()
+    assert db.get(ExternalMember, wired).cookie == 'old-cookie'
+    assert db.get(CredentialState, f'external:{wired}') is None
+    assert not list(db.scalars(select(CredentialDelivery)))
+
+
+def test_ui_recovery_rejects_manual_otp_instead_of_unusable_job(client, db, wired):
+    row = db.get(ExternalMember, wired); row.otp_mode = 'manual'; db.commit()
+    response = client.post('/api/integration/login', json={'source_key': f'external:{wired}'})
+    assert response.status_code == 400 and '手动验证码' in response.json()['detail']
+    assert not list(db.scalars(select(RecoveryJob)))
+
+
+def test_sources_exposes_delivery_timestamp_without_credentials(client, db, wired):
+    link.queue_source(db, f'external:{wired}')
+    response = client.get('/api/integration/sources').json()
+    row = response['items'][0]
+    assert row['delivery']['updated_at'] > 0
+    assert 'old-cookie' not in str(response)
+    assert 'fixture-key' not in str(response)

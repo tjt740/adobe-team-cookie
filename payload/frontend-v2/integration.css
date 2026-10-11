@@ -54,3 +54,16 @@ html.dark #integration-panel .warn{background:#3a321f;color:#e3bf70}
 html.dark #integration-panel .bad{background:#3d2731;color:#ef99aa}
 @media(max-width:900px){#integration-panel{padding:16px}#integration-panel .integration-workspace{padding:18px}#integration-panel .integration-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){#integration-panel .ws-heading{align-items:flex-start;gap:12px}#integration-panel input:not([type=checkbox]){width:100%}#integration-panel form>label:not(.integration-check){width:100%}#integration-panel footer{gap:8px}}
+
+#integration-panel{scrollbar-gutter:stable}
+#integration-panel .integration-refresh{display:flex;align-items:center;gap:12px}
+#integration-panel #integration-activity{min-width:190px;text-align:right;font-variant-numeric:tabular-nums}
+#integration-panel #integration-notice{min-height:44px;margin-bottom:14px;padding:10px 14px;border:1px solid transparent;border-radius:8px;font-size:13px}
+#integration-panel #integration-notice:not(:empty){padding:10px 14px;margin-bottom:14px}
+#integration-panel .integration-setup{padding:12px 16px;margin-bottom:18px;border:1px solid var(--ws-line);border-radius:8px;background:var(--ws-soft);font-size:13px}
+#integration-panel .integration-setup[hidden]{display:none}
+@media(max-width:900px){#integration-panel .integration-refresh{align-items:flex-end;flex-direction:column;gap:4px}}
+#integration-panel .integration-scroll{max-height:64vh;scrollbar-gutter:stable}
+#integration-panel th{position:sticky;top:0;z-index:2}
+#integration-panel td:last-child{position:sticky;right:0;background:var(--ws-paper);box-shadow:-3px 0 5px #00000005;z-index:1}
+#integration-panel th:last-child{right:0;z-index:3}
