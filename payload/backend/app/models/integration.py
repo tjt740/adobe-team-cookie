@@ -38,6 +38,7 @@ class CredentialDelivery(Base):
 
 class RecoveryJob(Base):
     __tablename__ = 'integration_recovery_jobs'
+    automatic: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
     source_key: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), index=True)
