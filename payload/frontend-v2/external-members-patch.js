@@ -5,7 +5,7 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var st = { rows: [], sel: new Set(), statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -42,6 +42,7 @@
     '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
     '.extm-batch-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266;white-space:nowrap}.extm-batch-profile select.extm-in{height:34px;width:156px;padding:0 6px;font-size:12px}.extm-batch-profile select:disabled{opacity:.55;cursor:not-allowed}',
     '.extm-tw{overflow-x:auto}',
+    '.extm-pagination{position:sticky;bottom:0;z-index:3;display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:14px 18px;background:var(--ws-card,#fff);border-top:1px solid var(--ws-line,#efeff5);color:var(--ws-muted,#909399);font-size:13px}.extm-pagination label,.extm-page-jump{display:inline-flex;align-items:center;gap:6px}.extm-pagination .extm-page-summary{margin-right:auto}.extm-pagination .extm-page-number{width:70px}.extm-pagination .extm-in:disabled{opacity:.55;cursor:not-allowed}html.dark .extm-pagination{background:var(--bg-card);border-color:var(--border)}',
     '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1860px}',
     '.extm-note-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.extm-note-empty{color:#a3acb9}',
     '.extm-note-dialog{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(480px,calc(100vw - 40px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--ws-line,#e4eaf2);border-radius:14px;padding:24px;background:var(--ws-card,#fff);color:var(--ws-text,#333639);box-shadow:0 20px 80px #18294533}.extm-note-dialog::backdrop{background:#17263d66}.extm-note-dialog .extm-btn[type=submit]{background:#2080f0;border-color:#2080f0}.extm-note-dialog .extm-btn[type=submit]:hover:not(:disabled){background:#4098fc;border-color:#4098fc}.extm-note-dialog .extm-ta:focus{border-color:#2080f0;box-shadow:0 0 0 2px #2080f026}.extm-note-dialog h3{margin:0 0 8px;font-size:18px}.extm-note-dialog p{margin:0 0 18px;color:var(--ws-muted,#7d8797);font-size:13px;overflow-wrap:anywhere}.extm-note-dialog label{display:block;margin-bottom:8px;font-size:13px}.extm-note-dialog .extm-ta{min-height:150px}.extm-note-help{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--ws-muted,#7d8797);margin-top:6px}.extm-note-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.extm-note-error{color:#d03050;font-size:12px;white-space:pre-wrap;margin-top:10px}.extm-note-error:empty{display:none}',
@@ -168,9 +169,17 @@
           '</div></details>' +
         '</div>' +
         '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:200px"><col style="width:96px"><col style="width:270px"></colgroup><thead><tr>' +
-          '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择全部账号"></th><th></th>' +
+          '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
           '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
         '</tr></thead><tbody id="extm-tbody"><tr><td colspan="12" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
+        '<nav class="extm-pagination" aria-label="外部子号分页">' +
+          '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
+          '<label for="extm-page-size">每页<select id="extm-page-size" class="extm-in" aria-label="每页显示条数"><option value="50">50 条</option><option value="100">100 条</option><option value="200" selected>200 条</option></select></label>' +
+          '<button type="button" class="extm-btn dft sm" id="extm-first">首页</button><button type="button" class="extm-btn dft sm" id="extm-prev">上一页</button>' +
+          '<span id="extm-page-info"></span>' +
+          '<button type="button" class="extm-btn dft sm" id="extm-next">下一页</button><button type="button" class="extm-btn dft sm" id="extm-last">末页</button>' +
+          '<form id="extm-page-jump" class="extm-page-jump"><label for="extm-page-number">跳至<input type="number" id="extm-page-number" class="extm-in extm-page-number" min="1" step="1" value="1" required>页</label><button type="submit" class="extm-btn dft sm" id="extm-page-go">跳转</button></form>' +
+        '</nav>' +
       '</div>';
 
     el("extm-do-import").onclick = doImport;
@@ -197,9 +206,19 @@
       }
     });
     el("extm-batch-del").onclick = batchDelete;
-    el("extm-f-status").onchange = function () { st.statusF = this.value; updSel(); load(); };
-    el("extm-f-sub").onchange = function () { st.subF = this.value; updSel(); load(); };
-    var kwT; el("extm-f-kw").oninput = function () { st.q = this.value.trim(); updSel(); clearTimeout(kwT); kwT = setTimeout(load, 300); };
+    el("extm-f-status").onchange = function () { st.statusF = this.value; resetPage(1); load(); };
+    el("extm-f-sub").onchange = function () { st.subF = this.value; resetPage(1); load(); };
+    var kwT; el("extm-f-kw").oninput = function () { st.q = this.value.trim(); resetPage(1); clearTimeout(kwT); kwT = setTimeout(load, 300); };
+    el("extm-page-size").onchange = function () {
+      var size = Number(this.value);
+      if (st.profileSaving.size || st.noteSaving || ![50, 100, 200].includes(size)) { renderPagination(); return; }
+      st.size = size; resetPage(1); load();
+    };
+    el("extm-first").onclick = function () { goPage(1); };
+    el("extm-prev").onclick = function () { goPage(st.page - 1); };
+    el("extm-next").onclick = function () { goPage(st.page + 1); };
+    el("extm-last").onclick = function () { goPage(pageCount()); };
+    el("extm-page-jump").onsubmit = function (event) { event.preventDefault(); goPage(Number(el("extm-page-number").value)); };
     el("extm-ckall").onchange = function () {
       var on = this.checked; st.sel.clear();
       if (on) st.rows.forEach(function (r) { st.sel.add(r.id); });
@@ -252,22 +271,58 @@
   function setHTML(node, html) { if (node && node._html !== html) { node.innerHTML = html; node._html = html; } }
   function setText(node, value) { if (node && node.textContent !== String(value)) node.textContent = value; }
 
+  function pageCount() { return Math.max(1, Math.ceil(st.total / st.size)); }
+  function renderPagination() {
+    if (!el("extm-page-size")) return;
+    var pages = pageCount(), busy = !!st.loadingSeq || st.profileSaving.size > 0 || st.noteSaving;
+    var start = st.rows.length ? (st.page - 1) * st.size + 1 : 0;
+    var end = st.rows.length ? start + st.rows.length - 1 : 0;
+    setText(el("extm-page-summary"), '共 ' + st.total + ' 条 · 当前 ' + start + '–' + end + ' 条');
+    setText(el("extm-page-info"), '第 ' + st.page + ' / ' + pages + ' 页');
+    el("extm-page-size").value = String(st.size);
+    el("extm-page-size").disabled = busy;
+    el("extm-first").disabled = el("extm-prev").disabled = busy || st.page <= 1;
+    el("extm-last").disabled = el("extm-next").disabled = busy || st.page >= pages;
+    var input = el("extm-page-number"); input.max = String(pages); input.disabled = busy;
+    if (document.activeElement !== input) input.value = String(st.page);
+    el("extm-page-go").disabled = busy;
+  }
+  function resetPage(page) {
+    ++st.loadSeq; st.page = page; st.rows = []; st.sel.clear(); st.expanded.clear();
+    Object.keys(st.details).forEach(function (id) { clearTimeout(st.details[id].closeTimer); });
+    st.details = {};
+    renderRows();
+  }
+  function goPage(page) {
+    if (st.loadingSeq || st.profileSaving.size || st.noteSaving || !Number.isInteger(page)) return;
+    page = Math.max(1, Math.min(page, pageCount()));
+    if (page === st.page) return;
+    resetPage(page); load();
+  }
+
   function load(silent) {
     var body = el("extm-tbody"); if (!body) return Promise.resolve();
-    if (st.profileSaving.size || st.noteSaving) return Promise.resolve();
+    if (st.profileSaving.size || st.noteSaving || (silent && st.loadingSeq)) return Promise.resolve();
     var seq = ++st.loadSeq;
+    if (!silent) st.loadingSeq = seq;
+    renderPagination();
     if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="12" class="extm-empty">加载中…</td></tr>';
-    return api("/members?" + qs().concat(["size=500"]).join("&")).then(function (d) {
+    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
       if (seq !== st.loadSeq) return;
+      st.total = d.total != null ? d.total : (d.items || []).length;
+      setText(el("extm-total"), st.total);
+      if (st.page > pageCount()) { resetPage(pageCount()); return load(); }
       st.rows = d.items || [];
       var visible = new Set(st.rows.map(function (r) { return r.id; }));
       st.sel.forEach(function (id) { if (!visible.has(id)) st.sel.delete(id); });
-      setText(el("extm-total"), d.total != null ? d.total : st.rows.length);
       renderRows();
     }).catch(function (e) {
       if (seq !== st.loadSeq) return;
       if (!st.rows.length) body.innerHTML = '<tr><td colspan="12" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
       else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
+    }).finally(function () {
+      if (st.loadingSeq === seq) st.loadingSeq = 0;
+      renderPagination();
     });
   }
 
@@ -732,6 +787,7 @@
   }
 
   function updSel() {
+    renderPagination();
     setText(el('extm-selc'), st.sel.size);
     setLoading(el('extm-export'), !!st.exporting, st.exporting ? '导出中…' : (st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : (qs().length ? '导出筛选 Cookie' : '导出全部 Cookie')));
     var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
