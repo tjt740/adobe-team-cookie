@@ -107,3 +107,11 @@ test('missing recovery prerequisites disable login without disabling cookie deli
   assert.equal(h.get('sources').querySelector('[data-action=login]').disabled,true);
   assert.equal(h.get('sources').querySelector('[data-action=push]').disabled,false);
 });
+
+test('recovery notice follows job completion instead of remaining at waiting/login',async t=>{
+  const h=harness();t.after(()=>h.dom.window.close());await h.open();
+  h.state.custom=(url,o)=>url.endsWith('/login')?Promise.resolve(response({job_id:'job-1',state:'queued',message:'等待登录'})):null;
+  h.get('sources').querySelector('[data-action=login]').click();await flush();
+  h.state.jobs=[{job_id:'job-1',source_key:'external:1',state:'done',message:'登录完成，后续同步独立重试',email:'one@fixture.invalid',created_at:1000}];
+  await h.poll();assert.match(h.get('notice').textContent,/登录完成/);assert.doesNotMatch(h.get('notice').textContent,/等待登录/);
+});

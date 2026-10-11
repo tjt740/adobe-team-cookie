@@ -3,7 +3,7 @@
   'use strict';
   var panel, page = 1, total = 0, active = false, generation = 0;
   var refreshing = false, acting = false, poll = null, reads = new Set();
-  var requestID = 0, loaded = false, dirty = false, connected = false, lastChecked = 0;
+  var requestID = 0, loaded = false, dirty = false, connected = false, lastChecked = 0, trackedJob = '';
   var labels = {pending:'等待同步', retry:'等待补推或验证', ready:'已验证 · 可调度',
     paused:'已验证 · 保持暂停', attention:'需要处理', blocked:'已停止 · 需要处理',
     queued:'排队', running:'登录中', done:'登录完成', failed:'未完成'};
@@ -65,7 +65,7 @@
     requestID++; reads.forEach(function (controller) { controller.abort(); }); reads.clear(); refreshing = false;
   }
   function badge(state) {
-    var tone = state === 'ready' ? 'good' : ['attention','blocked','failed'].includes(state) ? 'bad' : 'warn';
+    var tone = ['ready','done'].includes(state) ? 'good' : ['attention','blocked','failed'].includes(state) ? 'bad' : 'warn';
     return '<span class="integration-badge ' + tone + '">' + esc(labels[state] || state) + '</span>';
   }
   async function api(path, method, body) {
@@ -134,6 +134,13 @@
     reconcile(el('jobs'), status.jobs.slice(0,20), function (job) {
       return '<div class="integration-job">' + badge(job.state) + '<span>' + esc(job.email) + '<small>' + esc(job.message) + '</small></span><small>' + new Date(job.created_at * 1000).toLocaleString() + '</small></div>';
     }, '<div class="integration-empty">暂无恢复任务</div>');
+    if (trackedJob) {
+      var job = status.jobs.find(function (item) { return item.job_id === trackedJob; });
+      if (job) {
+        notice((labels[job.state] || job.state) + '：' + (job.message || job.email));
+        if (['done','failed'].includes(job.state)) trackedJob = '';
+      }
+    }
     loaded = true;
   }
   async function refresh(targetPage, manual) {
@@ -159,9 +166,10 @@
     if (acting) return;
     cancelReads();
     var current = generation;
-    acting = true; controls(); notice('');
+    acting = true; trackedJob = ''; controls(); notice('');
     try {
       var result = await api(path, method, body);
+      if (result.job_id) trackedJob = result.job_id;
       if (configuration) {
         el('key').value = ''; dirty = false;
         el('base').value = result.base_url;
