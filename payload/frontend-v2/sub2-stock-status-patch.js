@@ -16,7 +16,7 @@
   var pending = false;
 
   function token() { return localStorage.getItem("okad_token") || ""; }
-  function path() { return location.pathname.replace(/\/+$/, ""); }
+  function path() { return window.OKAD_ROUTE.path().replace(/\/+$/, ""); }
   function onTarget() { var p = path(); return p === "/pool" || p === "/adobe"; }
   function isPool() { return path() === "/pool"; }
 

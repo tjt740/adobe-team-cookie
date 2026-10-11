@@ -131,7 +131,7 @@
     load(); return card;
   }
   function install() {
-    if (location.pathname.replace(/\/+$/, '') !== '/settings') { const old = document.getElementById(ID); if (old) old.remove(); return; }
+    if (window.OKAD_ROUTE.path().replace(/\/+$/, '') !== '/settings') { const old = document.getElementById(ID); if (old) old.remove(); return; }
     if (document.getElementById(ID)) return;
     const content = document.querySelector('#app .n-layout-content.content'); if (!content) return;
     const mount = Array.from(content.querySelectorAll('.n-card')).find(card => {

@@ -3,7 +3,7 @@
   let queued=false;
   function sync(){
     queued=false;
-    const path=location.pathname.replace(/\/+$/,'')||'/dashboard';
+    const path=window.OKAD_ROUTE.path().replace(/\/+$/,'')||'/dashboard';
     const page=path.slice(1);
     if(document.body.dataset.workspace!==page)document.body.dataset.workspace=page;
     if(page!=='settings')return;

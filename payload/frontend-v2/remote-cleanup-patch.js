@@ -729,7 +729,7 @@
       window.location.hash = "#" + target;
       return;
     }
-    window.location.href = "/#" + target;
+    window.location.href = window.OKAD_ROUTE.href(target);
   }
 
   async function handleAllChildrenJob(titleEl, btn, mode) {
@@ -1041,7 +1041,7 @@
 
   function isSettingsPage() {
     return (
-      window.location.pathname === "/settings" ||
+      window.OKAD_ROUTE.path() === "/settings" ||
       window.location.hash === "#/settings" ||
       document.title.indexOf("\u8bbe\u7f6e") >= 0
     );

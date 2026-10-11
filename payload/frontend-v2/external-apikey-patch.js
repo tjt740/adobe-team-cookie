@@ -7,7 +7,7 @@
   var CARD_ID = "okad-external-apikey";
   var TOKEN_KEY = "okad_token";
 
-  function isSettingsPage() { return location.pathname.replace(/\/+$/, "") === "/settings"; }
+  function isSettingsPage() { return window.OKAD_ROUTE.path().replace(/\/+$/, "") === "/settings"; }
   function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
   function notify(type, m) { var a = window.$message; if (a && typeof a[type] === "function") a[type](m); else if (type === "error") alert(m); else console.log("[external-apikey]", m); }
 
@@ -98,7 +98,7 @@
 
   var lastPath = "";
   function tick() {
-    var path = location.pathname;
+    var path = window.OKAD_ROUTE.path();
     if (path !== lastPath) { lastPath = path; var old = document.getElementById(CARD_ID); if (old && !isSettingsPage()) old.remove(); }
     install();
   }

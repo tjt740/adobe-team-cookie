@@ -68,6 +68,7 @@
   function navigate(path) {
     hideTip();
     return routerReady.then(function (router) {
+      path = window.OKAD_ROUTE.route(path);
       var route = router.currentRoute.value;
       if (router.resolve(path).meta.okadPanel) {
         var state = history.state || {};
@@ -98,7 +99,7 @@
     var icon = document.createElement('div'); icon.className = 'n-menu-item-content__icon';
     icon.innerHTML = window.OKAD_ICONS.svg(page.icon);
     var label = document.createElement('div'); label.className = 'n-menu-item-content-header';
-    var link = document.createElement('a'); link.href = '/' + page.route; link.textContent = page.label;
+    var link = document.createElement('a'); link.href = window.OKAD_ROUTE.href('/' + page.route); link.textContent = page.label;
     label.appendChild(link);
     content.append(icon, label); it.appendChild(content);
     it.addEventListener('keydown', function (e) {
@@ -130,7 +131,7 @@
       if (header) sizes.observe(header);
     }
     menu = sider && sider.querySelector('.n-menu');
-    if (!menu || location.pathname === '/login' || !localStorage.getItem('okad_token')) {
+    if (!menu || window.OKAD_ROUTE.path() === '/login' || !localStorage.getItem('okad_token')) {
       if (active) deactivate();
       Object.keys(pages).forEach(function (id) { var it = document.getElementById(id); if (it) it.remove(); });
       document.body.classList.remove('okad-panel-active');
@@ -151,14 +152,14 @@
     if (first) {
       var entry = document.getElementById(first);
       if (menu.firstElementChild !== entry) menu.insertBefore(entry, menu.firstElementChild);
-      var settings = menu.querySelector('a[href="/settings"]');
+      var settings = menu.querySelector('a[href="' + window.OKAD_ROUTE.href('/settings') + '"]');
       var settingsItem = settings && settings.closest('.n-menu-item');
       if (settingsItem && entry.nextElementSibling !== settingsItem) menu.insertBefore(settingsItem, entry.nextElementSibling);
     }
     menu.querySelectorAll('.n-menu-item').forEach(function (it) {
       var link = it.querySelector('a[href]');
       if (link) { it.tabIndex = 0; it.setAttribute('aria-label', link.textContent.trim()); }
-      var current = active ? it.id === active : !!(link && new URL(link.href).pathname === (route ? route.path : location.pathname));
+      var current = active ? it.id === active : !!(link && window.OKAD_ROUTE.path(link.href) === (route ? route.path : window.OKAD_ROUTE.path()));
       it.classList.toggle('okad-current-item', current);
       var target = link || it;
       if (current) { if (target.getAttribute('aria-current') !== 'page') target.setAttribute('aria-current', 'page'); }

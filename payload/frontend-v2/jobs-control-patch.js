@@ -41,7 +41,7 @@
     finally { busy = false;render(); }
   }
   function install() {
-    if (location.pathname.replace(/\/+$/, '') !== '/jobs') { if (box) box.remove();box=null;current=0;state=null;return; }
+    if (window.OKAD_ROUTE.path().replace(/\/+$/, '') !== '/jobs') { if (box) box.remove();box=null;current=0;state=null;return; }
     var card = Array.from(document.querySelectorAll('.n-card')).find(function (c) {var header=c.querySelector('.n-card-header');return header && header.textContent.includes('任务详情');});
     var match = card && card.querySelector('.n-card-header').textContent.match(/#(\d+)/);
     if (!match) {if (box) box.remove();box=null;current=0;state=null;return;}

@@ -180,7 +180,7 @@
   }
 
   function install() {
-    if (location.pathname.replace(/\/+$/, '') !== '/settings') {
+    if (window.OKAD_ROUTE.path().replace(/\/+$/, '') !== '/settings') {
       var old = document.getElementById(ID); if (old) old.remove();
       return;
     }

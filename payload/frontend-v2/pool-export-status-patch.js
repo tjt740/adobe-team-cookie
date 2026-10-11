@@ -19,7 +19,7 @@
   }
 
   function isPoolPage() {
-    return location.pathname.replace(/\/+$/, "") === "/pool";
+    return window.OKAD_ROUTE.path().replace(/\/+$/, "") === "/pool";
   }
 
   function findSearchButton(root) {

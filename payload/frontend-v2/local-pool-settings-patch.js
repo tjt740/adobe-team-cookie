@@ -6,7 +6,7 @@
   var TOKEN_KEY = "okad_token";
 
   function isSettingsPage() {
-    return location.pathname.replace(/\/+$/, "") === "/settings";
+    return window.OKAD_ROUTE.path().replace(/\/+$/, "") === "/settings";
   }
 
   function token() {
@@ -180,7 +180,7 @@
 
   var lastPath = "";
   function tick() {
-    var path = location.pathname;
+    var path = window.OKAD_ROUTE.path();
     if (path !== lastPath) {
       lastPath = path;
       var old = document.getElementById(CARD_ID);
