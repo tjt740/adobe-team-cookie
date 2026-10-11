@@ -12,6 +12,22 @@ from app.services.job_manager import JOBS, Job, JobCancelled
 
 
 @pytest.fixture
+def engine(tmp_path):
+    # HTTP requests and the login worker need independent transactions. A
+    # StaticPool shares one connection and lets request teardown roll back the
+    # worker's uncommitted cookie write, unlike the application's file database.
+    from sqlalchemy import create_engine
+    from app.db.session import Base
+    value = create_engine(
+        "sqlite:///" + str(tmp_path / "manual-otp.db"),
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(value)
+    yield value
+    value.dispose()
+
+
+@pytest.fixture
 def broker(monkeypatch):
     value = manual_otp.ManualOtpBroker()
     monkeypatch.setattr(manual_otp, "BROKER", value)

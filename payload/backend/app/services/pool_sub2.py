@@ -22,7 +22,9 @@ SUBMIT_LOCK = threading.Lock()
 
 def configuration(db):
     from app.api.routes.sub2 import _get_config
-    cfg = _get_config(db)
+    from app.services.reliable_integration import settings
+    reliable = settings(db)
+    cfg = reliable if reliable['enabled'] else _get_config(db)
     if not cfg['base_url'] or not cfg['admin_token']:
         raise ValueError('请先在 Sub2 管理保存地址和管理员密钥')
     if cfg['platform'] != 'adobe':
@@ -106,6 +108,8 @@ def _login_error(exc):
 
 def _one(job, mid, cfg, report):
     _check_target(cfg)
+    if cfg.get('enabled') and cfg.get('integration_key'):
+        return _one_reliable(job, mid, cfg, report)
     existing = _existing(cfg)
     with SessionLocal() as db:
         member = db.get(AdobeMember, mid)
@@ -127,12 +131,20 @@ def _one(job, mid, cfg, report):
         report('login', '正在登录 Adobe，获取 Cookie', email)
         job.check_cancelled()
         try:
-            record = firefly.register_account(
-                email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
-                proxy_url=proxy_pool.next_proxy(proxy_raw), otp_timeout=180,
-                log=lambda _: job.check_cancelled(),
-                on_credentials=lambda **values: _save_rotation(mid, email, **values),
-            )
+            from app.services import reliable_integration
+            with SessionLocal() as settings_db:
+                reliable = reliable_integration.settings(settings_db)['enabled']
+            if reliable:
+                record = reliable_integration.login_pool(mid, session_factory=SessionLocal)
+                if not record.get('ok'):
+                    raise ValueError('登录未完成，请检查联动任务')
+            else:
+                record = firefly.register_account(
+                    email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
+                    proxy_url=proxy_pool.next_proxy(proxy_raw), otp_timeout=180,
+                    log=lambda _: job.check_cancelled(),
+                    on_credentials=lambda **values: _save_rotation(mid, email, **values),
+                )
         except Exception as exc:
             raise ValueError(_login_error(exc)) from None
         cookie = (record.get('cookie') or '').strip()
@@ -189,7 +201,40 @@ def _one(job, mid, cfg, report):
         if member and member.email == email and member.cookie == item['cookie']:
             member.sub2_pushed_at = datetime.now(timezone.utc)
             db.commit()
-    return 'pushed', '已推送，在库 Sub2'
+    return 'pushed', '已推送 Sub2'
+
+
+def _one_reliable(job, mid, cfg, report):
+    from app.services import reliable_integration as link
+    with SessionLocal() as db:
+        member = db.get(AdobeMember, mid)
+        if not member or member.is_admin:
+            raise ValueError('账号已删除或不再是子号')
+        email, has_cookie = member.email, bool((member.cookie or '').strip())
+    # Preserve the established pool workflow: an account already in Sub2 is
+    # skipped before requesting any OTP. Explicit resync lives in the center.
+    matches=[item for item in link.inventory(cfg) if item['email'].strip().lower()==email.strip().lower()]
+    if len(matches)>1:
+        raise ValueError('Sub2 同邮箱账号重复，请先整理')
+    if matches:
+        return 'existing', '已在库，跳过登录和推送'
+    with link.login_destination(cfg):
+        if not has_cookie:
+            report('login', '正在获取 Cookie；同步将由持久任务处理', email)
+            job.check_cancelled()
+            result = link.login_pool(mid, session_factory=SessionLocal)
+            if not result.get('ok'):
+                raise ValueError('登录未完成，请查看联动中心')
+        job.check_cancelled()
+        _check_target(cfg)
+        with SessionLocal() as db:
+            member=db.get(AdobeMember,mid)
+            from app.api.routes.sub2 import REQUIRED_CREDITS
+            credits=float(member.credits) if member and member.credits is not None else -1
+            if not math.isfinite(credits) or credits<REQUIRED_CREDITS:
+                raise ValueError('Cookie 已保存，但积分未知或低于 4000，未推送')
+            link.queue_source(db, f'pool:{mid}', allow_create=True)
+    return 'queued', 'Cookie 已保存并排队，请在联动中心查看入库与验证结果'
 
 
 def worker(job: Job, cfg):
@@ -222,6 +267,7 @@ def worker(job: Job, cfg):
             job.bump(fail=1)
         job.log(f"[{items[mid]['email'] or mid}] {items[mid]['message']}")
     job.result = {'items': list(items.values()),
+                  'queued': sum(i['status'] == 'queued' for i in items.values()),
                   'pushed': sum(i['status'] == 'pushed' for i in items.values()),
                   'existing': sum(i['status'] == 'existing' for i in items.values()),
                   'failed': job.fail}

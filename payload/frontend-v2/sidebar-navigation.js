@@ -201,6 +201,7 @@
   new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true });
   window.OKAD_NAV = {
     register: function (page) { pages[page.id] = page; schedule(); },
+    navigate: navigate,
     close: closePage,
     rect: function () {
       var s = document.querySelector('.n-layout-sider'), h = document.querySelector('.n-layout-header');

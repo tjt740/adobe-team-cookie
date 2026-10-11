@@ -15,7 +15,7 @@ def wait_until(predicate):
     assert predicate()
 
 
-def test_next_batch_waits_for_twenty_and_successes_push_immediately(monkeypatch, SessionLocal):
+def test_next_batch_waits_for_fifty_and_successes_push_immediately(monkeypatch, SessionLocal):
     monkeypatch.setattr(login, 'SessionLocal', SessionLocal)
     monkeypatch.setattr(login.setting_crud, 'get_settings', lambda db: SimpleNamespace(concurrency=5))
     release = threading.Event()
@@ -45,7 +45,7 @@ def test_next_batch_waits_for_twenty_and_successes_push_immediately(monkeypatch,
 
     monkeypatch.setattr(login, 'login_and_store', fake)
     monkeypatch.setattr(sync, 'queue_login_push', push)
-    job = Job(1, 'external_login', {'member_ids': list(range(1, 46)), 'push_to_sub2': True,
+    job = Job(1, 'external_login', {'member_ids': list(range(1, 106)), 'push_to_sub2': True,
                                   'sub2_target': 'https://sub2.example/api/v1'})
     def run():
         try:
@@ -55,17 +55,17 @@ def test_next_batch_waits_for_twenty_and_successes_push_immediately(monkeypatch,
     worker = threading.Thread(target=run)
     worker.start()
     try:
-        wait_until(lambda: len(started) == 20 and len(pushed) == 18)
-        assert 21 not in started and 1 not in pushed and 7 not in pushed
-        assert job.extra['batch'] == {'index': 1, 'total': 3, 'size': 20}
+        wait_until(lambda: len(started) == 50 and len(pushed) == 48)
+        assert 51 not in started and 1 not in pushed and 7 not in pushed
+        assert job.extra['batch'] == {'index': 1, 'total': 3, 'size': 50}
         release.set()
         worker.join(5)
         assert not worker.is_alive() and not failures
         assert maximum <= 5
-        assert set(started) == set(range(1, 46))
-        assert set(pushed) == set(range(1, 46)) - {7}
-        assert job.success == 44 and job.fail == 1
-        assert job.extra['batch'] == {'index': 3, 'total': 3, 'size': 20}
+        assert set(started) == set(range(1, 106))
+        assert set(pushed) == set(range(1, 106)) - {7}
+        assert job.success == 104 and job.fail == 1
+        assert job.extra['batch'] == {'index': 3, 'total': 3, 'size': 50}
     finally:
         release.set()
         worker.join(5)

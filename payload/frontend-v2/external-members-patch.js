@@ -43,7 +43,7 @@
     '.extm-batch-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266;white-space:nowrap}.extm-batch-profile select.extm-in{height:34px;width:156px;padding:0 6px;font-size:12px}.extm-batch-profile select:disabled{opacity:.55;cursor:not-allowed}',
     '.extm-tw{overflow:auto;max-height:60vh}.extm-t>thead>tr>th{position:sticky;top:0;z-index:2}.extm-t>thead>tr>th:last-child{z-index:3}',
     '.extm-pagination{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:14px 18px;background:var(--ws-card,#fff);border-top:1px solid var(--ws-line,#efeff5);border-radius:0 0 12px 12px;color:var(--ws-muted,#909399);font-size:13px}.extm-pagination label,.extm-page-jump{display:inline-flex;align-items:center;gap:6px}.extm-pagination .extm-page-summary{margin-right:auto}.extm-pagination .extm-page-number{width:70px}.extm-pagination .extm-in:disabled{opacity:.55;cursor:not-allowed}html.dark .extm-pagination{background:var(--bg-card);border-color:var(--border)}',
-    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1860px}',
+    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:2112px}',
     '.extm-note-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.extm-note-empty{color:#a3acb9}',
     '.extm-note-dialog{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(480px,calc(100vw - 40px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--ws-line,#e4eaf2);border-radius:14px;padding:24px;background:var(--ws-card,#fff);color:var(--ws-text,#333639);box-shadow:0 20px 80px #18294533}.extm-note-dialog::backdrop{background:#17263d66}.extm-note-dialog .extm-btn[type=submit]{background:#2080f0;border-color:#2080f0}.extm-note-dialog .extm-btn[type=submit]:hover:not(:disabled){background:#4098fc;border-color:#4098fc}.extm-note-dialog .extm-ta:focus{border-color:#2080f0;box-shadow:0 0 0 2px #2080f026}.extm-note-dialog h3{margin:0 0 8px;font-size:18px}.extm-note-dialog p{margin:0 0 18px;color:var(--ws-muted,#7d8797);font-size:13px;overflow-wrap:anywhere}.extm-note-dialog label{display:block;margin-bottom:8px;font-size:13px}.extm-note-dialog .extm-ta{min-height:150px}.extm-note-help{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--ws-muted,#7d8797);margin-top:6px}.extm-note-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.extm-note-error{color:#d03050;font-size:12px;white-space:pre-wrap;margin-top:10px}.extm-note-error:empty{display:none}',
     '.extm-t th{text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:#909399;background:#fafafc;border-bottom:1px solid #efeff5;white-space:nowrap}',
@@ -58,6 +58,8 @@
     '.extm-pill{display:inline-block;font-size:12px;padding:1px 9px;border-radius:11px;line-height:1.7;white-space:nowrap}',
     '.extm-pill[data-sub2-stock]{padding:0 7px;line-height:18px}',
     '.extm-pill.ok{background:#e8f7f0;color:#18a058}.extm-pill.bad{background:#fce9ec;color:#d03050}.extm-pill.warn{background:#fdf3e6;color:#f0a020}.extm-pill.mut{background:#f0f2f5;color:#909399}',
+    '.extm-credit-warning{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 8px;border:1px solid #f6dfb9;border-radius:5px;background:#fff7e8;color:#a66310;font:12px/1 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;white-space:nowrap;vertical-align:middle;cursor:pointer;transition:background .15s,border-color .15s}.extm-credit-warning:hover{background:#ffedcf;border-color:#e8c28b}.extm-credit-warning:focus-visible{outline:2px solid #2080f0;outline-offset:2px}.extm-credit-warning .okad-icon{opacity:.75}.extm-credit-dialog .extm-credit-error{color:#b2730f;background:#fff7e8;border-radius:6px;padding:12px;overflow-wrap:anywhere}',
+    '.extm-sub2-confirm-dialog{width:min(600px,calc(100vw - 40px))}.extm-sub2-confirm-dialog ul{list-style:none;margin:0;padding:0 12px;max-height:240px;overflow:auto;background:var(--ws-soft,#fff7e8);border:1px solid var(--ws-line,#f3e4c5);border-radius:8px}.extm-sub2-confirm-dialog li{padding:10px 0;overflow-wrap:anywhere}.extm-sub2-confirm-dialog li+li{border-top:1px solid var(--ws-line,#f3e4c5)}.extm-sub2-confirm-dialog li strong,.extm-sub2-confirm-dialog li span{display:block;font-size:13px}.extm-sub2-confirm-dialog li span{color:#b2730f;margin-top:4px}.extm-sub2-confirm-dialog .extm-relink-warning{margin-top:16px}.extm-sub2-confirm-dialog [data-confirm]{background:#2080f0;border-color:#2080f0}',
     '.extm-cap{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:3px;margin-left:6px;font-family:ui-monospace,Menlo,monospace}',
     '.extm-cap.ok{background:#e8f7f0;color:#18a058}.extm-cap.no{background:#f0f2f5;color:#c0c4cc}',
     '.extm-empty{text-align:center;color:#c0c4cc;padding:48px 0;font-size:13px}',
@@ -112,7 +114,7 @@
   function el(id) { return document.getElementById(id); }
   function toast(type, m) { opMsg(m, type === "error" ? "err" : (type === "success" ? "ok" : "mut")); var a = window.$message; if (a && typeof a[type] === "function") a[type](m); }
   function opMsg(t, c) { var e = el("extm-op"); if (e) { e.className = "extm-msg" + (c ? " " + c : ""); e.textContent = t || ""; } }
-  function fmtTime(s) { if (!s) return "—"; var d = new Date(typeof s === "number" ? s * 1000 : (/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(s) ? s + "Z" : s)); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+  function fmtTime(s, seconds) { if (!s) return "—"; var d = new Date(typeof s === "number" ? s * 1000 : (/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(s) ? s + "Z" : s)); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + (seconds ? ":" + p(d.getSeconds()) : ""); }
 
   var STATUS_MAP = {
     ok: ["ok", "正常"], never: ["mut", "未登录"], login_failed: ["bad", "登录失败"],
@@ -120,8 +122,22 @@
   };
   function statusPill(s) { var m = STATUS_MAP[s] || ["mut", s || "—"]; return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + "</span>"; }
   function subPill(row) {
-    if (row.login_status === "never" || row.credits_total == null) return '<span class="extm-pill mut">—</span>';
+    if (row.credits_total == null && (row.credits_error || row.login_status === 'ok' || row.first_login_done)) {
+      var reason = row.credits_error || '未保存具体失败原因，重新登录后会再次查询积分。';
+      var label = row.credits_error ? '积分查询失败' : '积分未查到';
+      return '<button type="button" class="extm-credit-warning" data-credit-error="' + row.id + '" aria-haspopup="dialog" aria-label="' + label + '，订阅状态未知，点击查看详情" title="' + esc('订阅状态未知；' + reason + '；点击查看详情') + '"><span>' + label + '</span>' + window.OKAD_ICONS.svg('info', 14) + '</button>';
+    }
+    if (row.login_status === "never" || row.credits_total == null) return '<span class="extm-pill mut">待查询</span>';
     return row.subscription_ok ? '<span class="extm-pill ok">订阅正常</span>' : '<span class="extm-pill bad">掉订阅</span>';
+  }
+
+  function showCreditError(id) {
+    var row = rowById(id); if (!row || el('extm-credit-dialog')) return;
+    var dialog = document.createElement('dialog'); dialog.id = 'extm-credit-dialog'; dialog.className = 'extm-note-dialog extm-credit-dialog'; dialog.setAttribute('aria-labelledby', 'extm-credit-title');
+    dialog.innerHTML = '<h3 id="extm-credit-title">' + (row.credits_error ? '积分查询失败' : '积分未查到') + '</h3><p>' + esc(row.email) + '</p><p class="extm-credit-error">' + esc(row.credits_error || '这条历史记录未保存具体失败原因。') + '</p><p>积分未查到，暂时无法判断订阅状态，不代表积分为 0 或已掉订阅。「登录成功」仅表示登录及 Cookie 获取成功。</p><p>可关闭此窗口，点击账号行的「重登」重新查询积分；页面「刷新」只更新已保存的结果。</p><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
+    dialog.querySelector('button').onclick = function () { dialog.close(); };
+    dialog.onclose = function () { dialog.remove(); var button = document.querySelector('[data-credit-error="' + id + '"]'); if (button) button.focus({preventScroll:true}); };
+    document.body.appendChild(dialog); dialog.showModal();
   }
   function creditCell(row) {
     var a = row.credits_available == null ? "—" : Math.round(row.credits_available);
@@ -135,7 +151,7 @@
       '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span></div>' +
       '<details class="extm-card extm-import-card" open><summary>导入外部子号</summary>' +
         '<div class="bd">' +
-          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 20 个，登录成功后自动推送 Sub2；推送失败可单独重试。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
+          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 50 个，登录成功后自动推送 Sub2；推送失败可单独重试。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
           '<p class="tip">仅邮箱导入固定走验证码；普通账号可选择「手动输入」，收到邮件后在账号行填验证码。自动取码使用原邮箱配置或 supply.ink Token；带密码则优先密码登录，需要验证时使用所选取码方式。已有账号选择「覆盖」可更新设置。</p>' +
           '<div class="extm-row">' +
             '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
@@ -168,10 +184,10 @@
             '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
           '</div></details>' +
         '</div>' +
-        '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:200px"><col style="width:96px"><col style="width:270px"></colgroup><thead><tr>' +
+        '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:200px"><col style="width:96px"><col style="width:270px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="12" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
+          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
+        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="13" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
         '<nav class="extm-pagination" aria-label="外部子号分页">' +
           '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
           '<label for="extm-page-size">每页<select id="extm-page-size" class="extm-in" aria-label="每页显示条数"><option value="50">50 条</option><option value="100">100 条</option><option value="200" selected>200 条</option></select></label>' +
@@ -254,6 +270,9 @@
     if (activeJob(job) && (!phase || ['pending', 'running'].includes(phase))) {
       phase = ['paused', 'pausing', 'cancelling'].includes(job.status) ? job.status : (phase || 'running');
     }
+    if (job && !activeJob(job) && ['pending', 'running'].includes(phase)) {
+      phase = job.status === 'cancelled' ? 'cancelled' : job.status === 'error' ? 'failed' : 'interrupted';
+    }
     var states = {submitting:['提交中','warn',true], pending:['排队中','mut',false], running:['登录中','info',true],
       otp:['等待验证码','warn',false], done:['本轮成功','ok',false], failed:['本轮失败','bad',false],
       interrupted:['已中断','warn',false], cancelled:['已终止','mut',false], paused:['已暂停','warn',false],
@@ -306,7 +325,7 @@
     var seq = ++st.loadSeq;
     if (!silent) st.loadingSeq = seq;
     renderPagination();
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="12" class="extm-empty">加载中…</td></tr>';
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="13" class="extm-empty">加载中…</td></tr>';
     return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.total = d.total != null ? d.total : (d.items || []).length;
@@ -318,7 +337,7 @@
       renderRows();
     }).catch(function (e) {
       if (seq !== st.loadSeq) return;
-      if (!st.rows.length) body.innerHTML = '<tr><td colspan="12" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
+      if (!st.rows.length) body.innerHTML = '<tr><td colspan="13" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
       else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
     }).finally(function () {
       if (st.loadingSeq === seq) st.loadingSeq = 0;
@@ -356,7 +375,7 @@
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="12" class="extm-empty">暂无匹配的外部子号</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="13" class="extm-empty">暂无匹配的外部子号</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -369,6 +388,7 @@
       var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id), progress = loginProgress(r);
       tr.className = expanded ? "extm-expanded" : "";
       var message = progress ? progress.message : r.message;
+      var hideMessage = r.login_status === 'ok' && (!message || /^登录成功(?:；已提交 Sub2 推送(?:，可查看账号同步状态)?)?$/.test(message.trim()));
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
@@ -378,9 +398,10 @@
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
-          (!busy && r.login_status === 'ok' && (!message || message.trim() === '登录成功') ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
-        '<td>' + subPill(r) + '</td>' +
+          (hideMessage ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
+        '<td data-subscription>' + subPill(r) + '</td>' +
         '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
+        '<td class="cr" data-sub2-pushed-at>' + esc(fmtTime(r.sub2_synced_at, true)) + '</td>' +
         '<td><span class="extm-note-text' + (r.note ? '' : ' extm-note-empty') + '" title="' + esc(r.note || '暂无备注') + '">' + esc(r.note || '—') + '</span></td>' +
         '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
         '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
@@ -392,7 +413,7 @@
         var fresh = false;
         var detail = body.querySelector('tr[data-detail="' + r.id + '"]');
         if (!detail) { fresh = true; detail = document.createElement("tr"); detail.dataset.detail = r.id; detail.className = "extm-detail-row"; detail.innerHTML = '<td><div class="extm-fold is-closed"><div class="extm-fold-clip"><div class="extm-detail" id="extm-detail-' + r.id + '"></div></div></div></td>'; }
-        detail.firstElementChild.colSpan = 12;
+        detail.firstElementChild.colSpan = 13;
         if (detail !== cursor) body.insertBefore(detail, cursor);
         cursor = detail.nextElementSibling;
         renderDetail(r.id);
@@ -411,6 +432,7 @@
     body.onclick = function (e) {
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
+      if (b.hasAttribute("data-credit-error")) showCreditError(Number(b.dataset.creditError));
       if (b.hasAttribute("data-copy-email")) copyEmail(Number(b.dataset.copyEmail));
       if (b.hasAttribute('data-otp-settings')) editOtpMode(Number(b.dataset.otpSettings));
       if (b.hasAttribute("data-note")) editNote(Number(b.dataset.note));
@@ -812,9 +834,9 @@
     if (el('extm-batch-del')) el('extm-batch-del').disabled = busy || saving;
     var pushing = st.sub2Submitting || st.rows.some(function (r) { return st.sel.has(r.id) && ['pending', 'syncing'].includes(r.sub2_status); });
     setLoading(el('extm-sub2-push'), !!pushing, pushing ? 'Sub2 同步中…' : '推送 Sub2');
-    if (el('extm-sub2-push')) el('extm-sub2-push').disabled = !!pushing || !st.sel.size || busy;
+    if (el('extm-sub2-push')) el('extm-sub2-push').disabled = !!pushing || !!st.sub2Confirming || !st.sel.size || busy;
     setLoading(el('extm-sub2-relink'), !!pushing, pushing ? 'Sub2 同步中…' : '重新关联 / 推送');
-    if (el('extm-sub2-relink')) el('extm-sub2-relink').disabled = !!pushing || !st.sel.size || busy;
+    if (el('extm-sub2-relink')) el('extm-sub2-relink').disabled = !!pushing || !!st.sub2Confirming || !st.sel.size || busy;
   }
   function selIds() { return Array.from(st.sel); }
 
@@ -841,16 +863,54 @@
       (row.sub2_status === 'failed' ? '<span class="extm-clip" style="font-size:12px;color:#d03050" title="' + esc(detail) + '">' + esc(row.sub2_message || '请重新推送') + '</span>' : '');
   }
 
+  function sub2SubscriptionWarnings(ids) {
+    return ids.map(function (id) {
+      var row = rowById(id);
+      if (!row) throw new Error('所选账号已发生变化，请重新勾选后推送');
+      var reason = row.credits_error ? '积分查询失败：' + row.credits_error
+        : row.login_status === 'never' ? '订阅状态未知：尚未查询积分'
+        : row.credits_total == null ? '订阅状态未知：积分未查到'
+        : row.subscription_ok !== true ? '订阅状态异常：掉订阅' : '';
+      return reason ? {id:id, email:row.email, reason:reason} : null;
+    }).filter(Boolean);
+  }
+
+  function confirmSub2Subscription(ids, warnings, relink) {
+    return new Promise(function (resolve) {
+      var dialog = document.createElement('dialog'); dialog.id = 'extm-sub2-confirm-dialog'; dialog.className = 'extm-note-dialog extm-sub2-confirm-dialog';
+      dialog.setAttribute('aria-labelledby', 'extm-sub2-confirm-title'); dialog.setAttribute('aria-describedby', 'extm-sub2-confirm-summary');
+      dialog.innerHTML = '<h3 id="extm-sub2-confirm-title">订阅状态异常，是否继续推送？</h3><p id="extm-sub2-confirm-summary">已选 ' + ids.length + ' 个账号，其中 ' + warnings.length + ' 个订阅异常或状态未知。确认后将继续推送本次选中的 ' + ids.length + ' 个账号到 Sub2。</p><ul aria-label="订阅异常或状态未知的账号">' + warnings.map(function (item) { return '<li><strong>' + esc(item.email) + '</strong><span>' + esc(item.reason) + '</span></li>'; }).join('') + '</ul>' +
+        (relink ? '<p class="extm-relink-warning">本次将重新关联：按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。</p>' : '') +
+        '<footer><button type="button" class="extm-btn dft" data-cancel>取消</button><button type="button" class="extm-btn" data-confirm>确认推送</button></footer>';
+      dialog.querySelector('[data-cancel]').onclick = function () { dialog.close(); };
+      dialog.querySelector('[data-confirm]').onclick = function () { dialog.close('confirm'); };
+      dialog.onclose = function () { var approved = dialog.returnValue === 'confirm'; dialog.remove(); resolve(approved); };
+      document.body.appendChild(dialog); dialog.showModal(); dialog.querySelector('[data-cancel]').focus();
+    });
+  }
+
   async function pushSub2(relink) {
-    var ids = selIds(); if (!ids.length || st.sub2Submitting) return;
-    if (relink && !confirm('重新关联选中的 ' + ids.length + ' 个账号？将按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。')) return;
-    st.sub2Submitting = true; updSel();
+    var ids = selIds(); if (!ids.length || st.sub2Submitting || st.sub2Confirming) return;
+    st.sub2Confirming = true; updSel();
     try {
+      var warnings = sub2SubscriptionWarnings(ids), relinkConfirmed = false;
+      while (warnings.length) {
+        var shown = JSON.stringify(warnings);
+        if (!await confirmSub2Subscription(ids, warnings, relink)) return;
+        relinkConfirmed = !!relink;
+        warnings = sub2SubscriptionWarnings(ids);
+        // Polling may discover another abnormal account while the dialog is open.
+        // Consent applies only to the accounts and reasons actually shown.
+        if (JSON.stringify(warnings) === shown) break;
+      }
+      if (relink && !relinkConfirmed && !confirm('重新关联选中的 ' + ids.length + ' 个账号？将按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。')) return;
+      if (ids.some(function (id) { var row = rowById(id); return !row || running(row); })) throw new Error('所选账号状态已变化，请等待任务结束后重新推送');
+      st.sub2Confirming = false; st.sub2Submitting = true; updSel();
       var result = await api('/members/' + (relink ? 'relink-sub2' : 'push-sub2'), { method: 'POST', body: { ids: ids } });
       toast(result.queued ? 'success' : 'warning', result.message);
       await load(true);
     } catch (e) { toast('error', e.message); }
-    finally { st.sub2Submitting = false; updSel(); }
+    finally { st.sub2Confirming = false; st.sub2Submitting = false; updSel(); }
   }
 
   async function doImport() {
@@ -862,7 +922,7 @@
       if (el('extm-otp-mode').value) payload.otp_mode = el('extm-otp-mode').value;
       var r = await api('/members/import', { method: 'POST', body: payload });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
-      if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 20 个，成功后自动推送 Sub2';
+      if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 50 个，成功后自动推送 Sub2';
       if (r.sequential_login) msg += ' · 按导入顺序逐个自动取码登录';
       if (r.errors && r.errors.length) msg += ' · ' + r.errors.join('；');
       opMsg(msg, r.failed ? 'err' : 'ok'); if (!r.failed) ta.value = ''; await load(true);
@@ -881,7 +941,7 @@
       ids.forEach(function (id) { var row = rowById(id); if (row) row.latest_job = job; });
       if (expandFirst) st.expanded.add(ids[0]);
       ids.forEach(function (id) { detailState(id).selected = job.id; });
-      toast('success', '已提交登录任务 #' + job.id + '，每批最多 20 个，成功后自动推送 Sub2');
+      toast('success', '已提交登录任务 #' + job.id + '，每批最多 50 个，成功后自动推送 Sub2');
     } catch (e) { toast('error', e.message); }
     finally { ids.forEach(function (id) { st.pending.delete(id); }); renderRows(); await load(true); }
     if (st.expanded.has(ids[0])) await refreshDetail(ids[0], true);
@@ -964,7 +1024,7 @@
     if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
     positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
   }
-  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,

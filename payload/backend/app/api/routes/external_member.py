@@ -70,6 +70,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
     return ExternalMemberOut(
         id=m.id, email=m.email, note=m.note,
         credits_available=m.credits_available, credits_total=m.credits_total,
+        credits_error=m.credits_error or "",
         account_profile=m.account_profile,
         profile_preference=m.profile_preference,
         login_status=m.login_status, subscription_ok=m.subscription_ok,
@@ -279,7 +280,7 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
         pending = [m for m in members if m.id not in active]
         job = _start_login(pending, db, user.username) if pending else None
     if job:
-        message = f"已提交 {len(pending)} 个账号，每批最多 20 个，登录成功后自动推送 Sub2；跳过 {len(active)} 个任务未结束的账号"
+        message = f"已提交 {len(pending)} 个账号，每批最多 {external_login.LOGIN_BATCH_SIZE} 个，登录成功后自动推送 Sub2；跳过 {len(active)} 个任务未结束的账号"
     else:
         message = "当前范围暂无外部子号" if not total else f"当前范围的 {len(active)} 个账号任务未结束，无需重复提交"
     return {"job": JobStatusOut(**job.to_dict()) if job else None,

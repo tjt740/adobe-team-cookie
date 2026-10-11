@@ -24,6 +24,7 @@ class ExternalMemberOut(BaseModel):
     note: str = ""
     credits_available: float | None = None
     credits_total: float | None = None
+    credits_error: str = ""
     account_profile: AccountProfile | None = None
     profile_preference: ProfilePreference = ""
     login_status: str = "never"

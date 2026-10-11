@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+from app.models import integration as _integration_models  # register durable integration tables
 
 
 class ExternalMember(Base):
@@ -37,6 +38,7 @@ class ExternalMember(Base):
     expires_at: Mapped[int | None] = mapped_column(Integer, nullable=True)
     credits_available: Mapped[float | None] = mapped_column(Float, nullable=True)
     credits_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    credits_error: Mapped[str] = mapped_column(String(255), default="", server_default="")
     account_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Applies to the next login; account_profile remains the last actual result.
     profile_preference: Mapped[str] = mapped_column(String(16), default="", server_default="")

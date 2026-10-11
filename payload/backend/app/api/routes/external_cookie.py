@@ -70,6 +70,16 @@ async def refresh_cookie(
         return _resp(400, {"detail": "missing email"})
     email = raw_email.strip()
 
+    # V2 submits a durable job and never holds an HTTP connection during OTP.
+    if data.get("request_id"):
+        from app.services import reliable_integration as link
+        try:
+            job = link.submit_recovery(db, str(data['request_id']), email, str(data.get('source_key') or ''))
+            return _resp(200 if job.state in ('done', 'failed') else 202, link.job_result(job))
+        except link.IntegrationError as exc:
+            return _resp(200, {"ok": False, "managed": True, "code": exc.code, "message": str(exc),
+                               "email": email, "job_id": str(data['request_id']), "state": "failed"})
+
     # 3. 查号 → 实时重登(业务结果一律 200)
     m = crud.get_by_email(db, email)
     member_id = m.id if m else None

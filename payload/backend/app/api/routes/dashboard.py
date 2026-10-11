@@ -86,12 +86,18 @@ def _gather(db: Session) -> dict:
     em = dict(db.execute(text("select is_used, count(*) from emails group by is_used")).fetchall())
     sub2 = {"enabled": False}
     try:
-        from app.api.routes.sub2 import _get_config, _existing_keys, _candidates
-        cfg = _get_config(db)
+        from app.api.routes.sub2 import _existing_keys, _candidates
+        from app.services import external_sub2, external_sub2_stock
+        cfg = external_sub2.config(db)
         sub2["enabled"] = bool(cfg.get("enabled"))
         sub2["concurrency"] = cfg.get("concurrency")
-        if cfg.get("enabled") and cfg.get("base_url") and cfg.get("admin_token"):
-            exi = _existing_keys(cfg)
+        if cfg.get("enabled") and cfg.get("base_url") and (cfg.get("admin_token") or cfg.get('integration_key')):
+            if cfg.get('integration_key') and cfg.get('platform') == 'adobe':
+                stock = external_sub2_stock._snapshot(cfg)
+                exi = {'ok':stock['ok'],'emails':set(stock['by_email']),'account_ids':set(),
+                       'count':stock.get('live',0), 'message':stock['message']}
+            else:
+                exi = _existing_keys(cfg)
             if exi.get("ok"):
                 cand, _in = _candidates(db, exi, None, platform=cfg.get("platform"))
                 sub2.update(ok=True, live=exi.get("count"), pending=len(cand))

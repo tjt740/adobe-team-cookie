@@ -345,8 +345,15 @@ class JobManager:
                         job.status = "cancelled"
                         job.logs.append(f"{time.strftime('%H:%M:%S')} 任务已终止，已完成的结果和日志已保留")
                         for item in job.extra.get('items', []):
-                            if item.get('status') in ('pending', 'running'):
+                            if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
                                 item.update(status='cancelled', message='本次任务已终止，已保存的数据保留')
+                    else:
+                        # A worker exception can leave its last item running.
+                        # Terminal jobs must never keep a login spinner alive.
+                        for item in job.extra.get('items', []):
+                            if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
+                                item.update(status='failed' if job.status == 'error' else 'interrupted',
+                                            message='任务已结束，本项结果未确认，请查看执行记录')
                     job.finished_at = int(time.time())
                     job._condition.notify_all()
                 job.persist()
@@ -369,7 +376,7 @@ class JobManager:
             for row in rows:
                 extra = _json_loads(row['extra_json'], {})
                 for item in extra.get('items', []):
-                    if item.get('status') in ('pending', 'running'):
+                    if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
                         item.update(status='interrupted', message='服务重启，本次登录中断；可重新勾选重试')
                 message = '服务已重启，任务中断；已保存的数据保留，请重新勾选重试'
                 logs = _json_loads(row['logs_json'], [])

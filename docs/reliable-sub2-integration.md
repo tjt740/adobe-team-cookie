@@ -1,0 +1,26 @@
+# Sub2 可靠联动
+
+迭代名称：**Okad–Sub2 可靠联动一期**（`okad-sub2-reliability-20261012`）。发布前主干标签：`rollback/okad-sub2-reliability-20261012-before-main`；发布标签：`release/okad-sub2-reliability-20261012`。主服务器为 `173.234.15.150`，线上入口为 <https://creative.cheap/okad/integration>。保留原配置，可靠联动模式不会因部署自动开启。
+
+双项目回滚脚本：`/opt/adobe-relay/deploy/primary/rollback-okad-sub2.sh okad-sub2-reliability-20261012 main`（恢复合并前 main）；最后一个参数换成 `production` 则恢复发布前实际线上代码，包含当时已上线的独立修复。两者均保留当前数据库；详见 [发布记录](https://github.com/tjt740/adobe-relay/blob/main/deploy/primary/okad-sub2-reliability-20261012.md)。
+
+从 Okad 左侧菜单「联动中心」进入，或打开 <http://127.0.0.1:18001/integration>。页面沿用原有导航、登录权限和主题；旧 `integration.html` 链接会自动跳转，右下角悬浮入口已移除。挂载部署对应 `/okad/integration`。
+
+- 统一展示外部子号与号池账号、恢复条件、凭据版本、同步结果和登录任务。
+- Cookie 保存与发送任务同事务提交；发送失败独立退避，不重新登录。
+- 同邮箱的登录使用数据库租约。相同来源合并任务；不同来源或登录协议互斥。租约过期的旧任务不能保存结果。
+- 自动恢复使用持久化任务编号；进程中断后不会自动重放结果不明的登录。
+- Sub2 验证使用该账号当前代理，检查实际身份、Token 与实时额度，再决定能否恢复调度。模型出图需要另行测试。
+- 人工暂停、账号删除和目标切换均保留人工意图。新版本覆盖旧版本，旧任务不能确认新版本的交付。
+
+「连接配置」使用 Sub2 专用联动密钥，不是全权限管理员密钥。已有账号同步只需专用密钥；首次创建新账号仍需要在原有「Sub2 管理」中配置管理员授权和 Adobe 分组。手动 OTP 账号需进入原有外部子号界面输入验证码。
+
+本次运行使用 `.local/reliability-dev/okad.db` 数据副本，未改变原有 `payload/backend/app.db`。Sub2 独立测试站为 <http://127.0.0.1:18000>。登录信息保存在另一仓库 `sub2api/deploy/data/reliability-dev/测试登录信息.txt`，首次管理员确认需由测试者自行处理。
+
+实现入口：`payload/backend/app/services/reliable_integration.py`、`login_coordinator.py`、`app/api/routes/integration.py`。新表由原有 `init_db` 的 `create_all` 创建。原有功能默认保持旧模式；配置并启用可靠联动后使用持久任务链。
+
+验证：截至 2026-10-12，全部 433 项后端测试通过，覆盖凭据原子保存、并发登录合并、失败补推、新旧版本乱序、人工删除保护、目标切换和过期任务所有权。未自动执行真实 Adobe 登录或模型出图。
+
+2026-10-12 菜单整合：浏览器检查左侧选中态、直接刷新、前进后退、收起侧栏、手动验证码跳回原外部账号页面；独立合成数据检查 `/okad` 下的旧链接重定向、登录回跳、键盘导航、深色主题、四类操作请求以及离开页面停止轮询。业务接口未调整，未对真实账号执行登录或推送。
+
+2026-10-11 追加生产脱敏数据压测：低频读取 204 个外部账号和 204 个 Sub2 账号的状态，全部压力请求只在本地执行。修复并发建记录冲突、排队任务重复登录、联动列表 N+1 查询、能力读取写回、统计截断，以及号池既有账号跳过与 4,000 积分门槛的回归。2,040 条扩容样本下，联动首页查询从 10,364 条降为 8 条，回环 HTTP 540 次混合请求零错误。原始统计和脱敏样本在忽略目录 `.local/reliability-stress/`，完整报告在 Sub2 仓库 `docs/okad-reliability-stress-report.md`。

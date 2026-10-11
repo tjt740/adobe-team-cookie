@@ -1,6 +1,6 @@
 """Read current Sub2 inventory independently of external Cookie sync history.
 
-Only email identities and remote IDs are cached. Reading inventory never links
+Only email identities, remote IDs and availability counts are cached. Reading inventory never links
 accounts, sends cookies, or changes their login/synchronization history.
 """
 from datetime import datetime, timezone
@@ -15,11 +15,21 @@ from app.services import external_sub2
 
 _lock = Lock()
 _cache = {}
-TTL = 2
+TTL = 30
 
 
 def _read(cfg):
     by_email = {}
+    live = set()
+    if cfg.get('enabled') and cfg.get('integration_key'):
+        from app.services import reliable_integration as link
+        for account in link.inventory(cfg):
+            if account.get('status') == 'active' and account.get('schedulable') is True:
+                live.add(account['id'])
+            email = str(account.get('email') or '').strip().lower()
+            if '@' in email:
+                by_email.setdefault(email, set()).add(account['id'])
+        return {email: sorted(ids) for email, ids in by_email.items()}, len(live)
     fetched = 0
     for page in range(1, 201):
         data = external_sub2._request(
@@ -36,21 +46,25 @@ def _read(cfg):
                         or account.get('name') or '').strip().lower()
             if '@' in email and external_sub2._matches(account, email):
                 by_email.setdefault(email, set()).add(account['id'])
+                if account.get('status') == 'active' and account.get('schedulable') is True:
+                    live.add(account['id'])
         fetched += len(items)
         if fetched >= data['total']:
-            return {email: sorted(ids) for email, ids in by_email.items()}
+            return {email: sorted(ids) for email, ids in by_email.items()}, len(live)
         if not items:
             break
     raise external_sub2.SyncError('Sub2 账号列表不完整，暂时无法确认库存')
 
 
 def _snapshot(cfg, refresh=False):
-    key = (external_sub2.destination(cfg), hashlib.sha256(cfg['admin_token'].encode()).hexdigest())
+    credential = cfg.get('integration_key') if cfg.get('enabled') and cfg.get('integration_key') else cfg.get('admin_token', '')
+    key = (external_sub2.destination(cfg), cfg.get('site_id'), hashlib.sha256(credential.encode()).hexdigest())
     with _lock:
         if not refresh and _cache.get('key') == key and monotonic() - _cache['at'] < TTL:
             return _cache['result']
         try:
-            result = {'ok': True, 'by_email': _read(cfg), 'message': ''}
+            by_email, live = _read(cfg)
+            result = {'ok': True, 'by_email': by_email, 'live': live, 'message': ''}
         except external_sub2.SyncError as exc:
             result = {'ok': False, 'by_email': {}, 'message': str(exc)}
         except Exception:
@@ -62,7 +76,7 @@ def _snapshot(cfg, refresh=False):
 
 def membership(db, refresh=False):
     cfg = external_sub2.config(db)
-    if not cfg.get('base_url') or not cfg.get('admin_token'):
+    if not cfg.get('base_url') or not (cfg.get('admin_token') or (cfg.get('enabled') and cfg.get('integration_key'))):
         return {'ok': False, 'configured': False, 'items': {},
                 'message': '请先在 Sub2 管理配置地址和管理员密钥'}
     result = _snapshot(cfg, refresh)

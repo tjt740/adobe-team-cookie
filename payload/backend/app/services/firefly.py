@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import time
 from typing import Any, Callable, Optional
 from urllib.parse import urlencode
@@ -221,16 +222,26 @@ def fetch_credits_detail(
     retry_delay: float = 0.0,
     log: Optional[LogFn] = None,
     session=None,
+    error_out: dict | None = None,
 ) -> dict | None:
     """返回 {'available': float, 'total': float};None 表示查询失败。
 
     分母取 data['total']['quota']['total'](已由抓包核实),可用取 ['available']。
+    error_out 可接收最终失败的安全提示；不保存响应正文或凭证。
     """
+    def failed(message):
+        if error_out is not None:
+            error_out["message"] = message
+
+    if error_out is not None:
+        error_out.clear()
     if not token:
+        failed("缺少积分查询凭证")
         return None
     if not account_id:
         account_id = extract_account_id(token)
     if not account_id:
+        failed("缺少积分查询身份")
         return None
     attempts = max(1, int(attempts or 1))
     for attempt in range(attempts):
@@ -250,19 +261,39 @@ def fetch_credits_detail(
                 },
             )
             if r.status_code == 200:
-                data = r.json()
-                quota = (data.get("total") or {}).get("quota") or {}
-                available = quota.get("available")
-                total = quota.get("total")
-                if isinstance(available, (int, float)) or isinstance(total, (int, float)):
-                    return {
-                        "available": float(available) if isinstance(available, (int, float)) else 0.0,
-                        "total": float(total) if isinstance(total, (int, float)) else 0.0,
-                    }
-                return {"available": 0.0, "total": 0.0}
-            if callable(log):
-                log(f"Firefly 额度接口返回 {r.status_code}: {(r.text or '')[:240]}")
+                try:
+                    data = r.json()
+                    quota = data["total"]["quota"]
+                    available, total = quota["available"], quota["total"]
+                    if not all(type(v) in (int, float) and math.isfinite(v) for v in (available, total)):
+                        raise ValueError("Invalid quota")
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    failed("积分接口返回数据不完整，请重新查询")
+                else:
+                    if error_out is not None:
+                        error_out.clear()
+                    return {"available": float(available), "total": float(total)}
+            else:
+                # Only display numeric codes or this known Adobe error identifier.
+                # Never persist arbitrary response text, which may contain secrets.
+                code = ""
+                try:
+                    body = r.json()
+                    value = str(body.get("error_code") or body.get("errorCode") or "")
+                    if (value.isascii() and value.isdigit() and len(value) <= 10) or value == "ErrMismatchOauthToken":
+                        code = value
+                except (TypeError, ValueError, AttributeError):
+                    pass
+                reason = {
+                    401: "积分查询凭证已失效", 403: "Adobe 拒绝访问",
+                    429: "积分查询过于频繁", 451: "Adobe 拒绝查询",
+                }.get(r.status_code, "Adobe 服务暂时异常" if r.status_code >= 500 else "积分接口返回错误")
+                message = f"{reason}（HTTP {r.status_code}" + (f" / {code}" if code else "") + "）"
+                failed(message)
+                if callable(log):
+                    log(message)
         except Exception:
+            failed("积分接口请求失败或超时，请稍后重试")
             if callable(log):
                 log("Firefly 额度接口请求异常")
         finally:
@@ -944,6 +975,7 @@ def register_account(
             f" entitlement={ent_from_auth or '-'}"
             f" token={user_id or '-'})"
         )
+        credits_error = {}
         credits_detail = fetch_credits_detail(
             token,
             credits_account_id,
@@ -952,6 +984,7 @@ def register_account(
             retry_delay=3,
             log=lf,
             session=client.session,
+            error_out=credits_error,
         )
         credits = credits_detail["available"] if credits_detail else None
         credits_total = credits_detail["total"] if credits_detail else None
@@ -967,6 +1000,7 @@ def register_account(
             "cookie": cookie,
             "credits": credits,
             "credits_total": credits_total,
+            "credits_error": credits_error.get("message", ""),
             "account_profile": account_profile,
             "expires_at": expires_at,
             "display_name": info.get("display_name") or "",
