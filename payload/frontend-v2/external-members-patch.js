@@ -98,6 +98,7 @@
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     }).then(function (r) {
+      if (opts.blob && r.ok) return r.blob();
       return r.text().then(function (t) {
         var d; try { d = t ? JSON.parse(t) : {}; } catch (e) { d = { raw: t }; }
         if (r.status === 401) throw new Error("未登录,请重新登录后台");
@@ -178,6 +179,7 @@
           '<label class="extm-batch-profile">批量登录配置<select id="extm-batch-profile" class="extm-in" aria-label="批量登录配置" title="仅设置勾选的账号，选择后自动保存，下次登录生效。不指定时沿用原逻辑；组织配置优先会跳过疑似已删除的组织，无可用组织或授权过期时回退个人配置。" disabled><option value="__mixed__" disabled selected>请先勾选账号</option><option value="">不指定（原逻辑）</option><option value="personal">个人配置</option><option value="organization">组织配置优先</option></select></label>' +
           '<button class="extm-btn del sm" id="extm-batch-del">删除选中</button></div>' +
           '<span class="ws-spacer"></span><button class="extm-btn o sm" id="extm-export">导出全部 Cookie</button>' +
+          '<button class="extm-btn o sm" id="extm-export-emails" title="将勾选账号的邮箱导出为 Excel 表格" disabled>导出选中邮箱</button>' +
           '<button class="extm-btn o sm" id="extm-sub2-push" disabled>推送 Sub2</button>' +
           '<details class="ws-maintenance-menu" id="extm-more-actions"><summary>更多操作 ▾</summary><div>' +
             '<button class="extm-btn dft sm" id="extm-login-all" title="重登全部外部子号，自动跳过任务未结束的账号">一键重登全部</button>' +
@@ -211,6 +213,7 @@
     var moreActions = el("extm-more-actions");
     el("extm-login-all").onclick = function () { moreActions.open = false; loginAll(); };
     el("extm-export").onclick = exportCookies;
+    el("extm-export-emails").onclick = exportEmails;
     el("extm-sub2-push").onclick = function () { pushSub2(false); };
     el("extm-sub2-relink").onclick = function () { moreActions.open = false; pushSub2(true); };
     document.addEventListener("click", function (event) {
@@ -812,6 +815,9 @@
     renderPagination();
     setText(el('extm-selc'), st.sel.size);
     setLoading(el('extm-export'), !!st.exporting, st.exporting ? '导出中…' : (st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : (qs().length ? '导出筛选 Cookie' : '导出全部 Cookie')));
+    var emailExport = el('extm-export-emails');
+    setLoading(emailExport, !!st.exportingEmails, st.exportingEmails ? '邮箱导出中…' : '导出选中邮箱' + (st.sel.size ? '（' + st.sel.size + '）' : ''));
+    if (emailExport) emailExport.disabled = !!st.exportingEmails || !st.sel.size;
     var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
     var busy = st.rows.some(function (r) { return st.sel.has(r.id) && running(r); });
     var saving = Array.from(st.sel).some(function (id) { return st.profileSaving.has(id); });
@@ -985,6 +991,22 @@
       finally { input.remove(); if (focused && focused.isConnected) focused.focus({ preventScroll: true }); }
     }
     toast(copied ? 'success' : 'error', copied ? '已复制账号：' + row.email : '复制失败，请手动复制账号：' + row.email);
+  }
+
+  async function exportEmails() {
+    if (st.exportingEmails) return;
+    var ids = selIds();
+    if (!ids.length) { toast('warning', '请先勾选要导出的账号'); return; }
+    st.exportingEmails = true; updSel();
+    try {
+      var blob = await api('/members/export-emails', { method: 'POST', body: { ids: ids }, blob: true });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url; a.download = 'external-emails.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast('success', '已导出 ' + ids.length + ' 个邮箱（Excel）');
+    } catch (e) { toast('error', e.message); }
+    finally { st.exportingEmails = false; updSel(); }
   }
 
   function exportCookies() {

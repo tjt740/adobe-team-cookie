@@ -67,7 +67,7 @@ def _classify(err: str) -> str:
         return "rate_limited"
     if "disabled" in low or "not found" in low or "no account" in low or "banned" in low:
         return "account_disabled"
-    if "password" in low or "otp" in low or "captcha" in low or "验证码" in low or "login" in low or "supply.ink" in low:
+    if "authenticationstate" in low or "password" in low or "otp" in low or "captcha" in low or "验证码" in low or "登录" in low or "login" in low or "supply.ink" in low:
         return "login_failed"
     return "internal"
 
@@ -120,6 +120,8 @@ def _login_with_proxy_retry(
             )
         except Exception as e:  # noqa: BLE001
             last_exc = e
+            if isinstance(e, firefly.LoginRoutesExhausted):
+                break  # 修复路线和原路线都已失败，本次到此结束。
             if not _is_network_error(str(e)):
                 break  # 账号/验证码/打码类错误:换 IP 也没用
             proxy_pool.report_failure(proxy, str(e))

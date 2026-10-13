@@ -15,7 +15,8 @@ from app.api.routes import admin_user, adobe_account, auth, dashboard, email, ex
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.services import log_store
-from app.api.routes import clash, integration
+from app.api.routes import clash, integration, monitor
+from app.services.server_monitor import MONITOR, RequestMetricsMiddleware
 
 
 @asynccontextmanager
@@ -31,14 +32,17 @@ async def lifespan(app: FastAPI):
     external_sub2.resume_pending()
     from app.services import reliable_integration
     reliable_integration.start()
+    MONITOR.start()
     log_store.STORE.add("INFO", "system", "服务启动完成")
     try:
         yield
     finally:
+        MONITOR.stop()
         reliable_integration.stop()
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
+app.add_middleware(RequestMetricsMiddleware, api_prefix=settings.API_PREFIX)
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,6 +107,7 @@ app.include_router(clash.router, prefix=settings.API_PREFIX)
 app.include_router(log_route.router, prefix=settings.API_PREFIX)
 app.include_router(sub2.router, prefix=settings.API_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_PREFIX)
+app.include_router(monitor.router, prefix=settings.API_PREFIX)
 app.include_router(external_member.router, prefix=settings.API_PREFIX)
 app.include_router(integration.router)
 app.include_router(integration.external)

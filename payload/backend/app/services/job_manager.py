@@ -220,6 +220,17 @@ class JobManager:
         self._lock = threading.Lock()
         self._storage_ready = False
 
+    def monitor_summary(self) -> dict:
+        """Current local job states only; no DB queries, logs, or account data."""
+        with self._lock:
+            jobs = list(self._jobs.values())
+        counts = {key: 0 for key in ("running", "paused", "pausing", "cancelling")}
+        for job in jobs:
+            with job._lock:
+                if job.status in counts:
+                    counts[job.status] += 1
+        return counts
+
     def _ensure_storage(self) -> None:
         if self._storage_ready:
             return

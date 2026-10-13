@@ -12,6 +12,7 @@ from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
+from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
 from app.schemas.external_member import SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
 from app.services import supply_mail, manual_otp
 from app.crud.setting import _set
@@ -318,6 +319,22 @@ def export_members(
 @router.post("/members/export", summary="导出选中账号的 Cookie")
 def export_selected_members(payload: BatchIds, db: Session = Depends(get_db)) -> list[dict]:
     return crud.export_cookies(db, ids=payload.ids)
+
+
+@router.post("/members/export-emails", summary="导出选中外部子号邮箱为 Excel")
+def export_selected_emails(payload: BatchIds, db: Session = Depends(get_db)) -> Response:
+    ids = list(dict.fromkeys(payload.ids))
+    if not ids:
+        raise HTTPException(status_code=400, detail="请先勾选要导出的账号")
+    members = crud.get_many(db, ids)
+    if len(members) != len(ids):
+        raise HTTPException(status_code=404, detail="所选账号已不存在，请刷新后重新勾选导出")
+    return Response(
+        content=emails_xlsx([member.email for member in members]),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="external-emails.xlsx"',
+                 "Cache-Control": "no-store"},
+    )
 
 
 @router.delete("/members/batch-delete", response_model=MessageResult, summary="批量删除")
