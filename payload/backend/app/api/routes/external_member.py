@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from threading import Lock
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
@@ -8,7 +9,7 @@ from app.crud import external_member as crud
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
-from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MessageResult, Page
+from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
@@ -147,15 +148,38 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
     return {"message": "验证码已提交，正在继续登录"}
 
 
+def _member_filters(db, *, in_stock=None, imported_from=None, imported_before=None):
+    # created_at is stored as UTC without a timezone; accept browser-local
+    # date boundaries with their offset and compare them in UTC.
+    def utc(value):
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    imported_from, imported_before = utc(imported_from), utc(imported_before)
+    if imported_from is not None and imported_before is not None and imported_from >= imported_before:
+        raise HTTPException(status_code=422, detail="导入时间的结束日期不能早于开始日期")
+    ids = None
+    if in_stock is not None:
+        stock = external_sub2_stock.membership(db)
+        if not stock.get("ok"):
+            raise HTTPException(status_code=503, detail=stock.get("message") or "Sub2 库存暂不可用，请稍后重试")
+        ids = [int(mid) for mid, item in stock["items"].items() if item.get("in_stock") is in_stock]
+    return dict(ids=ids, imported_from=imported_from, imported_before=imported_before)
+
+
 @router.get("/members", response_model=Page[ExternalMemberOut], summary="外部子号分页查询")
 def list_members(
-    page: int = 1, size: int = DEFAULT_PAGE_SIZE,
+    page: int = Query(1, ge=1), size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     login_status: str | None = None, subscription_ok: bool | None = None,
     keyword: str = "", db: Session = Depends(get_db),
+    in_stock: bool | None = None, imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
 ) -> Page[ExternalMemberOut]:
     items, total = crud.list_members(
         db, page=page, size=size, login_status=login_status,
         subscription_ok=subscription_ok, keyword=keyword,
+        **_member_filters(db, in_stock=in_stock, imported_from=imported_from, imported_before=imported_before),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
     target = external_sub2.destination(external_sub2.config(db))
@@ -275,8 +299,12 @@ def batch_login(payload: BatchIds, db: Session = Depends(get_db),
 @router.post("/members/batch-login-filter", summary="一键重登当前筛选的全部外部子号")
 def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)) -> dict:
+    filters = payload.model_dump()
+    filters.update(_member_filters(db, in_stock=filters.pop("in_stock"),
+                                   imported_from=filters.pop("imported_from"),
+                                   imported_before=filters.pop("imported_before")))
     with _login_lock:
-        members, total = crud.list_members(db, size=None, **payload.model_dump())
+        members, total = crud.list_members(db, size=None, **filters)
         active = _active_jobs([m.id for m in members]) if members else {}
         pending = [m for m in members if m.id not in active]
         job = _start_login(pending, db, user.username) if pending else None
@@ -289,7 +317,7 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
 
 
 @router.get("/members/{member_id}/jobs", response_model=list[JobStatusOut], summary="外部子号任务历史")
-def member_jobs(member_id: int, limit: int = Query(default=50, ge=1, le=100),
+def member_jobs(member_id: int, limit: int = Query(default=200, ge=1, le=MAX_PAGE_SIZE),
                 db: Session = Depends(get_db)) -> list[JobStatusOut]:
     if not crud.get(db, member_id):
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -312,8 +340,12 @@ def export_members(
     login_status: str | None = None, subscription_ok: bool | None = None,
     keyword: str = "",
     db: Session = Depends(get_db),
+    in_stock: bool | None = None, imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
 ) -> list[dict]:
-    return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword)
+    return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
+                               **_member_filters(db, in_stock=in_stock, imported_from=imported_from,
+                                                 imported_before=imported_before))
 
 
 @router.post("/members/export", summary="导出选中账号的 Cookie")

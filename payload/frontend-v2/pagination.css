@@ -1,0 +1,7 @@
+.okad-pagination,.okad-page-size{display:flex;align-items:center;gap:10px;flex-wrap:wrap;box-sizing:border-box;max-width:100%;font:13px/1.5 system-ui;color:var(--ws-muted,#69778c)}
+.okad-pagination{justify-content:flex-end;padding:14px 0}.okad-pagination>span{margin-right:auto}
+.okad-page-size{margin:0}.okad-page-size label{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.okad-page-size input,.okad-page-size select,.okad-page-size button,.okad-pagination>button{box-sizing:border-box;height:34px;border:1px solid var(--ws-line,#d7dfeb);border-radius:6px;background:var(--ws-paper,#fff);color:var(--ws-text,#34445c);font:inherit;padding:0 9px}
+.okad-page-size input[type=number]{width:92px!important;min-width:0}.okad-page-size select{min-width:100px;max-width:180px}.okad-page-size button,.okad-pagination>button{cursor:pointer;white-space:nowrap}
+.okad-page-size :disabled,.okad-pagination>button:disabled{opacity:.5;cursor:not-allowed}.okad-page-size :focus-visible,.okad-pagination>button:focus-visible{outline:2px solid #2080f0;outline-offset:2px}
+@media(max-width:800px){.okad-pagination{justify-content:flex-start}.okad-page-size input,.okad-page-size select,.okad-page-size button,.okad-pagination>button{height:44px}.okad-page-size{gap:8px}}

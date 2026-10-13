@@ -86,6 +86,9 @@ class ExternalLoginFilter(BaseModel):
     login_status: str | None = None
     subscription_ok: bool | None = None
     keyword: str = ""
+    in_stock: bool | None = None
+    imported_from: datetime | None = None
+    imported_before: datetime | None = None
 
 
 class ExternalMemberExportItem(BaseModel):

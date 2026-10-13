@@ -20,7 +20,7 @@ router = APIRouter(
 def list_logs(
     level: str = "",
     keyword: str = "",
-    limit: int = Query(300, ge=1, le=2000),
+    limit: int = Query(300, ge=1, le=10000),
 ) -> LogListOut:
     items, total = STORE.list(level=level, keyword=keyword.strip(), limit=limit)
     return LogListOut(items=items, total=total)

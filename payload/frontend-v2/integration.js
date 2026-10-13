@@ -1,7 +1,8 @@
 /* Reliable integration as a page in the existing authenticated Okad workspace. */
 (function () {
   'use strict';
-  var panel, page = 1, total = 0, active = false, generation = 0;
+  var panel, page = 1, size = 200, total = 0, active = false, generation = 0;
+  var jobsPage = 1, jobsSize = 200, jobsTotal = 0, updateJobsPager;
   var refreshing = false, acting = false, poll = null, reads = new Set();
   var requestID = 0, loaded = false, dirty = false, connected = false, lastChecked = 0, trackedJob = '';
   var labels = {pending:'等待同步', retry:'等待补推或验证', ready:'已验证 · 可调度',
@@ -96,7 +97,9 @@
   function controls() {
     el('refresh').disabled = acting;
     el('prev').disabled = acting || page <= 1;
-    el('next').disabled = acting || page * 100 >= total;
+    el('next').disabled = acting || page * size >= total;
+    window.OKAD_PAGINATION.syncSize('integration-page-size', size, acting || refreshing);
+    if (updateJobsPager) updateJobsPager();
     el('config').querySelectorAll('button,input').forEach(function (input) { input.disabled = acting; });
     panel.querySelectorAll('button[data-action]').forEach(function (button) {
       button.disabled = acting || !connected || button.dataset.unavailable === 'true';
@@ -130,8 +133,9 @@
           '<a data-route href="' + window.OKAD_ROUTE.href('/external-members') + '">手动验证码登录</a>' :
           '<button class="secondary" data-action="login" data-source="' + esc(row.source_key) + '" data-unavailable="' + !row.auto_recovery + '" title="' + esc(row.recovery_message || '重新登录并获取 Cookie') + '">重新授权</button>') + '</div></td></tr>';
     }, '<tr><td colspan="5" class="integration-empty">暂无账号，请先在 Okad 导入账号。</td></tr>');
-    text(el('page'), page + ' / ' + Math.max(1, Math.ceil(total / 100)) + ' · ' + total + ' 个账号');
-    reconcile(el('jobs'), status.jobs.slice(0,20), function (job) {
+    text(el('page'), page + ' / ' + Math.max(1, Math.ceil(total / size)) + ' · ' + total + ' 个账号');
+    jobsTotal = status.jobs_total == null ? status.jobs.length : status.jobs_total;
+    reconcile(el('jobs'), status.jobs, function (job) {
       return '<div class="integration-job">' + badge(job.state) + '<span>' + esc(job.email) + '<small>' + esc(job.message) + '</small></span><small>' + new Date(job.created_at * 1000).toLocaleString() + '</small></div>';
     }, '<div class="integration-empty">暂无恢复任务</div>');
     if (trackedJob) {
@@ -149,7 +153,7 @@
     var current = generation, id = ++requestID, requestedPage = targetPage || page;
     refreshing = true; controls();
     try {
-      var results = await Promise.all([api('/status'), api('/sources?page=' + requestedPage)]);
+      var results = await Promise.all([api('/status?jobs_page=' + jobsPage + '&jobs_size=' + jobsSize), api('/sources?page=' + requestedPage + '&size=' + size)]);
       if (active && current === generation && id === requestID) {
         var changedPage = page !== (results[1].page || requestedPage);
         page = results[1].page || requestedPage;
@@ -216,12 +220,17 @@
         <section class="integration-section"><div class="integration-section-heading"><h3>账号联动状态</h3>
           <p class="integration-muted">同步与验证不会重新登录，人工暂停会保留；远端状态约每 30 秒核对一次。</p></div>
           <div class="integration-scroll"><table><thead><tr><th>账号 / 来源</th><th>自动恢复</th><th>凭据版本</th><th>同步与验证</th><th>操作</th></tr></thead><tbody id="integration-sources"><tr><td colspan="5" class="integration-empty">正在读取账号状态…</td></tr></tbody></table></div>
-          <footer><button id="integration-prev" class="secondary">上一页</button><span id="integration-page">—</span><button id="integration-next" class="secondary">下一页</button></footer>
+          <footer>${window.OKAD_PAGINATION.sizeHTML('integration-page-size', size)}<button id="integration-prev" class="secondary">上一页</button><span id="integration-page">—</span><button id="integration-next" class="secondary">下一页</button></footer>
         </section>
-        <section class="integration-section"><div class="integration-section-heading"><h3>最近恢复任务</h3><p class="integration-muted">同一账号的并发登录会合并。</p></div><div id="integration-jobs"></div></section>
+        <section class="integration-section"><div class="integration-section-heading"><h3>最近恢复任务</h3><p class="integration-muted">同一账号的并发登录会合并。</p></div><div id="integration-jobs"></div><nav id="integration-jobs-pager"></nav></section>
         <p class="integration-footnote integration-muted">凭据验证检查实时 Token 与额度，模型出图能力仍需在 Sub2 实际测试。</p>
       </div>`;
     document.body.appendChild(panel);
+    window.OKAD_PAGINATION.bindSize('integration-page-size', function (value) { size = value; refresh(1, true); });
+    updateJobsPager = window.OKAD_PAGINATION.mountPager(el('jobs-pager'), {id:'integration-jobs-size',
+      state:function () { return {page:jobsPage, size:jobsSize, total:jobsTotal, busy:acting || refreshing}; },
+      onPage:function (value) { jobsPage = value; refresh(page, true); },
+      onSize:function (value) { jobsSize = value; jobsPage = 1; refresh(page, true); }});
     el('config').addEventListener('input', function () { dirty = true; });
     el('config').onsubmit = function (event) {
       event.preventDefault();

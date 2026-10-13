@@ -82,6 +82,8 @@ export default defineComponent({name:'JobsWorkspace',setup(){
   const jobs=ref([]), detail=ref(null), loading=ref(false), error=ref(''), actionError=ref(''), busy=ref('');
   const selected=ref([]), keyword=ref(''), status=ref(''), type=ref(''), source=ref(''), auto=ref(true), limit=ref(200);
   const tab=ref('accounts'), accountQuery=ref(''), logQuery=ref(''), logLevel=ref(''), updated=ref('');
+  const page=ref(1), size=ref(200), accountPage=ref(1), accountSize=ref(200), logPage=ref(1), logSize=ref(200);
+  const pagination=window.OKAD_PAGINATION;
   let timer, disposed=false, listPending=false, sequence=0;
   const controllers=new Set();
   async function api(path,body) {
@@ -148,6 +150,10 @@ export default defineComponent({name:'JobsWorkspace',setup(){
       (!term||[job.id,t.title,t.operator,t.source.label,...t.accounts.map(a=>a.email||a.id)].join(' ').toLowerCase().includes(term));
   }));
   const pickAll=computed(()=>shown.value.filter(j=>!active(j)));
+  watch([keyword,status,type,source],()=>{page.value=1;selected.value=[];});
+  watch(()=>shown.value.length,()=>{page.value=Math.min(page.value,Math.max(1,Math.ceil(shown.value.length/size.value)));});
+  watch(accountQuery,()=>accountPage.value=1);
+  watch([logQuery,logLevel],()=>logPage.value=1);
   function toggle(jobId,on){selected.value=on?[...new Set([...selected.value,jobId])]:selected.value.filter(i=>i!==jobId);}
   function reset(){keyword.value='';status.value='';type.value='';source.value='';}
   function selectFilter(value, options){return h(Select,{value:value.value,options,'onUpdate:value':v=>value.value=v});}
@@ -185,16 +191,18 @@ export default defineComponent({name:'JobsWorkspace',setup(){
           disabled:!pickAll.value.length,onChange:e=>{const ids=pickAll.value.map(j=>j.id);selected.value=e.target.checked?[...new Set([...selected.value,...ids])]:selected.value.filter(i=>!ids.includes(i));}}),
         `已选 ${selected.value.length} 项`,h('span',{class:'ws-muted'},`筛选结果 ${shown.value.length} 项`)]),
         h('div',{class:'ws-actions'},[h('small',{class:'ws-muted'},updated.value?`更新于 ${updated.value}`:''),confirmation('删除选中','delete',`删除选中的 ${selected.value.length} 个任务及其记录？`,{text:true,type:'error',disabled:!selected.value.length},0)])]),
-      shown.value.length?h('div',{class:'task-grid'},shown.value.map(card)):h('div',{class:'ws-empty'},[h('b',{},loading.value?'正在读取任务…':'暂无匹配任务'),h('p',{},'从账号管理页面发起操作后，可在这里查看。')]),
-      h('footer',{class:'task-list-footer'},[h('span',{class:'ws-muted'},`显示最近 ${jobs.value.length} 项任务`),jobs.value.length>=limit.value?btn('加载更早任务',{loading:loading.value,onClick:()=>{limit.value+=200;loadList();}}):null])
+      shown.value.length?h('div',{class:'task-grid'},shown.value.slice((page.value-1)*size.value,page.value*size.value).map(card)):h('div',{class:'ws-empty'},[h('b',{},loading.value?'正在读取任务…':'暂无匹配任务'),h('p',{},'从账号管理页面发起操作后，可在这里查看。')]),
+      pagination.pager(h,{page:page.value,size:size.value,total:shown.value.length,busy:loading.value,onPage:value=>{page.value=value;selected.value=[];},onSize:value=>{size.value=value;page.value=1;selected.value=[];if(limit.value<value){limit.value=value;loadList();}}}),
+      h('footer',{class:'task-list-footer'},[h('span',{class:'ws-muted'},`已加载最近 ${jobs.value.length} 项任务`),jobs.value.length>=limit.value?btn('加载更早任务',{loading:loading.value,onClick:()=>{limit.value+=size.value;loadList();}}):null])
     ];
   }
   function accountResults(job) {
     const all=records(job), query=accountQuery.value.trim().toLowerCase();
     const items=all.filter(row=>[row.email,row.id,row.message].join(' ').toLowerCase().includes(query));
+    accountPage.value=Math.min(accountPage.value,Math.max(1,Math.ceil(items.length/accountSize.value)));
     return h('section',{class:'task-account-results'},[
       h('div',{class:'ws-section-heading'},[h('h3',{},`涉及账号（${all.length}）`),h(Input,{placeholder:'查找账号或结果',value:accountQuery.value,clearable:true,'onUpdate:value':v=>accountQuery.value=v,style:{maxWidth:'280px'}})]),
-      items.length?h('div',{class:'task-account-list'},items.map(row=>{
+      items.length?h('div',{class:'task-account-list'},items.slice((accountPage.value-1)*accountSize.value,accountPage.value*accountSize.value).map(row=>{
         const title=row.email || `账号 #${row.id}`;
         const tone=['failed','error'].includes(row.status)?'red':['done','pushed','existing'].includes(row.status)?'green':row.status==='running'?'blue':'muted';
         return h('article',{class:'task-account-row','data-account-id':row.id},[
@@ -202,18 +210,21 @@ export default defineComponent({name:'JobsWorkspace',setup(){
           pill(itemState(row),tone),h('p',{},row.message || '未保存逐账号结果，可按账号查看执行记录'),
           btn('执行记录',{text:true,type:'primary',onClick:()=>{logQuery.value=row.email||String(row.id);tab.value='logs';}})
         ]);
-      })):h('div',{class:'ws-empty'},all.length?'没有匹配账号':'此历史任务未保存账号清单，请查看执行记录。')
+      })):h('div',{class:'ws-empty'},all.length?'没有匹配账号':'此历史任务未保存账号清单，请查看执行记录。'),
+      pagination.pager(h,{page:accountPage.value,size:accountSize.value,total:items.length,onPage:value=>accountPage.value=value,onSize:value=>{accountSize.value=value;accountPage.value=1;}})
     ]);
   }
   function executionLogs(job) {
     const logs=(job.logs||[]).map((text,index)=>({text,index,level:severity(text)})).filter(row=>(!logLevel.value||row.level===logLevel.value)&&(!logQuery.value||row.text.toLowerCase().includes(logQuery.value.toLowerCase())));
+    logPage.value=Math.min(logPage.value,Math.max(1,Math.ceil(logs.length/logSize.value)));
     return h('section',{},[
       h('div',{class:'ws-section-heading'},[h('h3',{},`执行记录（${job.log_total||0}）`),confirmation('清空记录','clear-logs','清空本任务的执行记录？账号结果与任务摘要会保留。',{text:true,type:'error',disabled:!job.log_total})]),
       h('div',{class:'task-log-filter'},[h(Input,{placeholder:'搜索邮箱、失败原因或执行内容',value:logQuery.value,clearable:true,'onUpdate:value':v=>logQuery.value=v}),
         selectFilter(logLevel,[{label:'全部记录',value:''},{label:'失败 / 异常',value:'error'},{label:'告警 / 重试',value:'warning'},{label:'成功 / 完成',value:'success'},{label:'过程信息',value:'info'}])]),
-      logs.length?h('ol',{class:'task-timeline'},logs.map(row=>{const m=row.text.match(/^(\d{2}:\d{2}:\d{2})\s+([\s\S]*)$/);return h('li',{class:row.level,key:row.index},[
+      logs.length?h('ol',{class:'task-timeline'},logs.slice((logPage.value-1)*logSize.value,logPage.value*logSize.value).map(row=>{const m=row.text.match(/^(\d{2}:\d{2}:\d{2})\s+([\s\S]*)$/);return h('li',{class:row.level,key:row.index},[
         h('time',{},m?m[1]:'—'),h('div',{},[pill({error:'异常',warning:'提醒',success:'结果',info:'过程'}[row.level],{error:'red',warning:'amber',success:'green',info:'muted'}[row.level]),h('p',{},m?m[2]:row.text)])]);})):
-        h('div',{class:'ws-empty'},job.log_total?'没有匹配记录，可调整搜索条件。':'暂无执行记录')
+        h('div',{class:'ws-empty'},job.log_total?'没有匹配记录，可调整搜索条件。':'暂无执行记录'),
+      pagination.pager(h,{page:logPage.value,size:logSize.value,total:logs.length,onPage:value=>logPage.value=value,onSize:value=>{logSize.value=value;logPage.value=1;}})
     ]);
   }
   function detailView(job) {
@@ -242,7 +253,7 @@ export default defineComponent({name:'JobsWorkspace',setup(){
       tab.value==='accounts'?accountResults(job):executionLogs(job)
     ];
   }
-  watch(id,async()=>{sequence++;detail.value=null;error.value='';actionError.value='';tab.value='accounts';accountQuery.value='';logQuery.value='';logLevel.value='';await refresh();});
+  watch(id,async()=>{sequence++;detail.value=null;error.value='';actionError.value='';tab.value='accounts';accountPage.value=logPage.value=1;accountQuery.value='';logQuery.value='';logLevel.value='';await refresh();});
   onMounted(async()=>{await refresh();timer=setInterval(()=>{if(auto.value&&!document.hidden&&!busy.value)refresh();},5000);});
   onUnmounted(()=>{disposed=true;sequence++;clearInterval(timer);controllers.forEach(c=>c.abort());});
   return ()=>h('main',{id:'jobs-workspace',class:'ws-page notranslate',translate:'no'},[

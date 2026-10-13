@@ -31,6 +31,7 @@ function harness() {
     if (url.endsWith('/config')) { state.config = {...state.config,...JSON.parse(options.body)}; return response(state.config); }
     return response({message:'已提交'});
   };
+  w.eval(fs.readFileSync(path.join(__dirname, '../pagination.js'), 'utf8'));
   w.eval(script);
   return {w,state,calls,timers,dom, get: id=>w.document.getElementById('integration-'+id),
     poll:async()=>{for(const cb of timers.values())cb();await flush();},
@@ -75,9 +76,9 @@ test('older GET response cannot overwrite completed action state',async t=>{
 test('failed page request keeps the displayed page and retry remains available',async t=>{
   const h=harness();t.after(()=>h.dom.window.close());await h.open();
   h.state.custom=url=>url.includes('page=2')?Promise.resolve(response({detail:'fixture failure'},503)):null;
-  h.get('next').click();await flush();assert.match(h.get('page').textContent,/^1 \/ 3/);
+  h.get('next').click();await flush();assert.match(h.get('page').textContent,/^1 \/ 2/);
   assert.match(h.get('notice').textContent,/保留上次结果/);assert.equal(h.get('next').disabled,false);
-  h.state.custom=null;h.get('next').click();await flush();assert.match(h.get('page').textContent,/^2 \/ 3/);
+  h.state.custom=null;h.get('next').click();await flush();assert.match(h.get('page').textContent,/^2 \/ 2/);
 });
 
 test('configuration errors retain draft and disabled integration never offers writes',async t=>{

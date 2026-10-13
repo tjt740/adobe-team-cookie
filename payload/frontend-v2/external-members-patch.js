@@ -5,7 +5,7 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", importedFrom: "", importedBefore: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -37,6 +37,8 @@
     '.extm-btn.sm{height:28px;padding:0 10px;font-size:12px}',
     '.extm-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid #efeff5;background:#fcfcfd}',
     '.extm-tools .sp{flex:1}',
+    '.extm-filter-primary{grid-column:1/-1;order:-2;flex-basis:100%;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.extm-filter-primary label{display:inline-flex;align-items:center;gap:8px;font-size:13px;white-space:nowrap}.extm-filter-primary .extm-in{min-width:0}#extm-embed .extm-filter-primary select.extm-in{width:140px!important}#extm-embed .extm-filter-primary input.extm-in{width:150px!important}.extm-date-range{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.extm-date-range>span{color:#909399;font-size:13px}',
+    '@media(max-width:760px){.extm-date-range{display:grid;width:100%;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}.extm-date-range>span:first-child{grid-column:1/-1}#extm-embed .extm-date-range input.extm-in{width:100%!important}}',
     '.extm-tools .selc{font-size:13px;color:#909399}.extm-tools .selc b{color:#18a058}',
     '.extm-batch-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.extm-detail:not(.extm-manage-history) .extm-history-select,.extm-detail:not(.extm-manage-history) [data-action=delete]{display:none}.extm-pill.info{background:#eaf2ff;color:#3b82f6}',
     '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
@@ -169,6 +171,9 @@
       '</div></details>' +
       '<div class="extm-card">' +
         '<div class="extm-tools">' +
+          '<div class="extm-filter-primary"><label for="extm-f-stock">Sub2 库存<select id="extm-f-stock" class="extm-in"><option value="">全部库存状态</option><option value="false">未在库</option><option value="true">在库</option></select></label>' +
+            '<div class="extm-date-range" role="group" aria-label="导入时间"><span>导入时间</span><input type="date" id="extm-f-import-from" class="extm-in" aria-label="导入开始日期"><span>至</span><input type="date" id="extm-f-import-to" class="extm-in" aria-label="导入结束日期" title="包含结束日期当天"></div>' +
+            '<button type="button" class="extm-btn dft sm" id="extm-reset-filters">重置筛选</button></div>' +
           '<select id="extm-f-status" class="extm-in"><option value="">全部状态</option><option value="ok">正常</option><option value="never">未登录</option><option value="login_failed">登录失败</option><option value="account_disabled">已停用</option><option value="rate_limited">频繁登录限流</option><option value="internal">内部错误</option></select>' +
           '<select id="extm-f-sub" class="extm-in"><option value="">全部订阅</option><option value="true">订阅正常</option><option value="false">掉订阅</option></select>' +
           '<input id="extm-f-kw" class="extm-in" placeholder="搜索邮箱…" style="width:180px">' +
@@ -192,7 +197,7 @@
         '</tr></thead><tbody id="extm-tbody"><tr><td colspan="13" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
         '<nav class="extm-pagination" aria-label="外部子号分页">' +
           '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
-          '<label for="extm-page-size">每页<select id="extm-page-size" class="extm-in" aria-label="每页显示条数"><option value="50">50 条</option><option value="100">100 条</option><option value="200" selected>200 条</option></select></label>' +
+          window.OKAD_PAGINATION.sizeHTML('extm-page-size', st.size) +
           '<button type="button" class="extm-btn dft sm" id="extm-first">首页</button><button type="button" class="extm-btn dft sm" id="extm-prev">上一页</button>' +
           '<span id="extm-page-info"></span>' +
           '<button type="button" class="extm-btn dft sm" id="extm-next">下一页</button><button type="button" class="extm-btn dft sm" id="extm-last">末页</button>' +
@@ -207,7 +212,7 @@
     el('extm-mail-test').onclick = function () { mailAction(this, 'test'); };
     el('extm-mail-clear').onclick = function () { mailAction(this, 'clear'); };
     loadMailConfig();
-    el("extm-refresh").onclick = function () { refreshAll(true); refreshStock(true); };
+    el("extm-refresh").onclick = function () { refreshStock(true).then(function () { return refreshAll(true); }); };
     el("extm-batch-login").onclick = batchLogin;
     el("extm-batch-profile").onchange = function () { saveSelectedProfilePreference(this.value); };
     var moreActions = el("extm-more-actions");
@@ -227,12 +232,26 @@
     el("extm-batch-del").onclick = batchDelete;
     el("extm-f-status").onchange = function () { st.statusF = this.value; resetPage(1); load(); };
     el("extm-f-sub").onchange = function () { st.subF = this.value; resetPage(1); load(); };
-    var kwT; el("extm-f-kw").oninput = function () { st.q = this.value.trim(); resetPage(1); clearTimeout(kwT); kwT = setTimeout(load, 300); };
-    el("extm-page-size").onchange = function () {
-      var size = Number(this.value);
-      if (st.profileSaving.size || st.noteSaving || ![50, 100, 200].includes(size)) { renderPagination(); return; }
-      st.size = size; resetPage(1); load();
+    el("extm-f-stock").onchange = function () { st.stockF = this.value; resetPage(1); load(); };
+    el("extm-f-import-from").onchange = el("extm-f-import-to").onchange = function () {
+      var from = el("extm-f-import-from"), to = el("extm-f-import-to");
+      to.setCustomValidity(from.value && to.value && from.value > to.value ? "结束日期不能早于开始日期" : "");
+      if (!from.reportValidity() || !to.reportValidity()) return;
+      st.importedFrom = dateBoundary(from.value, false); st.importedBefore = dateBoundary(to.value, true);
+      resetPage(1); load();
     };
+    el("extm-reset-filters").onclick = function () {
+      clearTimeout(kwT);
+      st.statusF = st.subF = st.stockF = st.importedFrom = st.importedBefore = st.q = "";
+      ["extm-f-status", "extm-f-sub", "extm-f-stock", "extm-f-import-from", "extm-f-import-to", "extm-f-kw"].forEach(function (id) { el(id).value = ""; });
+      el("extm-f-import-to").setCustomValidity("");
+      resetPage(1); load();
+    };
+    var kwT; el("extm-f-kw").oninput = function () { st.q = this.value.trim(); resetPage(1); clearTimeout(kwT); kwT = setTimeout(load, 300); };
+    window.OKAD_PAGINATION.bindSize('extm-page-size', function (size) {
+      if (st.profileSaving.size || st.noteSaving || !window.OKAD_PAGINATION.valid(size)) { renderPagination(); return; }
+      st.size = size; resetPage(1); load();
+    });
     el("extm-first").onclick = function () { goPage(1); };
     el("extm-prev").onclick = function () { goPage(st.page - 1); };
     el("extm-next").onclick = function () { goPage(st.page + 1); };
@@ -253,11 +272,26 @@
     if (panel.hidden) panel.open = false;
   }
 
+  function dateBoundary(value, nextDay) {
+    if (!value) return "";
+    var date = new Date(value + 'T00:00:00');
+    if (nextDay) date.setDate(date.getDate() + 1);
+    return date.toISOString();
+  }
+  function extraFilters() {
+    var filters = {};
+    if (st.stockF !== "") filters.in_stock = st.stockF === "true";
+    if (st.importedFrom) filters.imported_from = st.importedFrom;
+    if (st.importedBefore) filters.imported_before = st.importedBefore;
+    return filters;
+  }
   function qs() {
     var a = [];
     if (st.statusF) a.push("login_status=" + encodeURIComponent(st.statusF));
     if (st.subF !== "") a.push("subscription_ok=" + st.subF);
     if (st.q) a.push("keyword=" + encodeURIComponent(st.q));
+    var filters = extraFilters();
+    Object.keys(filters).forEach(function (key) { a.push(key + "=" + encodeURIComponent(filters[key])); });
     return a;
   }
 
@@ -285,7 +319,7 @@
       message:st.pending.has(r.id) ? '正在提交任务…' : r.otp_challenge ? '等待手动验证码' :
         (job && job.item_message) || (item && item.message) || (job ? '任务 #' + job.id + ' · 展开查看进度' : '')} : null;
   }
-  function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
+  function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], historyPage: 1, historySize: 200, checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
   function jobPill(job) {
     var m = { running: ["info", "运行中"], pausing: ["warn", "暂停中"], paused: ["warn", "已暂停"], cancelling: ["warn", "终止中"], done: [job.fail ? "bad" : "ok", job.fail ? (job.success ? "部分失败" : "失败") : "已完成"], error: ["bad", "失败"], cancelled: ["mut", "已终止"] }[job.status] || ["mut", job.status];
     return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + '</span>';
@@ -301,8 +335,7 @@
     var end = st.rows.length ? start + st.rows.length - 1 : 0;
     setText(el("extm-page-summary"), '共 ' + st.total + ' 条 · 当前 ' + start + '–' + end + ' 条');
     setText(el("extm-page-info"), '第 ' + st.page + ' / ' + pages + ' 页');
-    el("extm-page-size").value = String(st.size);
-    el("extm-page-size").disabled = busy;
+    window.OKAD_PAGINATION.syncSize('extm-page-size', st.size, busy);
     el("extm-first").disabled = el("extm-prev").disabled = busy || st.page <= 1;
     el("extm-last").disabled = el("extm-next").disabled = busy || st.page >= pages;
     var input = el("extm-page-number"); input.max = String(pages); input.disabled = busy;
@@ -310,7 +343,7 @@
     el("extm-page-go").disabled = busy;
   }
   function resetPage(page) {
-    ++st.loadSeq; st.page = page; st.rows = []; st.sel.clear(); st.expanded.clear();
+    ++st.loadSeq; st.page = page; st.rows = []; st.loadError = ""; st.sel.clear(); st.expanded.clear();
     Object.keys(st.details).forEach(function (id) { clearTimeout(st.details[id].closeTimer); });
     st.details = {};
     renderRows();
@@ -331,6 +364,7 @@
     if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="13" class="extm-empty">加载中…</td></tr>';
     return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
       if (seq !== st.loadSeq) return;
+      st.loadError = "";
       st.total = d.total != null ? d.total : (d.items || []).length;
       setText(el("extm-total"), st.total);
       if (st.page > pageCount()) { resetPage(pageCount()); return load(); }
@@ -340,7 +374,7 @@
       renderRows();
     }).catch(function (e) {
       if (seq !== st.loadSeq) return;
-      if (!st.rows.length) body.innerHTML = '<tr><td colspan="13" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
+      if (!st.rows.length) { st.loadError = e.message; renderRows(); }
       else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
     }).finally(function () {
       if (st.loadingSeq === seq) st.loadingSeq = 0;
@@ -378,7 +412,7 @@
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="13" class="extm-empty">暂无匹配的外部子号</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="13" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || '暂无匹配的外部子号') + '</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -710,11 +744,15 @@
       panel.innerHTML = '<section class="extm-profile-card extm-task-card" aria-label="账号配置详情"></section><div class="extm-detail-error" role="status"></div><div class="extm-task-layout">' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务历史</strong><span class="sp"></span><button class="extm-btn dft sm" data-action="manage" aria-pressed="false">管理历史</button><button class="extm-btn del sm" data-action="delete">删除选中</button></div>' +
         '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col style="width:65px"><col></colgroup>' +
-        '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>操作人</th><th>时间</th></tr></thead><tbody></tbody></table></div></section>' +
+        '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>操作人</th><th>时间</th></tr></thead><tbody></tbody></table></div><nav class="extm-history-pager"></nav></section>' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务详情</strong><div class="extm-task-actions"><label class="extm-auto"><input type="checkbox" data-auto checked>自动刷新</label><button class="extm-btn dft sm" data-action="refresh">刷新</button><button class="extm-btn dft sm" data-action="pause">暂停任务</button><button class="extm-btn del sm" data-action="cancel">终止任务</button></div></div>' +
         '<div class="extm-task-body"><div class="extm-job-title"></div><div class="extm-job-meta"></div><div class="extm-counts"></div><div class="extm-progress" role="progressbar" aria-label="任务进度"><div></div></div><div class="extm-detail-error extm-job-error"></div>' +
         '<div class="extm-log-tools"><span data-log-count>实时日志</span><span class="sp"></span><select class="extm-in" data-log-scope aria-label="日志范围"><option value="member">当前账号日志</option><option value="all">整批任务日志</option></select><button class="extm-btn dft sm" data-action="clear-logs">清空日志</button></div>' +
         '<div class="extm-log-legend" aria-label="日志颜色说明"><span><i class="success"></i>成功</span><span><i class="warn"></i>警告</span><span><i class="error"></i>错误</span><span><i class="progress"></i>进度</span><span><i class="info"></i>普通</span></div><pre class="extm-logs" tabindex="0" aria-label="任务日志"></pre><div class="extm-scope-note"></div></div></section></div>';
+      d.updateHistoryPager = window.OKAD_PAGINATION.mountPager(panel.querySelector('.extm-history-pager'), {id:'extm-history-size-' + id,
+        state:function () { return {page:d.historyPage, size:d.historySize, total:d.jobs.length, busy:d.action}; },
+        onPage:function (value) { d.historyPage = value; d.checked.clear(); renderDetail(id); },
+        onSize:function (value) { d.historySize = value; d.historyPage = 1; d.checked.clear(); renderDetail(id); }});
       panel.onclick = function (e) {
         var action = e.target.closest("[data-action]");
         if (action && !action.disabled) { taskAction(id, action.dataset.action); return; }
@@ -734,7 +772,9 @@
     setText(manage, d.manage ? '结束管理' : '管理历史');
     setText(panel.querySelector(":scope > .extm-detail-error"), d.error);
     var history = panel.querySelector(".extm-history tbody");
-    setHTML(history, d.jobs.length ? d.jobs.map(function (j) {
+    d.historyPage = Math.min(d.historyPage, Math.max(1, Math.ceil(d.jobs.length / d.historySize)));
+    if (d.updateHistoryPager) d.updateHistoryPager();
+    setHTML(history, d.jobs.length ? d.jobs.slice((d.historyPage - 1) * d.historySize, d.historyPage * d.historySize).map(function (j) {
       return '<tr data-job="' + j.id + '" class="' + (j.id === d.selected ? 'active' : '') + '" aria-selected="' + (j.id === d.selected) + '">' +
         '<td class="extm-history-select"><input type="checkbox" data-job-check="' + j.id + '" aria-label="选择任务 #' + j.id + '"' + (d.checked.has(j.id) ? ' checked' : '') + (activeJob(j) ? ' disabled' : '') + '></td>' +
         '<td><button class="extm-link" title="查看任务 #' + j.id + '">#' + j.id + '</button></td><td>' + jobPill(j) + '</td>' +
@@ -777,7 +817,7 @@
     var d = detailState(id);
     if (d.loading) return d.promise.then(function () { if (force) return refreshDetail(id); });
     d.loading = true; d.error = ''; renderDetail(id);
-    d.promise = api('/members/' + id + '/jobs?limit=50').then(function (jobs) {
+    d.promise = api('/members/' + id + '/jobs?limit=10000').then(function (jobs) {
       d.jobs = jobs;
       d.checked.forEach(function (jid) { if (!jobs.some(function (j) { return j.id === jid && !activeJob(j); })) d.checked.delete(jid); });
       if (!jobs.some(function (j) { return j.id === d.selected; })) d.selected = jobs.length ? jobs[0].id : null;
@@ -960,7 +1000,7 @@
 
   async function loginAll() {
     if (st.loginAllSubmitting || st.pending.size || st.profileSaving.size) return;
-    var filters = { login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q };
+    var filters = Object.assign({ login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q }, extraFilters());
     var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
     st.loginAllSubmitting = true;
     ids.forEach(function (id) { st.pending.add(id); });

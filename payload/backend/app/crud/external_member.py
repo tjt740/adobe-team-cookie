@@ -113,6 +113,32 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
             "failed": failed, "errors": errors, "ids": ids}
 
 
+def _filtered_members(
+    *,
+    login_status: str | None = None,
+    subscription_ok: bool | None = None,
+    keyword: str = "",
+    ids: list[int] | None = None,
+    imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
+):
+    stmt = select(ExternalMember)
+    if ids is not None:
+        stmt = stmt.where(ExternalMember.id.in_(ids))
+    if imported_from is not None:
+        stmt = stmt.where(ExternalMember.created_at >= imported_from)
+    if imported_before is not None:
+        stmt = stmt.where(ExternalMember.created_at < imported_before)
+    if login_status:
+        stmt = stmt.where(ExternalMember.login_status == login_status)
+    if subscription_ok is not None:
+        stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
+    return stmt
+
+
 def list_members(
     db: Session,
     *,
@@ -121,15 +147,13 @@ def list_members(
     login_status: str | None = None,
     subscription_ok: bool | None = None,
     keyword: str = "",
+    ids: list[int] | None = None,
+    imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
 ) -> tuple[list[ExternalMember], int]:
-    stmt = select(ExternalMember)
-    if login_status:
-        stmt = stmt.where(ExternalMember.login_status == login_status)
-    if subscription_ok is not None:
-        stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
-    if keyword:
-        like = f"%{keyword.strip()}%"
-        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
+    stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
+                             keyword=keyword, ids=ids, imported_from=imported_from,
+                             imported_before=imported_before)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
         db.scalars(
@@ -146,17 +170,12 @@ def export_cookies(
     subscription_ok: bool | None = None,
     keyword: str = "",
     ids: list[int] | None = None,
+    imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
 ) -> list[dict]:
-    stmt = select(ExternalMember).where(ExternalMember.cookie != "")
-    if ids is not None:
-        stmt = stmt.where(ExternalMember.id.in_(ids))
-    if login_status:
-        stmt = stmt.where(ExternalMember.login_status == login_status)
-    if subscription_ok is not None:
-        stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
-    if keyword:
-        like = f"%{keyword.strip()}%"
-        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
+    stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
+                             keyword=keyword, ids=ids, imported_from=imported_from,
+                             imported_before=imported_before).where(ExternalMember.cookie != "")
     rows = db.scalars(stmt.order_by(ExternalMember.id.desc())).all()
     return [{"cookie": r.cookie} for r in rows if (r.cookie or "").strip()]
 

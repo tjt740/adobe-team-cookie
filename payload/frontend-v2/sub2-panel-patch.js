@@ -169,8 +169,7 @@
             '<input class="s2-in" id="s2-q" placeholder="搜索邮箱 / 归属母号" style="min-width:220px">' +
             '<select class="s2-in" id="s2-statusf"><option value="">全部状态</option><option value="ok">正常</option><option value="bad">异常</option></select>' +
             '<div class="sp"></div>' +
-            '<span style="font-size:12px;color:#909399">每页</span>' +
-            '<select class="s2-in" id="s2-pagesize"><option value="200">200</option><option value="300">300</option><option value="400">400</option><option value="500">500</option></select>' +
+            window.OKAD_PAGINATION.sizeHTML('s2-pagesize', st.size) +
           '</div>' +
           '<div class="s2-tw"><table class="s2-t"><thead><tr>' +
             '<th style="width:38px"></th>' +
@@ -201,7 +200,7 @@
     el("s2-gids").addEventListener("input", renderGroups);
     el("s2-q").addEventListener("input", debounce(function () { st.q = el("s2-q").value.trim().toLowerCase(); st.page = 1; applyView(); }, 200));
     el("s2-statusf").addEventListener("change", function () { st.statusF = el("s2-statusf").value; st.page = 1; applyView(); });
-    el("s2-pagesize").addEventListener("change", function () { st.size = parseInt(el("s2-pagesize").value, 10) || 200; st.page = 1; applyView(); });
+    window.OKAD_PAGINATION.bindSize('s2-pagesize', function (size) { st.size = size; st.page = 1; st.sel.clear(); applyView(); });
     el("s2-selall").onchange = function (e) { curPageItems().forEach(function (a) { if (e.target.checked) st.sel.add(String(a.id)); else st.sel.delete(String(a.id)); }); renderTable(); };
     el("s2-selall2").onclick = function () { st.view.forEach(function (a) { st.sel.add(String(a.id)); }); setMsg("s2-opmsg", "已选中筛选结果 " + st.sel.size + " 个", "ok"); renderTable(); };
     el("s2-selclr").onclick = function () { st.sel.clear(); renderTable(); setMsg("s2-opmsg", ""); };
@@ -340,6 +339,7 @@
       th.innerHTML = base + (st.sortKey === th.getAttribute("data-sk") ? ' <span class="arw">' + (st.sortDir > 0 ? "▲" : "▼") + "</span>" : "");
     });
     var total = st.view.length, pages = Math.max(1, Math.ceil(total / st.size));
+    window.OKAD_PAGINATION.syncSize('s2-pagesize', st.size, st.busy);
     el("s2-pginfo").textContent = "共 " + total + " 个 · 第 " + st.page + "/" + pages + " 页";
     el("s2-prev").disabled = st.busy || st.page <= 1;
     el("s2-next").disabled = st.busy || st.page >= pages;

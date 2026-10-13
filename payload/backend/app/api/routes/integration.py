@@ -2,7 +2,8 @@
 import hmac
 import time
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Header
+from typing import Annotated
+from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select, func
 from sqlalchemy.orm import load_only
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from app.db.session import get_db
 from app.crud import setting as setting_crud
 from app.models.integration import CredentialState, CredentialDelivery, RecoveryJob
 from app.services import reliable_integration as link
+from app.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 
 router=APIRouter(prefix='/api/integration',dependencies=[Depends(get_current_user)])
 external=APIRouter(prefix='/api/v1/adobe')
@@ -81,18 +83,19 @@ def configure(body: ConfigIn,db=Depends(get_db)):
 
 
 @router.get('/status')
-def status(db=Depends(get_db)):
+def status(db=Depends(get_db), jobs_page: Annotated[int,Query(ge=1)]=1, jobs_size: Annotated[int,Query(ge=1,le=MAX_PAGE_SIZE)]=DEFAULT_PAGE_SIZE):
     cfg=link.settings(db)
     counts=dict(db.execute(select(CredentialDelivery.state,func.count()).where(CredentialDelivery.site_id==cfg['site_id']).group_by(CredentialDelivery.state)).all())
     active_jobs=db.scalar(select(func.count()).select_from(RecoveryJob).where(RecoveryJob.state.in_(['queued','running'])))
-    jobs=[link.job_result(j)|{'created_at':j.created_at,'updated_at':j.updated_at} for j in db.scalars(select(RecoveryJob).order_by(RecoveryJob.created_at.desc()).limit(100))]
+    jobs_total=db.scalar(select(func.count()).select_from(RecoveryJob))
+    jobs=[link.job_result(j)|{'created_at':j.created_at,'updated_at':j.updated_at} for j in db.scalars(select(RecoveryJob).order_by(RecoveryJob.created_at.desc(),RecoveryJob.id.desc()).offset((jobs_page-1)*jobs_size).limit(jobs_size))]
     deliveries=[]
     recent=db.execute(select(CredentialDelivery,CredentialState.email).outerjoin(CredentialState,CredentialState.source_key==CredentialDelivery.source_key).where(CredentialDelivery.site_id==cfg['site_id']).order_by(CredentialDelivery.updated_at.desc()).limit(100))
     for d,email in recent:
         deliveries.append({'key':d.key,'source_key':d.source_key,'email':email or '',
             'version':d.version,'account_id':d.account_id,'state':d.state,'message':d.message,
             'attempts':d.attempts,'next_at':d.next_at,'updated_at':d.updated_at,'receipt':d.receipt})
-    return {'config':configuration(db),'jobs':jobs,'deliveries':deliveries,'counts':counts,'active_jobs':active_jobs,'checked_at':time.time()}
+    return {'config':configuration(db),'jobs':jobs,'jobs_total':jobs_total,'deliveries':deliveries,'counts':counts,'active_jobs':active_jobs,'checked_at':time.time()}
 
 
 @router.get('/inventory')
@@ -121,7 +124,7 @@ def login(body: SourceAction,db=Depends(get_db)):
     except link.IntegrationError as exc:raise HTTPException(400,str(exc)) from None
 
 @router.get('/sources')
-def sources(page: int=1,db=Depends(get_db)):
+def sources(page: Annotated[int,Query(ge=1)]=1, size: Annotated[int,Query(ge=1,le=MAX_PAGE_SIZE)]=100,db=Depends(get_db)):
     from app.models.external_member import ExternalMember
     from app.models.adobe_member import AdobeMember
     cfg=link.settings(db)
@@ -130,14 +133,14 @@ def sources(page: int=1,db=Depends(get_db)):
     page=max(1,page)
     external_count=db.scalar(select(func.count()).select_from(ExternalMember))
     pool_count=db.scalar(select(func.count()).select_from(AdobeMember).where(AdobeMember.is_admin.is_(False)))
-    offset=(page-1)*100
+    offset=(page-1)*size
     selected=[]
     if offset<external_count:
         q=select(ExternalMember,func.length(func.coalesce(ExternalMember.cookie,''))>0).options(load_only(
             ExternalMember.id,ExternalMember.email,ExternalMember.otp_mode,ExternalMember.mail_url,ExternalMember.refresh_token,ExternalMember.client_id
-        )).order_by(ExternalMember.id).offset(offset).limit(100)
+        )).order_by(ExternalMember.id).offset(offset).limit(size)
         selected.extend(('external',row,has_cookie) for row,has_cookie in db.execute(q))
-    remaining=100-len(selected)
+    remaining=size-len(selected)
     if remaining:
         q=select(AdobeMember,func.length(func.coalesce(AdobeMember.cookie,''))>0).options(load_only(
             AdobeMember.id,AdobeMember.email,AdobeMember.is_admin,AdobeMember.admin_id,AdobeMember.mail_url,AdobeMember.refresh_token,AdobeMember.client_id
@@ -160,7 +163,7 @@ def sources(page: int=1,db=Depends(get_db)):
             'version':credential.version if credential else 0,
             'delivery':{'state':delivery.state,'message':delivery.message,'account_id':delivery.account_id,
                 'next_at':delivery.next_at,'updated_at':delivery.updated_at,'receipt':delivery.receipt} if delivery else None})
-    return {'items':values,'total':external_count+pool_count,'page':page}
+    return {'items':values,'total':external_count+pool_count,'page':page,'size':size}
 
 
 @router.post('/push')

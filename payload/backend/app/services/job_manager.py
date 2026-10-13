@@ -452,7 +452,7 @@ class JobManager:
                            OR json_extract(j.meta_json, '$.member_emails."' || e.id || '"')=e.email)
                 )
                 SELECT * FROM ranked WHERE position <= :limit ORDER BY id DESC
-            """), {"member_ids": _json_dumps(list(set(member_ids))), "limit": max(1, min(100, limit))}).mappings().all()
+            """), {"member_ids": _json_dumps(list(set(member_ids))), "limit": max(1, min(10000, limit))}).mappings().all()
         out: dict[int, list[dict]] = {}
         for row in rows:
             data = Job.from_record(dict(row)).to_dict()
