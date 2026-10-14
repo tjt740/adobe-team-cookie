@@ -8,9 +8,15 @@ Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 
 
 筛选面板采用紧凑间距，宽屏两行展示查询条件，保留全部筛选功能与 Sub2 状态选项；无额外标题或自动更新提示。浏览器回归：`external_import_drawer_ui.py`、`external_filter_layout_ui.py`、`external_mail_ui.py`；接口使用合成数据，覆盖根路径和 `/okad/`，抽屉支持以 `DRAWER_BROWSER=webkit` 验证。
 
+## 统一管理页设计
+
+各页面沿用紧凑查询面板（12px 内边距、10px 行间距）、一致的标题和操作间距。较长的导入、编辑、详情和连接配置使用右侧抽屉；桌面最大 620px，手机全宽，内容独立滚动，底部操作与安全区保持可见。母号、邮箱、号池导入均提供小尺寸格式示例和默认 10 行的「账号内容识别」，关闭保留草稿，失败保留输入，成功清空。
+
+新增管理页复用 `workspace-controls.js` 的 `FilterPanel` / `WorkspaceModal` 及 `batch-import-drawer.js`，视觉规则统一放在 `compact-workspace.css`；手机卡片由 `compact-workspace.js` 为现有单元格标注，沿用原事件与数据，避免重复的业务操作。短确认框继续使用原确认组件。
+
 ## 移动端展示
 
-沿用现有 Vue / Naive UI 组件，公共适配位于 `payload/frontend-v2/mobile-workspace.css` 和 `mobile-workspace.js`。800px 及以下使用抽屉导航；表单和按钮自动换行，宽表格在自己的区域内左右滑动，手机端不固定操作列以免遮住账号。弹窗支持内部滚动，并跟随可视区域调整高度；输入字号不小于 16px，主要按钮点击区域不小于 44px。根路径和 `/okad/` 挂载入口共用同一套适配。
+沿用现有 Vue / Naive UI 组件，公共适配位于 `payload/frontend-v2/mobile-workspace.css` 和 `mobile-workspace.js`。800px 及以下使用抽屉导航和可收起筛选；600px 及以下将母号、邮箱、号池、外部子号、Sub2、联动状态及管理员列表按卡片展示，行内操作在账号下方直接可用，保留原有选择、分页和排序。统计条可横向滑动，批量操作在选择账号后显示。弹窗支持内部滚动，并跟随可视区域调整高度；输入字号不小于 16px，主要按钮点击区域不小于 44px。根路径和 `/okad/` 挂载入口共用同一套适配。
 
 移动端回归使用本地静态资源和模拟数据，覆盖 320、375、390、430、768、800px，以及 1440px 桌面宽度；检查主要管理页面（含可选监控页最多 11 页）、长文本、触屏导航、桌面折叠后切换手机、分页、表格操作、弹窗、登录和深色主题：
 

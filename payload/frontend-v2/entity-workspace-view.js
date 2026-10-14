@@ -1,3 +1,4 @@
+import {FilterPanel,activeFilters} from './workspace-controls.js?v=20261015-mobile';
 /* Shared layout for the native account and mailbox screens; existing actions/dialogs stay in place. */
 import {k as h,B as Button} from './assets/index-CrrzYg-U.js';
 import {N as Input} from './assets/Input-fL4pqH-9.js';
@@ -29,7 +30,7 @@ export function createEntityWorkspace({kind,s,a}) {
     h('header',{class:'ws-heading'},[h('div',{},[h('h2',{},title),h('p',{},mail?'管理邮箱与收件配置，为账号登录做好准备':'管理组织权限、团队成员与子号创建')]),
       h('div',{class:'ws-actions'},[btn(mail?'新增邮箱':'新增账号',{type:'primary',onClick:a.create}),btn('批量导入',{onClick:a.import}),
         mail?btn('创建 MoeMail',{onClick:a.createMail}):menu('维护操作',[{label:'清理组织已删母号',key:'prune'}],()=>a.prune())])]),
-    h('section',{class:'ws-filter ws-filter-compact','aria-label':'筛选'+title},[
+    h(FilterPanel,{class:'ws-filter ws-filter-compact',active:activeFilters([s.keyword.value,mail?s.status.value:'']),'aria-label':'筛选'+title},[
       field('搜索',h(Input,{value:s.keyword.value,'onUpdate:value':v=>s.keyword.value=v,clearable:true,placeholder:mail?'搜索邮箱 / 备注':'搜索邮箱 / Client ID / 备注',onKeyup:e=>e.key==='Enter'&&a.search()})),
       mail?field('使用状态',h(Select,{value:s.status.value,options:s.statusOptions,'onUpdate:value':v=>{s.status.value=v;a.search();}})):null,
       h('div',{class:'ws-actions'},[btn('重置',{onClick:()=>{s.keyword.value='';if(mail)s.status.value='all';a.search();}}),btn('搜索',{type:'primary',secondary:true,onClick:a.search})])]),

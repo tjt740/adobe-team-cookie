@@ -105,6 +105,8 @@ async def main():
         await expect(page.locator('.pool-job-item')).to_have_count(1)
         assert pushes == [[1]]
         # The export-state filter is now a real request parameter, not an injected decoration.
+        if not await page.locator('.pool-field').last.is_visible():
+            await page.locator('.ws-filter-toggle').click()
         await page.locator('.pool-field').last.locator('.n-base-selection').click()
         await page.get_by_text('未导出', exact=True).last.click()
         await expect(page.locator('.pool-field').last).to_contain_text('未导出')
@@ -130,6 +132,8 @@ async def main():
             overflow = await page.locator('#pool-workspace').evaluate('(el)=>el.scrollWidth>el.clientWidth+2')
             assert not overflow, f'workspace overflows at {width}'
             await page.screenshot(path=str(Path(__file__).resolve().parents[3] / f'.local/pool-workspace-{width}.png'), full_page=True)
+        if not await page.locator('.pool-field').last.is_visible():
+            await page.locator('.ws-filter-toggle').click()
         await page.locator('.pool-field').last.locator('.n-base-selection').click()
         await page.get_by_text('未导出', exact=True).last.click()
         await page.get_by_role('button', name='登录筛选结果', exact=True).click()

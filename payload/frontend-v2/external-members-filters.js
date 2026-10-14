@@ -1,3 +1,4 @@
+import {FilterPanel,activeFilters} from './workspace-controls.js?v=20261015-mobile';
 /* Filter controls share the application's existing Vue and Naive UI runtime. */
 import {createApp, ConfigProvider, k as h, r as ref, aq as useTheme, B as Button} from './assets/index-CrrzYg-U.js';
 import {N as Input} from './assets/Input-fL4pqH-9.js';
@@ -42,7 +43,7 @@ export function mountFilters(host, actions, initial) {
       const f = filters.value;
       const credit = (key, suffix, label) => h(InputNumber, {value:f[key], min:0, showButton:false, clearable:true, placeholder:label, status:errors.value.credits?'error':undefined, inputProps:{id:'extm-f-credits-'+suffix,'aria-label':'积分'+label,'aria-describedby':errors.value.credits?'extf-credit-error':undefined}, 'onUpdate:value':v=>{f[key]=v;}, onBlur:apply, onClear:()=>{f[key]=null;apply();}, onKeyup:e=>{if(e.key==='Enter')apply();}});
       const date = (key, suffix, label) => input('extm-f-import-'+suffix,f[key],v=>{f[key]=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':label,'aria-labelledby':undefined,'aria-describedby':errors.value.dates?'extf-date-error':undefined},status:errors.value.dates?'error':undefined});
-      return h('section', {class:'extf-panel'}, [
+      return h(FilterPanel, {class:'extf-panel',active:activeFilters(Object.entries(f).filter(([key])=>key!=='creditsField').map(([,v])=>v)),onCollapse:()=>openSelect.value=null}, [
         h('div',{class:'extf-grid'},[
           field('邮箱','extm-f-kw',input('extm-f-kw',f.keyword,v=>{f.keyword=v;clearTimeout(keywordTimer);keywordTimer=setTimeout(apply,300);},{clearable:true,placeholder:'搜索邮箱…',onKeyup:e=>{if(e.key==='Enter')apply();}}),true),
           filterSelect('status','登录状态'),filterSelect('sub','订阅状态'),filterSelect('stock','Sub2 库存'),filterSelect('health','Sub2 状态'),
