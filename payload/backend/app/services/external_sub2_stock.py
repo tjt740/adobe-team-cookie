@@ -1,6 +1,6 @@
 """Read current Sub2 inventory independently of external Cookie sync history.
 
-Only email identities, remote IDs and availability counts are cached. Reading inventory never links
+Only email identities, remote IDs, availability counts and allowlisted health are cached. Reading inventory never links
 accounts, sends cookies, or changes their login/synchronization history.
 """
 from datetime import datetime, timezone
@@ -11,7 +11,7 @@ from time import monotonic
 from sqlalchemy import select
 
 from app.models.external_member import ExternalMember
-from app.services import external_sub2
+from app.services import external_sub2, sub2_account_health
 
 _lock = Lock()
 _cache = {}
@@ -20,6 +20,7 @@ TTL = 30
 
 def _read(cfg):
     by_email = {}
+    health_by_email = {}
     live = set()
     if cfg.get('enabled') and cfg.get('integration_key'):
         from app.services import reliable_integration as link
@@ -27,9 +28,13 @@ def _read(cfg):
             if account.get('status') == 'active' and account.get('schedulable') is True:
                 live.add(account['id'])
             email = str(account.get('email') or '').strip().lower()
+            imported = str(account.get('imported_email') or '').strip().lower()
+            if imported and imported != email:
+                continue
             if '@' in email:
                 by_email.setdefault(email, set()).add(account['id'])
-        return {email: sorted(ids) for email, ids in by_email.items()}, len(live)
+                health_by_email.setdefault(email, []).append({'account_health': sub2_account_health.project(account)})
+        return {email: sorted(ids) for email, ids in by_email.items()}, len(live), health_by_email
     fetched = 0
     for page in range(1, 201):
         data = external_sub2._request(
@@ -46,11 +51,12 @@ def _read(cfg):
                         or account.get('name') or '').strip().lower()
             if '@' in email and external_sub2._matches(account, email):
                 by_email.setdefault(email, set()).add(account['id'])
+                health_by_email.setdefault(email, []).append({'account_health': sub2_account_health.project(account)})
                 if account.get('status') == 'active' and account.get('schedulable') is True:
                     live.add(account['id'])
         fetched += len(items)
         if fetched >= data['total']:
-            return {email: sorted(ids) for email, ids in by_email.items()}, len(live)
+            return {email: sorted(ids) for email, ids in by_email.items()}, len(live), health_by_email
         if not items:
             break
     raise external_sub2.SyncError('Sub2 账号列表不完整，暂时无法确认库存')
@@ -63,8 +69,10 @@ def _snapshot(cfg, refresh=False):
         if not refresh and _cache.get('key') == key and monotonic() - _cache['at'] < TTL:
             return _cache['result']
         try:
-            by_email, live = _read(cfg)
-            result = {'ok': True, 'by_email': by_email, 'live': live, 'message': ''}
+            by_email, live, health_by_email = _read(cfg)
+            result = {'ok': True, 'by_email': by_email, 'live': live, 'message': '',
+                      'health_by_email': {email: sub2_account_health.combine(accounts)
+                                          for email, accounts in health_by_email.items()}}
         except external_sub2.SyncError as exc:
             result = {'ok': False, 'by_email': {}, 'message': str(exc)}
         except Exception:
@@ -86,7 +94,9 @@ def membership(db, refresh=False):
     if result['ok']:
         for mid, email in db.execute(select(ExternalMember.id, ExternalMember.email)):
             ids = result['by_email'].get((email or '').strip().lower(), [])
-            items[mid] = {'email': email, 'in_stock': bool(ids), 'account_ids': ids}
+            items[mid] = {'email': email, 'in_stock': bool(ids), 'account_ids': ids,
+                          'account_health': result.get('health_by_email', {}).get((email or '').strip().lower(),
+                              {'state': 'unknown', 'codes': [], 'errors': []})}
     return {'ok': result['ok'], 'configured': True, 'items': items,
             'checked_at': result['checked_at'], 'message': result['message']}
 

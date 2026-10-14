@@ -87,6 +87,7 @@ class ExternalLoginFilter(BaseModel):
     subscription_ok: bool | None = None
     keyword: str = ""
     in_stock: bool | None = None
+    sub2_health: str | None = Field(default=None, pattern=r"^(error|other|recovered|unknown|[45][0-9]{2})$")
     imported_from: datetime | None = None
     imported_before: datetime | None = None
 

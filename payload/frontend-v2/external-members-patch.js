@@ -5,7 +5,7 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", importedFrom: "", importedBefore: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", healthF: "", importedFrom: "", importedBefore: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -127,6 +127,23 @@
     account_disabled: ["bad", "已停用"], rate_limited: ["warn", "频繁登录限流"], internal: ["bad", "内部错误"],
   };
   function statusPill(s) { var m = STATUS_MAP[s] || ["mut", s || "—"]; return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + "</span>"; }
+  function healthPills(row) {
+    var stock = st.stock, item = stock && stock.items && stock.items[row.id];
+    if (!stock || !stock.ok) return '<span data-sub2-health class="extm-pill mut">Sub2 状态' + (stock ? '暂不可用' : '查询中') + '</span>';
+    if (!item || String(item.email || '').trim().toLowerCase() !== String(row.email || '').trim().toLowerCase()) return '<span data-sub2-health class="extm-pill mut">Sub2 状态查询中</span>';
+    if (!item.in_stock) return '';
+    var health = item.account_health || {}, codes = health.codes || [];
+    var checked = 'Sub2 状态 · 核对时间 ' + fmtTime(stock.checked_at);
+    if (health.state === 'error') {
+      var labels = codes.slice();
+      if (!labels.length || (health.errors || []).some(function (e) { return !e.code; })) labels.push('其他异常');
+      return labels.map(function (code) {
+        var tone = code === 408 || code === 429 ? 'warn' : 'bad';
+        return '<span data-sub2-health class="extm-pill ' + tone + '" title="' + esc(checked + ' · 异常待成功验证') + '">Sub2 ' + esc(code) + '</span>';
+      }).join('');
+    }
+    return '<span data-sub2-health class="extm-pill ' + (health.state === 'recovered' ? 'ok' : 'mut') + '" title="' + esc(checked) + '">' + (health.state === 'recovered' ? 'Sub2 已有成功证据' : 'Sub2 待验证') + '</span>';
+  }
   function subPill(row) {
     if (row.credits_total == null && (row.credits_error || row.login_status === 'ok' || row.first_login_done)) {
       var reason = row.credits_error || '未保存具体失败原因，重新登录后会再次查询积分。';
@@ -175,6 +192,7 @@
       '<div class="extm-card">' +
         '<div class="extm-tools">' +
           '<div class="extm-filter-primary"><label for="extm-f-stock">Sub2 库存<select id="extm-f-stock" class="extm-in"><option value="">全部库存状态</option><option value="false">未在库</option><option value="true">在库</option></select></label>' +
+            '<label for="extm-f-health">Sub2 状态<select id="extm-f-health" class="extm-in"><option value="">全部 Sub2 状态</option><option value="error">全部异常</option><option value="401">401 · 鉴权失败</option><option value="408">408 · 请求超时</option><option value="403">403</option><option value="429">429 · 限流</option><option value="500">500</option><option value="502">502</option><option value="503">503</option><option value="504">504</option><option value="529">529 · 过载</option><option value="other">其他异常（非 401/408）</option><option value="recovered">已有成功证据</option><option value="unknown">待验证 / 无完整记录</option></select></label>' +
             '<div class="extm-date-range" role="group" aria-label="导入时间"><span>导入时间</span><input type="date" id="extm-f-import-from" class="extm-in" aria-label="导入开始日期"><span>至</span><input type="date" id="extm-f-import-to" class="extm-in" aria-label="导入结束日期" title="包含结束日期当天"></div>' +
             '<button type="button" class="extm-btn dft sm" id="extm-reset-filters">重置筛选</button></div>' +
           '<select id="extm-f-status" class="extm-in"><option value="">全部状态</option><option value="ok">正常</option><option value="never">未登录</option><option value="login_failed">登录失败</option><option value="account_disabled">已停用</option><option value="rate_limited">频繁登录限流</option><option value="internal">内部错误</option></select>' +
@@ -196,7 +214,7 @@
         '</div>' +
         '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:200px"><col style="width:96px"><col style="width:270px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
+          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>账号状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
         '</tr></thead><tbody id="extm-tbody"><tr><td colspan="13" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
         '<nav class="extm-pagination" aria-label="外部子号分页">' +
           '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
@@ -236,6 +254,7 @@
     el("extm-f-status").onchange = function () { st.statusF = this.value; resetPage(1); load(); };
     el("extm-f-sub").onchange = function () { st.subF = this.value; resetPage(1); load(); };
     el("extm-f-stock").onchange = function () { st.stockF = this.value; resetPage(1); load(); };
+    el("extm-f-health").onchange = function () { st.healthF = this.value; resetPage(1); load(); };
     el("extm-f-import-from").onchange = el("extm-f-import-to").onchange = function () {
       var from = el("extm-f-import-from"), to = el("extm-f-import-to");
       to.setCustomValidity(from.value && to.value && from.value > to.value ? "结束日期不能早于开始日期" : "");
@@ -245,8 +264,8 @@
     };
     el("extm-reset-filters").onclick = function () {
       clearTimeout(kwT);
-      st.statusF = st.subF = st.stockF = st.importedFrom = st.importedBefore = st.q = "";
-      ["extm-f-status", "extm-f-sub", "extm-f-stock", "extm-f-import-from", "extm-f-import-to", "extm-f-kw"].forEach(function (id) { el(id).value = ""; });
+      st.statusF = st.subF = st.stockF = st.healthF = st.importedFrom = st.importedBefore = st.q = "";
+      ["extm-f-status", "extm-f-sub", "extm-f-stock", "extm-f-health", "extm-f-import-from", "extm-f-import-to", "extm-f-kw"].forEach(function (id) { el(id).value = ""; });
       el("extm-f-import-to").setCustomValidity("");
       resetPage(1); load();
     };
@@ -284,6 +303,7 @@
   function extraFilters() {
     var filters = {};
     if (st.stockF !== "") filters.in_stock = st.stockF === "true";
+    if (st.healthF) filters.sub2_health = st.healthF;
     if (st.importedFrom) filters.imported_from = st.importedFrom;
     if (st.importedBefore) filters.imported_before = st.importedBefore;
     return filters;
@@ -434,7 +454,7 @@
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
         '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
-        '<td><div class="extm-status">' +
+        '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
