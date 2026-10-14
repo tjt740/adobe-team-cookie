@@ -46,8 +46,7 @@
     '.extm-batch-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266;white-space:nowrap}.extm-batch-profile select.extm-in{height:34px;width:156px;padding:0 6px;font-size:12px}.extm-batch-profile select:disabled{opacity:.55;cursor:not-allowed}',
     '.extm-tw{overflow:auto;max-height:60vh}.extm-t>thead>tr>th{position:sticky;top:0;z-index:2}.extm-t>thead>tr>th:last-child{z-index:3}',
     '.extm-pagination{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:14px 18px;background:var(--ws-card,#fff);border-top:1px solid var(--ws-line,#efeff5);border-radius:0 0 12px 12px;color:var(--ws-muted,#909399);font-size:13px}.extm-pagination label,.extm-page-jump{display:inline-flex;align-items:center;gap:6px}.extm-pagination .extm-page-summary{margin-right:auto}.extm-pagination .extm-page-number{width:70px}.extm-pagination .extm-in:disabled{opacity:.55;cursor:not-allowed}html.dark .extm-pagination{background:var(--bg-card);border-color:var(--border)}',
-    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:2112px}',
-    '.extm-note-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.extm-note-empty{color:#a3acb9}',
+    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1816px}',
     '.extm-note-dialog{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(480px,calc(100vw - 40px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--ws-line,#e4eaf2);border-radius:14px;padding:24px;background:var(--ws-card,#fff);color:var(--ws-text,#333639);box-shadow:0 20px 80px #18294533}.extm-note-dialog::backdrop{background:#17263d66}.extm-note-dialog .extm-btn[type=submit]{background:#2080f0;border-color:#2080f0}.extm-note-dialog .extm-btn[type=submit]:hover:not(:disabled){background:#4098fc;border-color:#4098fc}.extm-note-dialog .extm-ta:focus{border-color:#2080f0;box-shadow:0 0 0 2px #2080f026}.extm-note-dialog h3{margin:0 0 8px;font-size:18px}.extm-note-dialog p{margin:0 0 18px;color:var(--ws-muted,#7d8797);font-size:13px;overflow-wrap:anywhere}.extm-note-dialog label{display:block;margin-bottom:8px;font-size:13px}.extm-note-dialog .extm-ta{min-height:150px}.extm-note-help{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--ws-muted,#7d8797);margin-top:6px}.extm-note-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.extm-note-error{color:#d03050;font-size:12px;white-space:pre-wrap;margin-top:10px}.extm-note-error:empty{display:none}',
     '.extm-t th{text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:#909399;background:#fafafc;border-bottom:1px solid #efeff5;white-space:nowrap}',
     '.extm-t td{padding:12px;border-bottom:1px solid #f2f3f5;color:#333639;vertical-align:middle;white-space:nowrap}.extm-t th{padding:11px 12px}',
@@ -217,10 +216,10 @@
             '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
           '</div></details>' +
         '</div>' +
-        '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:200px"><col style="width:96px"><col style="width:270px"></colgroup><thead><tr>' +
+        '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:270px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>账号状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="13" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
+          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>账号状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>操作</th>' +
+        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
         '<nav class="extm-pagination" aria-label="外部子号分页">' +
           '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
           window.OKAD_PAGINATION.sizeHTML('extm-page-size', st.size) +
@@ -357,18 +356,18 @@
     if (job && !activeJob(job) && ['pending', 'running'].includes(phase)) {
       phase = job.status === 'cancelled' ? 'cancelled' : job.status === 'error' ? 'failed' : 'interrupted';
     }
-    var states = {submitting:['提交中','warn',true], pending:['排队中','mut',false], running:['登录中','info',true],
+    var states = {submitting:['提交中','info',true], pending:['排队中','warn',false], running:['登录中','info',true],
       otp:['等待验证码','warn',false], done:['本轮成功','ok',false], failed:['本轮失败','bad',false],
       interrupted:['已中断','warn',false], cancelled:['已终止','mut',false], paused:['已暂停','warn',false],
-      pausing:['暂停中','warn',false], cancelling:['终止中','warn',false]};
+      pausing:['暂停中','info',false], cancelling:['终止中','info',false]};
     var state = states[phase];
     return state ? {label:state[0], tone:state[1], spinning:state[2],
       message:st.pending.has(r.id) ? '正在提交任务…' : r.otp_challenge ? '等待手动验证码' :
-        (job && job.item_message) || (item && item.message) || (job ? '任务 #' + job.id + ' · 展开查看进度' : '')} : null;
+        (job && job.item_message) || (item && item.message) || ''} : null;
   }
   function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], historyPage: 1, historySize: 200, checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
   function jobPill(job) {
-    var m = { running: ["info", "运行中"], pausing: ["warn", "暂停中"], paused: ["warn", "已暂停"], cancelling: ["warn", "终止中"], done: [job.fail ? "bad" : "ok", job.fail ? (job.success ? "部分失败" : "失败") : "已完成"], error: ["bad", "失败"], cancelled: ["mut", "已终止"] }[job.status] || ["mut", job.status];
+    var m = { running: ["info", "运行中"], pausing: ["info", "暂停中"], paused: ["warn", "已暂停"], cancelling: ["info", "终止中"], done: [job.fail ? "bad" : "ok", job.fail ? (job.success ? "部分失败" : "失败") : "已完成"], error: ["bad", "失败"], cancelled: ["mut", "已终止"] }[job.status] || ["mut", job.status];
     return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + '</span>';
   }
   function setHTML(node, html) { if (node && node._html !== html) { node.innerHTML = html; node._html = html; } }
@@ -408,7 +407,7 @@
     var seq = ++st.loadSeq;
     if (!silent) st.loadingSeq = seq;
     renderPagination();
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="13" class="extm-empty">加载中…</td></tr>';
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty">加载中…</td></tr>';
     return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.loadError = "";
@@ -459,7 +458,7 @@
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="13" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || '暂无匹配的外部子号') + '</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || '暂无匹配的外部子号') + '</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -472,22 +471,20 @@
       var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id), progress = loginProgress(r);
       tr.className = expanded ? "extm-expanded" : "";
       var message = progress ? progress.message : r.message;
-      var hideMessage = r.login_status === 'ok' && (!message || /^登录成功(?:；已提交 Sub2 推送(?:，可查看账号同步状态)?)?$/.test(message.trim()));
+      var hideMessage = !message || (r.login_status === 'ok' && /^登录成功(?:；已提交 Sub2 推送(?:，可查看账号同步状态)?)?$/.test(message.trim()));
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
         '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
-          '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
+          '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
           (hideMessage ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
         '<td data-subscription>' + subPill(r) + '</td>' +
         '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
         '<td class="cr" data-sub2-pushed-at>' + esc(fmtTime(r.sub2_synced_at, true)) + '</td>' +
-        '<td><span class="extm-note-text' + (r.note ? '' : ' extm-note-empty') + '" title="' + esc(r.note || '暂无备注') + '">' + esc(r.note || '—') + '</span></td>' +
-        '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
         '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
         '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
@@ -497,7 +494,7 @@
         var fresh = false;
         var detail = body.querySelector('tr[data-detail="' + r.id + '"]');
         if (!detail) { fresh = true; detail = document.createElement("tr"); detail.dataset.detail = r.id; detail.className = "extm-detail-row"; detail.innerHTML = '<td><div class="extm-fold is-closed"><div class="extm-fold-clip"><div class="extm-detail" id="extm-detail-' + r.id + '"></div></div></div></td>'; }
-        detail.firstElementChild.colSpan = 13;
+        detail.firstElementChild.colSpan = 11;
         if (detail !== cursor) body.insertBefore(detail, cursor);
         cursor = detail.nextElementSibling;
         renderDetail(r.id);
@@ -755,7 +752,7 @@
 
   function profilePill(p) {
     var kind = p && p.current_kind;
-    return '<span class="extm-pill ' + (kind === 'organization' ? 'info' : kind === 'personal' ? 'ok' : 'mut') + '">' +
+    return '<span class="extm-pill ' + (kind === 'organization' ? 'organization' : kind === 'personal' ? 'personal' : 'mut') + '">' +
       (kind === 'organization' ? '组织配置' : kind === 'personal' ? '个人配置' : '未获取') + '</span>';
   }
   function profileDetail(row) {
@@ -792,8 +789,8 @@
       panel.dataset.ready = "1";
       panel.innerHTML = '<section class="extm-profile-card extm-task-card" aria-label="账号配置详情"></section><div class="extm-detail-error" role="status"></div><div class="extm-task-layout">' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务历史</strong><span class="sp"></span><button class="extm-btn dft sm" data-action="manage" aria-pressed="false">管理历史</button><button class="extm-btn del sm" data-action="delete">删除选中</button></div>' +
-        '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col style="width:65px"><col></colgroup>' +
-        '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>操作人</th><th>时间</th></tr></thead><tbody></tbody></table></div><nav class="extm-history-pager"></nav></section>' +
+        '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col></colgroup>' +
+        '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>时间</th></tr></thead><tbody></tbody></table></div><nav class="extm-history-pager"></nav></section>' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务详情</strong><div class="extm-task-actions"><label class="extm-auto"><input type="checkbox" data-auto checked>自动刷新</label><button class="extm-btn dft sm" data-action="refresh">刷新</button><button class="extm-btn dft sm" data-action="pause">暂停任务</button><button class="extm-btn del sm" data-action="cancel">终止任务</button></div></div>' +
         '<div class="extm-task-body"><div class="extm-job-title"></div><div class="extm-job-meta"></div><div class="extm-counts"></div><div class="extm-progress" role="progressbar" aria-label="任务进度"><div></div></div><div class="extm-detail-error extm-job-error"></div>' +
         '<div class="extm-log-tools"><span data-log-count>实时日志</span><span class="sp"></span><select class="extm-in" data-log-scope aria-label="日志范围"><option value="member">当前账号日志</option><option value="all">整批任务日志</option></select><button class="extm-btn dft sm" data-action="clear-logs">清空日志</button></div>' +
@@ -828,8 +825,8 @@
         '<td class="extm-history-select"><input type="checkbox" data-job-check="' + j.id + '" aria-label="选择任务 #' + j.id + '"' + (d.checked.has(j.id) ? ' checked' : '') + (activeJob(j) ? ' disabled' : '') + '></td>' +
         '<td><button class="extm-link" title="查看任务 #' + j.id + '">#' + j.id + '</button></td><td>' + jobPill(j) + '</td>' +
         '<td title="成功 ' + j.success + '，失败 ' + j.fail + '">' + (j.success + j.fail) + '/' + j.target + '</td>' +
-        '<td title="' + esc(j.operator || '历史记录未记录操作人') + '">' + esc(j.operator || '—') + '</td><td title="' + esc(fmtTime(j.created_at)) + '">' + esc(fmtTime(j.created_at).slice(5)) + '</td></tr>';
-    }).join("") : '<tr><td colspan="' + (d.manage ? 6 : 5) + '" class="extm-empty">' + (d.loading ? '正在读取任务…' : '暂无关联任务，点击重登开始') + '</td></tr>');
+        '<td title="' + esc(fmtTime(j.created_at)) + '">' + esc(fmtTime(j.created_at).slice(5)) + '</td></tr>';
+    }).join("") : '<tr><td colspan="' + (d.manage ? 5 : 4) + '" class="extm-empty">' + (d.loading ? '正在读取任务…' : '暂无关联任务，点击重登开始') + '</td></tr>');
     panel.querySelector("[data-auto]").checked = d.auto;
     panel.querySelector("[data-log-scope]").value = d.scope;
     var job = d.job && d.job.id === d.selected ? d.job : d.jobs.find(function (j) { return j.id === d.selected; });
@@ -845,7 +842,7 @@
     pause.title = '暂停会等待当前账号完成，排队账号不再启动';
     panel.querySelector('[data-action="clear-logs"]').disabled = !job || !job.log_total || d.action;
     setHTML(panel.querySelector(".extm-job-title"), job ? '<strong>外部子号登录 · #' + job.id + '</strong>' + jobPill(job) : '<span class="extm-msg mut">' + (d.loading ? '正在加载…' : '选择历史任务查看详情') + '</span>');
-    setHTML(panel.querySelector(".extm-job-meta"), job ? '<span>操作人 <b>' + esc(job.operator || '—') + '</b></span><span>开始 <b>' + esc(fmtTime(job.created_at)) + '</b></span>' + (job.finished_at ? '<span>结束 <b>' + esc(fmtTime(job.finished_at)) + '</b></span>' : '') : '');
+    setHTML(panel.querySelector(".extm-job-meta"), job ? '<span>开始 <b>' + esc(fmtTime(job.created_at)) + '</b></span>' + (job.finished_at ? '<span>结束 <b>' + esc(fmtTime(job.finished_at)) + '</b></span>' : '') : '');
     var batch = job && job.extra && job.extra.batch;
     var oldBatch = panel.querySelector('[data-login-batch]'); if (oldBatch) oldBatch.remove();
     if (batch) panel.querySelector('.extm-job-meta').insertAdjacentHTML('beforeend', '<span data-login-batch>批次 <b>' + esc(batch.index) + '/' + esc(batch.total) + ' · 每批最多 ' + esc(batch.size) + ' 个</b></span>');
@@ -938,12 +935,13 @@
   function sub2Stock(row) {
     var stock = st.stock, item = stock && stock.items && stock.items[row.id];
     if (item && String(item.email || '').trim().toLowerCase() !== row.email.trim().toLowerCase()) item = null;
-    var tone = 'mut', label = 'Sub2 库存查询中', tip = '正在按完整邮箱核对 Sub2 当前库存';
+    var tone = 'info', label = 'Sub2 库存查询中', tip = '正在按完整邮箱核对 Sub2 当前库存';
     if (stock && stock.ok && item) {
       tone = item.in_stock ? 'ok' : 'mut'; label = item.in_stock ? '在库 Sub2' : '未在库 Sub2';
       tip = (item.in_stock ? 'Sub2 中已存在此邮箱账号，可能由号池或其他入口导入' : '当前 Sub2 中未找到此邮箱账号') + ' · 核对时间 ' + fmtTime(stock.checked_at);
       if (item.account_ids && item.account_ids.length) tip += ' · 账号 #' + item.account_ids.join('、#');
     } else if (stock && !stock.ok) {
+      tone = stock.configured === false ? 'mut' : 'warn';
       label = stock.configured === false ? 'Sub2 未配置' : 'Sub2 状态暂不可用';
       tip = stock.message || '暂时无法确认 Sub2 库存，请稍后刷新';
     }
