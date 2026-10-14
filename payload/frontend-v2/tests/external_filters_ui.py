@@ -1,4 +1,4 @@
-"""Inventory/date filters with local assets and synthetic APIs; no live writes."""
+"""Combined external-member filters with local assets and synthetic APIs; no live writes."""
 import asyncio
 from datetime import datetime
 import mimetypes
@@ -14,6 +14,9 @@ OUTPUT = Path(__file__).resolve().parents[3] / '.local'
 async def main():
     rows = [dict(id=i, email=f'filter{i:03d}@example.test', login_status='ok',
                  has_cookie=True, subscription_ok=True, credits_total=4000,
+                 credits_available=None if i % 5 == 0 else (i - 1) * 25,
+                 account_profile={'current_kind': 'unknown' if i % 7 == 0 else 'personal' if i % 2 else 'organization'},
+                 uses_supply_mail=i % 2 == 0,
                  created_at='2026-10-12T00:00:00Z' if i <= 130 else '2026-10-13T00:00:00Z')
             for i in range(1, 262)]
     inventory = {row['id'] for row in rows if row['id'] % 3 == 0}
@@ -25,7 +28,13 @@ async def main():
                 ('in_stock' not in query or (row['id'] in inventory) == (query['in_stock'] == 'true')) and
                 (not query.get('imported_from') or datetime.fromisoformat(row['created_at']) >= datetime.fromisoformat(query['imported_from'])) and
                 (not query.get('imported_before') or datetime.fromisoformat(row['created_at']) < datetime.fromisoformat(query['imported_before'])) and
-                (not query.get('keyword') or query['keyword'] in row['email'])]
+                (not query.get('keyword') or query['keyword'] in row['email']) and
+                (not query.get('current_profile') or row['account_profile']['current_kind'] == query['current_profile']) and
+                ('is_company' not in query or row['uses_supply_mail'] == (query['is_company'] == 'true')) and
+                all(key not in query or (row['credits_' + query.get('credits_field', 'available')] is not None and
+                    (row['credits_' + query.get('credits_field', 'available')] >= float(query[key]) if key == 'credits_min' else
+                     row['credits_' + query.get('credits_field', 'available')] <= float(query[key])))
+                    for key in ('credits_min', 'credits_max'))]
 
     async def serve(route):
         request, url = route.request, urlparse(route.request.url)
@@ -104,7 +113,9 @@ async def main():
             for width in (1440, 390):
                 await page.set_viewport_size({'width': width, 'height': 1000})
                 await page.locator('#extm-f-stock').scroll_into_view_if_needed()
-                for selector in ('#extm-f-stock', '#extm-f-import-from', '#extm-f-import-to', '#extm-reset-filters'):
+                for selector in ('#extm-f-stock', '#extm-f-import-from', '#extm-f-import-to', '#extm-reset-filters',
+                                 '#extm-f-credits-field', '#extm-f-credits-min', '#extm-f-credits-max',
+                                 '#extm-f-profile', '#extm-f-company'):
                     box = await page.locator(selector).bounding_box()
                     assert box['x'] >= 0 and box['x'] + box['width'] <= width + 1, (width, selector, box)
                 if not prefix:
@@ -114,6 +125,59 @@ async def main():
             await expect(page.locator('#extm-total')).to_have_text('261')
             await expect(page.locator('#extm-f-import-from')).to_have_value('')
             await expect(page.locator('#extm-f-stock')).to_have_value('')
+
+            async def set_bound(which, value):
+                field = page.locator('#extm-f-credits-' + which)
+                await field.fill(value)
+                await field.press('Tab')
+
+            # Zero is a real bound; missing credit results must not match it.
+            await set_bound('max', '0')
+            await expect(page.locator('#extm-total')).to_have_text('1')
+            await expect(page.locator('tr[data-member]')).to_have_attribute('data-member', '1')
+            await set_bound('max', '')
+            await set_bound('min', '1000')
+            await set_bound('max', '4000')
+            await page.locator('#extm-f-profile').select_option('organization')
+            await page.locator('#extm-f-company').select_option('true')
+            await page.locator('#extm-f-stock').select_option('false')
+            await page.locator('#extm-f-import-from').fill('2026-10-12')
+            await page.locator('#extm-f-import-to').fill('2026-10-12')
+            combined = dict(expected, credits_field='available', credits_min='1000', credits_max='4000',
+                            current_profile='organization', is_company='true')
+            expected_rows = matches(combined)
+            await expect(page.locator('#extm-total')).to_have_text(str(len(expected_rows)))
+            assert [int(mid) for mid in await page.locator('tr[data-member]').evaluate_all('(rows) => rows.map(row => row.dataset.member)')] == [row['id'] for row in expected_rows]
+            await expect(page.locator('#extm-export')).to_have_text('导出筛选 Cookie')
+            await page.locator('#extm-export').click()
+            await page.locator('#extm-more-actions > summary').click()
+            await expect(page.locator('#extm-login-all')).to_have_text('一键重登筛选结果')
+            await page.locator('#extm-login-all').click()
+            await expect(page.locator('#extm-login-all')).to_be_enabled()
+            assert actions[-2][1] == combined, actions[-2]
+            assert actions[-1][1] == dict(combined, in_stock=False, is_company=True, credits_min=1000, credits_max=4000,
+                                         login_status=None, subscription_ok=None, keyword=''), actions[-1]
+
+            # Invalid ranges never replace the applied filter; correcting restores it.
+            await set_bound('max', '999')
+            assert await page.locator('#extm-f-credits-max').evaluate('(node) => !node.validity.valid')
+            assert calls[-1]['credits_max'] == '4000'
+            await set_bound('max', '4000')
+            await page.locator('#extm-f-credits-field').select_option('total')
+            await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(combined, credits_field='total')))))
+            await expect(page.locator('.extm-company-tag')).to_have_count(len(matches(dict(combined, credits_field='total'))))
+            await page.locator('#extm-reset-filters').click()
+            await expect(page.locator('#extm-total')).to_have_text('261')
+            for selector in ('credits-min', 'credits-max', 'profile', 'company'):
+                await expect(page.locator('#extm-f-' + selector)).to_have_value('')
+            await expect(page.locator('#extm-f-credits-field')).to_have_value('available')
+            await page.locator('#extm-f-company').select_option('false')
+            await expect(page.locator('#extm-total')).to_have_text('131')
+            await expect(page.locator('.extm-company-tag')).to_have_count(0)
+            await page.locator('#extm-f-profile').select_option('unknown')
+            await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(is_company='false', current_profile='unknown')))))
+            await page.locator('#extm-reset-filters').click()
+            await expect(page.locator('#extm-total')).to_have_text('261')
 
             state['fail'] = True
             await page.locator('#extm-f-stock').select_option('false')
@@ -126,7 +190,7 @@ async def main():
             assert not errors, errors
             await page.close()
         await browser.close()
-    print('PASS: stock/date combination, local day boundaries, pagination, selection reset, action scope, invalid ranges, error recovery and desktop/mobile layout')
+    print('PASS: credits/profile/company/stock/date filters, zero and missing credits, pagination, action scope, reset, invalid ranges, error recovery and desktop/mobile layout')
 
 
 if __name__ == '__main__':

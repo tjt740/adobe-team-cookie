@@ -11,10 +11,10 @@ from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
-from app.services import external_login, external_sub2, external_sub2_stock
+from app.services import external_login, external_sub2, external_sub2_stock, sub2_account_health
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
-from app.schemas.external_member import SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
+from app.schemas.external_member import CreditsField, CurrentProfileKind, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
 from app.services import supply_mail, manual_otp
 from app.crud.setting import _set
 
@@ -149,7 +149,8 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
     return {"message": "验证码已提交，正在继续登录"}
 
 
-def _member_filters(db, *, in_stock=None, imported_from=None, imported_before=None):
+def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
+                    credits_min=None, credits_max=None):
     # created_at is stored as UTC without a timezone; accept browser-local
     # date boundaries with their offset and compare them in UTC.
     def utc(value):
@@ -160,13 +161,19 @@ def _member_filters(db, *, in_stock=None, imported_from=None, imported_before=No
     imported_from, imported_before = utc(imported_from), utc(imported_before)
     if imported_from is not None and imported_before is not None and imported_from >= imported_before:
         raise HTTPException(status_code=422, detail="导入时间的结束日期不能早于开始日期")
+    if credits_min is not None and credits_max is not None and credits_min > credits_max:
+        raise HTTPException(status_code=422, detail="积分最大值不能小于最小值")
     ids = None
-    if in_stock is not None:
+    if in_stock is not None or sub2_health is not None:
         stock = external_sub2_stock.membership(db)
         if not stock.get("ok"):
             raise HTTPException(status_code=503, detail=stock.get("message") or "Sub2 库存暂不可用，请稍后重试")
-        ids = [int(mid) for mid, item in stock["items"].items() if item.get("in_stock") is in_stock]
-    return dict(ids=ids, imported_from=imported_from, imported_before=imported_before)
+        ids = [int(mid) for mid, item in stock["items"].items()
+               if (in_stock is None or item.get("in_stock") is in_stock)
+               and (sub2_health is None or (item.get("in_stock") is True
+                    and sub2_account_health.matches(item.get("account_health"), sub2_health)))]
+    return dict(ids=ids, imported_from=imported_from, imported_before=imported_before,
+                credits_min=credits_min, credits_max=credits_max)
 
 
 @router.get("/members", response_model=Page[ExternalMemberOut], summary="外部子号分页查询")
@@ -176,11 +183,18 @@ def list_members(
     keyword: str = "", db: Session = Depends(get_db),
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
+    credits_field: CreditsField = "available",
+    credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
 ) -> Page[ExternalMemberOut]:
     items, total = crud.list_members(
         db, page=page, size=size, login_status=login_status,
         subscription_ok=subscription_ok, keyword=keyword,
-        **_member_filters(db, in_stock=in_stock, imported_from=imported_from, imported_before=imported_before),
+        credits_field=credits_field, current_profile=current_profile, is_company=is_company,
+        **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
+                          credits_min=credits_min, credits_max=credits_max),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
     target = external_sub2.destination(external_sub2.config(db))
@@ -311,8 +325,11 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
                        user: User = Depends(get_current_user)) -> dict:
     filters = payload.model_dump()
     filters.update(_member_filters(db, in_stock=filters.pop("in_stock"),
+                                   sub2_health=filters.pop("sub2_health"),
                                    imported_from=filters.pop("imported_from"),
-                                   imported_before=filters.pop("imported_before")))
+                                   imported_before=filters.pop("imported_before"),
+                                   credits_min=filters.pop("credits_min"),
+                                   credits_max=filters.pop("credits_max")))
     with _login_lock:
         members, total = crud.list_members(db, size=None, **filters)
         active = _active_jobs([m.id for m in members]) if members else {}
@@ -352,10 +369,17 @@ def export_members(
     db: Session = Depends(get_db),
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
+    credits_field: CreditsField = "available",
+    credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
 ) -> list[dict]:
     return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
-                               **_member_filters(db, in_stock=in_stock, imported_from=imported_from,
-                                                 imported_before=imported_before))
+                               credits_field=credits_field, current_profile=current_profile, is_company=is_company,
+                               **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
+                                                 imported_before=imported_before,
+                                                 credits_min=credits_min, credits_max=credits_max))
 
 
 @router.post("/members/export", summary="导出选中账号的 Cookie")

@@ -7,6 +7,8 @@ from app.schemas.adobe_account import JobStatusOut
 from app.schemas.account_profile import AccountProfile, ProfilePreference
 
 OtpMode = Literal["auto", "manual"]
+CreditsField = Literal["available", "total"]
+CurrentProfileKind = Literal["personal", "organization", "unknown"]
 
 
 class ManualOtpChallenge(BaseModel):
@@ -87,8 +89,14 @@ class ExternalLoginFilter(BaseModel):
     subscription_ok: bool | None = None
     keyword: str = ""
     in_stock: bool | None = None
+    sub2_health: str | None = Field(default=None, pattern=r"^(error|other|recovered|unknown|[45][0-9]{2})$")
     imported_from: datetime | None = None
     imported_before: datetime | None = None
+    credits_field: CreditsField = "available"
+    credits_min: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    credits_max: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    current_profile: CurrentProfileKind | None = None
+    is_company: bool | None = None
 
 
 class ExternalMemberExportItem(BaseModel):
