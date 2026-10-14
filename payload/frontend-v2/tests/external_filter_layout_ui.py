@@ -7,7 +7,6 @@ from mobile_workspace_ui import Fixtures, fits
 from external_controls import select_value, expect_select
 
 OUTPUT = Path(__file__).resolve().parents[3] / '.local' / 'external-filter-preview'
-PLACEHOLDER = '每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 50 个，登录成功后自动推送 Sub2；推送失败可单独重试。'
 
 async def main():
     OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -30,9 +29,11 @@ async def main():
             await page.goto((live or 'http://preview.test') + prefix + '/external-members')
             await expect(page.locator('#extm-f-status .n-base-selection')).to_be_visible()
             await expect(page.locator('#extm-filters select')).to_have_count(0)
-            await expect(page.locator('#extm-import')).to_have_attribute('placeholder', PLACEHOLDER)
-            await expect(page.locator('.extm-import-card').first.locator('summary,p')).to_have_count(0)
-            await expect(page.locator('#extm-embed')).not_to_contain_text('仅邮箱导入固定走验证码')
+            await expect(page.locator('#extm-import-drawer')).not_to_be_visible()
+            await page.locator('#extm-open-import').click()
+            await expect(page.locator('#extm-import-label')).to_have_text('账号内容识别')
+            await expect(page.locator('#extm-import-examples-title')).to_have_text('导入格式示例')
+            await page.locator('#extm-import-done').click()
             await expect(page.locator('#extm-embed')).not_to_contain_text('操作人')
             await expect(page.locator('.extm-t > thead th')).to_have_count(11)
             color = await page.locator('.extm-company-tag').first.evaluate('(n)=>{const s=getComputedStyle(n);return [s.color,s.backgroundColor,s.borderRadius]}')

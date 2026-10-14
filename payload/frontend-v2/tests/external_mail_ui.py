@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 
 BASE = os.environ.get("ADOBE_TEST_URL", "http://127.0.0.1:18080")
@@ -16,7 +17,8 @@ async def main():
     imports = []
     pushes = []
     row = dict(id=1, email="one@example.com", login_status="ok", has_cookie=True,
-               has_adobe_password=True, subscription_ok=True, created_at="2026-10-05T00:00:00Z")
+               has_adobe_password=True, subscription_ok=True, credits_total=4000, credits_available=4000,
+               created_at="2026-10-05T00:00:00Z")
 
     async def api(route):
         nonlocal configured
@@ -72,7 +74,8 @@ async def main():
         await page.goto(BASE + "/external-members")
         await expect(page.locator("#extm-mail-state")).to_have_text("未配置")
         await expect(page.locator("#extm-mail-config")).to_be_hidden()
-        await page.locator("#extm-otp-mode").select_option("auto")
+        await page.locator("#extm-open-import").click()
+        await select_value(page, '#extm-otp-mode', "auto")
         await expect(page.locator("#extm-mail-config")).to_be_visible()
         await page.locator("#extm-mail-config > summary").click()
         await page.locator("#extm-mail-token").fill("test-supply-token")
@@ -81,29 +84,30 @@ async def main():
         await expect(page.locator("#extm-mail-token")).to_have_value("")
         await page.locator("#extm-mail-test").click()
         await expect(page.locator("#extm-mail-result")).to_contain_text("21 个账号")
-        await page.locator("#extm-otp-mode").select_option("manual")
+        await select_value(page, '#extm-otp-mode', "manual")
         await expect(page.locator("#extm-mail-config")).to_be_hidden()
         await expect(page.locator("#extm-mail-config")).not_to_have_attribute("open", "")
         await expect(page.locator("#extm-mail-state")).to_have_text("已配置")
-        await page.locator("#extm-otp-mode").select_option("")
+        await select_value(page, '#extm-otp-mode', "")
         await expect(page.locator("#extm-mail-config")).to_be_hidden()
         await page.locator("#extm-import").fill("one@example.com----Known9!")
         await page.locator("#extm-do-import").click()
-        await expect(page.locator("#extm-op")).to_contain_text("登录任务 #987")
+        await expect(page.locator("#extm-import-result")).to_contain_text("登录任务 #987")
         assert imports == [dict(content="one@example.com----Known9!", on_duplicate="skip")]
         await expect(page.locator("#extm-import")).to_have_value("")
         await expect(page.get_by_text("按粘贴顺序逐个获取验证码登录", exact=False)).to_be_visible()
         await page.locator("#extm-import").fill("one@example.com\ntwo@example.com")
         await page.locator("#extm-do-import").click()
-        await expect(page.locator("#extm-op")).to_contain_text("登录任务 #987")
+        await expect(page.locator("#extm-import-result")).to_contain_text("登录任务 #987")
         assert imports[-1] == dict(content="one@example.com\ntwo@example.com", on_duplicate="skip")
         await expect(page.locator("#extm-op")).to_contain_text("按导入顺序逐个自动取码登录")
         await expect(page.locator("#extm-import")).to_have_value("")
         state["import_error"] = True
         await page.locator("#extm-import").fill("one@example.com----")
         await page.locator("#extm-do-import").click()
-        await expect(page.locator("#extm-op")).to_contain_text("缺少 Adobe 密码")
+        await expect(page.locator("#extm-import-result")).to_contain_text("缺少 Adobe 密码")
         await expect(page.locator("#extm-import")).to_have_value("one@example.com----")
+        await page.locator("#extm-import-done").click()
         await page.locator("[data-mail='1']").click()
         dialog = page.locator("#extm-mail-dialog")
         await expect(dialog.locator("summary")).to_contain_text("Adobe 验证码")
@@ -120,7 +124,8 @@ async def main():
         await page.locator("#extm-sub2-push").click()
         await expect(page.locator("#extm-op")).to_contain_text("已提交 1 个账号同步")
         assert pushes == [{"ids": [1]}]
-        await page.locator("#extm-otp-mode").select_option("auto")
+        await page.locator("#extm-open-import").click()
+        await select_value(page, '#extm-otp-mode', "auto")
         await page.locator("#extm-mail-config > summary").click()
         await page.locator("#extm-mail-clear").click()
         await expect(page.locator("#extm-mail-state")).to_have_text("未配置")

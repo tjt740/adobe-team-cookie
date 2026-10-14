@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 from urllib.parse import urlparse
 
+from external_controls import select_value
 from playwright.async_api import async_playwright, expect
 
 BASE = os.environ.get("ADOBE_TEST_URL", "http://127.0.0.1:18080")
@@ -83,12 +84,14 @@ async def main():
         await expect(page.locator('[data-otp-settings="3"]')).to_have_text('手动验证码')
         await expect(page.locator('[data-member="3"] .extm-company-tag')).to_have_count(0)
         assert modes == [{"otp_mode": "manual"}]
-        await page.locator('#extm-otp-mode').select_option('manual')
+        await page.locator('#extm-open-import').click()
+        await select_value(page, '#extm-otp-mode', 'manual')
         await page.locator('#extm-import').fill('new@example.com')
         await page.locator('#extm-do-import').click()
         await expect(page.locator('#extm-op')).to_contain_text('任务 #987')
         assert imports == [dict(content='new@example.com', on_duplicate='skip', otp_mode='manual')]
 
+        await page.locator('#extm-import-done').click()
         await page.locator('[data-otp="2"]').click()
         dialog = page.locator('#extm-otp-dialog')
         await expect(dialog.locator('p')).to_have_text('ordinary@example.com')

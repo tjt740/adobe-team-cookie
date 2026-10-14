@@ -232,12 +232,14 @@ async def main():
         await expect(page.locator('[data-login="1"]')).to_be_disabled()
         await expect(page.locator('[data-login="3"]')).to_be_disabled()
         # Import button itself also provides loading feedback.
+        await page.locator('#extm-open-import').click()
         await expect(page.locator('#extm-import')).to_be_visible()
         await page.locator('#extm-import').fill('synthetic@example.com----test')
         await page.locator('#extm-do-import').click()
         await expect(page.locator('#extm-do-import')).to_have_attribute('aria-busy', 'true')
         await expect(page.locator('#extm-do-import')).to_be_enabled()
         assert state['import_posts'] == 1
+        await page.locator('#extm-import-done').click()
         await page.set_viewport_size({'width': 1440, 'height': 1000})
         await page.locator('[data-member="1"] .extm-toggle').click()
         await expect(page.locator('#extm-detail-1 .extm-logs')).to_contain_text('开始登录')
