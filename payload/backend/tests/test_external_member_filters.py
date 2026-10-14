@@ -91,3 +91,88 @@ def test_invalid_ranges_are_rejected_for_all_scopes(client, end):
     for path in ("/api/external/members", "/api/external/members/export"):
         assert client.get(path, params=filters).status_code == 422
     assert client.post("/api/external/members/batch-login-filter", json=filters).status_code == 422
+
+
+@pytest.fixture
+def attribute_members(db, monkeypatch):
+    profiles = ["personal", "organization", "organization", "organization", "personal", "unknown", None, "", "organization"]
+    available = [0, 3999, 4000, 4000.5, 5000, None, None, 25, 4000]
+    totals = [4000, 4000, 5000, 6000, 6000, None, 4000, None, 4000]
+    mail = [{}, {"otp_mode": "manual"}, {"client_id": "partial"},
+            {"client_id": "client", "refresh_token": "token"}, {"mail_url": "https://mail.example.test"},
+            {}, {"refresh_token": "partial"}, {"otp_mode": "manual"}, {}]
+    rows = [ExternalMember(
+        email=f"attributes{i}@example.test", cookie=f"cookie={i}", login_status="ok", subscription_ok=True,
+        created_at=datetime(2026, 10, 12), credits_available=available[i], credits_total=totals[i],
+        account_profile=({"fetched_at": "2026-10-12T00:00:00Z", **({"current_kind": kind} if kind else {})}
+                         if kind is not None else None),
+        profile_preference="personal" if kind == "organization" else "organization", **mail[i],
+    ) for i, kind in enumerate(profiles)]
+    db.add_all(rows)
+    db.commit()
+    monkeypatch.setattr(external_sub2_stock, "membership", lambda db: {
+        "ok": True, "configured": True,
+        "items": {row.id: {"in_stock": i in (2, 4, 8)} for i, row in enumerate(rows)},
+    })
+    return rows
+
+
+@pytest.mark.parametrize("filters, indexes", [
+    ({"credits_min": 0, "credits_max": 0}, [0]),
+    ({"credits_min": 4000, "credits_max": 4000.5}, [2, 3, 8]),
+    ({"credits_max": 25}, [0, 7]),
+    ({"credits_min": 4000.5}, [3, 4]),
+    ({"credits_field": "total", "credits_min": 4000, "credits_max": 4000}, [0, 1, 6, 8]),
+    ({"current_profile": "personal"}, [0, 4]),
+    ({"current_profile": "organization"}, [1, 2, 3, 8]),
+    ({"current_profile": "unknown"}, [5, 6, 7]),
+    ({"is_company": True}, [0, 2, 5, 6, 8]),
+    ({"is_company": False}, [1, 3, 4, 7]),
+    (dict(FILTERS, in_stock=True, keyword="attributes", credits_min=4000, credits_max=4000,
+          current_profile="organization", is_company=True), [2, 8]),
+    ({"credits_min": 9000, "is_company": False}, []),
+])
+def test_attribute_filters_share_pagination_export_and_login_scope(client, attribute_members, monkeypatch, filters, indexes):
+    expected = [attribute_members[i] for i in reversed(indexes)]
+    # Filtering happens before LIMIT/OFFSET and totals count all matches.
+    for page in range(1, max(1, len(expected)) + 1):
+        response = client.get("/api/external/members", params=dict(filters, page=page, size=1))
+        assert response.status_code == 200, response.text
+        assert response.json()["total"] == len(expected)
+        assert [row["id"] for row in response.json()["items"]] == [row.id for row in expected[page - 1:page]]
+        if "is_company" in filters:
+            assert all(row["uses_supply_mail"] == filters["is_company"] for row in response.json()["items"])
+    response = client.get("/api/external/members/export", params=filters)
+    assert response.status_code == 200
+    assert response.json() == [{"cookie": row.cookie} for row in expected]
+    started = []
+
+    class Job:
+        def to_dict(self):
+            return dict(id=999, type="external_login", status="running", target=len(expected),
+                        success=0, fail=0, logs=[])
+
+    def start(kind, worker, *, meta):
+        started.extend(meta["member_ids"])
+        return Job()
+
+    monkeypatch.setattr(JOBS, "start", start)
+    response = client.post("/api/external/members/batch-login-filter", json=filters)
+    assert response.status_code == 200, response.text
+    assert response.json()["queued"] == response.json()["total"] == len(expected)
+    assert started == [row.id for row in expected]
+
+
+@pytest.mark.parametrize("filters", [
+    {"credits_min": 100, "credits_max": 99}, {"credits_min": -1}, {"credits_max": -1},
+    {"credits_min": "nan"}, {"credits_max": "inf"}, {"credits_min": "invalid"},
+    {"credits_field": "invalid"}, {"current_profile": "invalid"}, {"is_company": "invalid"},
+])
+def test_invalid_attribute_filters_are_rejected_for_all_scopes(client, monkeypatch, filters):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Invalid filters must not start a login job")
+
+    monkeypatch.setattr(JOBS, "start", unexpected)
+    for path in ("/api/external/members", "/api/external/members/export"):
+        assert client.get(path, params=filters).status_code == 422
+    assert client.post("/api/external/members/batch-login-filter", json=filters).status_code == 422
