@@ -61,7 +61,7 @@ async def main():
         await expect(page).to_have_url(BASE + '/external-members')
         await page.reload()
         await expect(page.locator('.okad-page-title')).to_have_text('外部子号')
-        await expect(page.locator('#extm-import')).to_be_visible()
+        await expect(page.locator('#extm-open-import')).to_be_visible()
         await expect(page).to_have_title('外部子号 - okad 管理平台')
         await aligned('#extm-embed')
         for _ in range(3):
@@ -175,7 +175,7 @@ async def main():
             await route.continue_()
 
         await page.route('**/*-patch.js*', slow_panel)
-        for name, label, panel, field in [('external-members', '外部子号', '#extm-embed', '#extm-import'),
+        for name, label, panel, field in [('external-members', '外部子号', '#extm-embed', '#extm-open-import'),
                                           ('sub2', 'Sub2 管理', '#sub2-panel', '#s2-base')]:
             url = BASE + '/' + name + '?source=bookmark#saved'
             await page.goto(url)

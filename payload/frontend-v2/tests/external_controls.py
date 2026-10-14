@@ -2,6 +2,8 @@
 from playwright.async_api import expect
 
 LABELS = {
+    'otp-mode': {'': '保留设置（新账号自动取码）', 'auto': '自动取码（supply.ink）', 'manual': '手动输入验证码（普通账号）'},
+    'dup': {'skip': '跳过', 'overwrite': '覆盖'},
     'stock': {'': '全部库存状态', 'false': '未在库', 'true': '在库'},
     'health': {'': '全部 Sub2 状态', '401': '401 · 鉴权失败', '408': '408 · 请求超时', 'other': '其他异常（非 401/408）'},
     'profile': {'': '全部配置', 'personal': '个人配置', 'organization': '组织配置', 'unknown': '未获取'},
