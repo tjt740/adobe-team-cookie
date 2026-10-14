@@ -235,7 +235,6 @@ async def check(browser, prefix):
     # Wide-table operations remain reachable after horizontal scrolling.
     await page.goto(base + '/external-members')
     await expect(page.locator('tr[data-member]')).to_have_count(54)
-    await page.locator('.extm-import-card').first.locator('summary').tap()
     await page.locator('#extm-page-size').select_option('50')
     await expect(page.locator('tr[data-member]')).to_have_count(50)
     await page.locator('#extm-next').tap()

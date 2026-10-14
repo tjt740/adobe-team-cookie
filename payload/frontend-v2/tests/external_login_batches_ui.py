@@ -2,6 +2,7 @@
 import asyncio
 import mimetypes
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -62,7 +63,7 @@ async def main():
         await page.locator('[data-action="refresh"]').click()
         await page.locator('[data-action="refresh"]').click()
         await expect(page.locator('[data-login-batch]')).to_have_count(1)
-        await expect(page.locator('.extm-import-card').first).to_contain_text('登录成功后自动推送 Sub2')
+        await expect(page.locator('#extm-import')).to_have_attribute('placeholder', re.compile('登录成功后自动推送 Sub2'))
         assert not errors, errors
         await browser.close()
         print('PASS: queued/running/success/failure/interrupted rows, spinner accuracy and batch progress')

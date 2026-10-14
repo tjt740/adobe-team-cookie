@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import async_playwright, expect
+from external_controls import select_value, expect_select
 
 FRONT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(__file__).resolve().parents[3] / '.local'
@@ -73,12 +74,12 @@ async def main():
             await expect(page.locator('tr[data-member]')).to_have_count(200)
             await expect(page.locator('tr[data-member="1"] [data-sub2-health]')).to_have_text('Sub2 401')
             await expect(page.locator('tr[data-member="1"] [data-sub2-health]')).to_have_class('extm-pill bad')
-            await page.locator('#extm-f-health').select_option('401')
+            await select_value(page, '#extm-f-health', '401')
             await expect(page.locator('#extm-total')).to_have_text('220')
             await page.locator('#extm-next').click()
             await expect(page.locator('tr[data-member]')).to_have_count(20)
             await page.locator('tr[data-member] .extm-rowck').first.check()
-            await page.locator('#extm-f-health').select_option('408')
+            await select_value(page, '#extm-f-health', '408')
             await expect(page.locator('#extm-selc')).to_have_text('0')
             await expect(page.locator('#extm-total')).to_have_text('24')
             await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 1 页')
@@ -86,25 +87,24 @@ async def main():
             await page.locator('#extm-export').click()
             await expect(page.locator('#extm-export')).to_be_enabled()
             assert actions[-1]['sub2_health'] == '408'
-            await page.locator('#extm-f-health').select_option('other')
+            await select_value(page, '#extm-f-health', 'other')
             await expect(page.locator('#extm-total')).to_have_text('1')
             await expect(page.locator('[data-sub2-health]')).to_have_text('Sub2 503')
             await page.locator('#extm-reset-filters').click()
-            await expect(page.locator('#extm-f-health')).to_have_value('')
+            await expect_select(page, '#extm-f-health', '')
             state['recovered'] = True
             await page.locator('#extm-refresh').click()
             await expect(page.locator('tr[data-member="1"] [data-sub2-health]')).to_have_text('Sub2 已有成功证据')
             state['fail'] = True
             await page.locator('#extm-refresh').click()
             await expect(page.locator('tr[data-member="1"] [data-sub2-health]')).to_have_text('Sub2 状态暂不可用')
-            await page.locator('#extm-f-health').select_option('401')
+            await select_value(page, '#extm-f-health', '401')
             await expect(page.locator('#extm-tbody')).to_contain_text('Sub2 库存暂不可用')
             state.update(fail=False, recovered=False)
             await page.locator('#extm-refresh').click()
             await expect(page.locator('#extm-total')).to_have_text('220')
-            await page.locator('#extm-f-health').select_option('408')
+            await select_value(page, '#extm-f-health', '408')
             await expect(page.locator('#extm-total')).to_have_text('24')
-            await page.locator('.extm-import-card').first.locator('summary').click()
             await page.screenshot(path=str(OUTPUT / ('sub2-health-' + ('okad' if prefix else 'root') + '.png')))
             await page.set_viewport_size({'width': 393, 'height': 852})
             await expect(page.locator('#extm-f-health')).to_be_visible()

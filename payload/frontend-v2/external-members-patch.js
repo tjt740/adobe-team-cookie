@@ -5,6 +5,8 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
+  var filtersView = null, filterValues = null;
+  var filtersModule = new URL('external-members-filters.js?v=20261015-filters', document.currentScript.src).href;
   var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", healthF: "", importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
@@ -172,10 +174,9 @@
   function buildBody(host) {
     host.innerHTML =
       '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span></div>' +
-      '<details class="extm-card extm-import-card" open><summary>导入外部子号</summary>' +
+      '<section class="extm-card extm-import-card" aria-label="导入外部子号">' +
         '<div class="bd">' +
-          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 50 个，登录成功后自动推送 Sub2；推送失败可单独重试。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
-          '<p class="tip">仅邮箱导入固定走验证码；普通账号可选择「手动输入」，收到邮件后在账号行填验证码。自动取码使用原邮箱配置或 supply.ink Token；带密码则优先密码登录，需要验证时使用所选取码方式。已有账号选择「覆盖」可更新设置。</p>' +
+          '<textarea id="extm-import" class="extm-ta" aria-label="导入外部子号" placeholder="每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 50 个，登录成功后自动推送 Sub2；推送失败可单独重试。"></textarea>' +
           '<div class="extm-row">' +
             '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
             '<label for="extm-otp-mode">取码方式</label><select id="extm-otp-mode" class="extm-in"><option value="">保留设置（新账号自动取码）</option><option value="auto">自动取码（supply.ink）</option><option value="manual">手动输入验证码（普通账号）</option></select>' +
@@ -183,27 +184,14 @@
             '<span class="sp" style="flex:1"></span><span id="extm-op" class="extm-msg mut"></span>' +
           '</div>' +
         '</div>' +
-      '</details>' +
+      '</section>' +
       '<details class="extm-card extm-import-card" id="extm-mail-config" hidden><summary>邮件配置 · supply.ink <span id="extm-mail-state" class="extm-msg mut">读取中…</span></summary><div class="bd">' +
         '<p class="tip">在 supply.ink 邮件助手中获取 Token 后粘贴并保存。Token 保存在本项目，所有管理员共享；留空保留已保存配置。</p>' +
         '<div class="extm-row"><label for="extm-mail-token">邮件 Token</label><input id="extm-mail-token" class="extm-in" type="password" autocomplete="off" placeholder="粘贴 supply.ink Token" style="width:min(360px,100%)">' +
         '<button type="button" class="extm-btn" id="extm-mail-save">保存 Token</button><button type="button" class="extm-btn dft" id="extm-mail-test">测试连接</button><button type="button" class="extm-btn dft" id="extm-mail-clear">清除 Token</button></div><p id="extm-mail-result" class="extm-msg" role="status"></p>' +
       '</div></details>' +
       '<div class="extm-card">' +
-        '<div class="extm-tools">' +
-          '<div class="extm-filter-primary"><div class="extm-credits-range" role="group" aria-label="积分筛选"><label for="extm-f-credits-field">积分<select id="extm-f-credits-field" class="extm-in"><option value="available">可用积分</option><option value="total">总积分</option></select></label>' +
-            '<div class="extm-credits-bounds"><input type="number" min="0" step="any" id="extm-f-credits-min" class="extm-in" placeholder="最小值" aria-label="积分最小值" title="包含最小值；留空不限"><span>至</span><input type="number" min="0" step="any" id="extm-f-credits-max" class="extm-in" placeholder="最大值" aria-label="积分最大值" title="包含最大值；留空不限"></div></div>' +
-            '<label for="extm-f-profile">当前配置<select id="extm-f-profile" class="extm-in"><option value="">全部配置</option><option value="personal">个人配置</option><option value="organization">组织配置</option><option value="unknown">未获取</option></select></label>' +
-            '<label for="extm-f-company">账号类型<select id="extm-f-company" class="extm-in"><option value="">全部类型</option><option value="true">公司</option><option value="false">非公司</option></select></label></div>' +
-          '<div class="extm-filter-primary"><label for="extm-f-stock">Sub2 库存<select id="extm-f-stock" class="extm-in"><option value="">全部库存状态</option><option value="false">未在库</option><option value="true">在库</option></select></label>' +
-            '<label for="extm-f-health">Sub2 状态<select id="extm-f-health" class="extm-in"><option value="">全部 Sub2 状态</option><option value="error">全部异常</option><option value="401">401 · 鉴权失败</option><option value="408">408 · 请求超时</option><option value="403">403</option><option value="429">429 · 限流</option><option value="500">500</option><option value="502">502</option><option value="503">503</option><option value="504">504</option><option value="529">529 · 过载</option><option value="other">其他异常（非 401/408）</option><option value="recovered">已有成功证据</option><option value="unknown">待验证 / 无完整记录</option></select></label>' +
-            '<div class="extm-date-range" role="group" aria-label="导入时间"><span>导入时间</span><input type="date" id="extm-f-import-from" class="extm-in" aria-label="导入开始日期"><span>至</span><input type="date" id="extm-f-import-to" class="extm-in" aria-label="导入结束日期" title="包含结束日期当天"></div>' +
-            '<button type="button" class="extm-btn dft sm" id="extm-reset-filters">重置筛选</button></div>' +
-          '<select id="extm-f-status" class="extm-in"><option value="">全部状态</option><option value="ok">正常</option><option value="never">未登录</option><option value="login_failed">登录失败</option><option value="account_disabled">已停用</option><option value="rate_limited">频繁登录限流</option><option value="internal">内部错误</option></select>' +
-          '<select id="extm-f-sub" class="extm-in"><option value="">全部订阅</option><option value="true">订阅正常</option><option value="false">掉订阅</option></select>' +
-          '<input id="extm-f-kw" class="extm-in" placeholder="搜索邮箱…" style="width:180px">' +
-          '<button class="extm-btn dft sm" id="extm-refresh">刷新</button>' +
-          '</div><div class="extm-batch-row">' +
+        '<div id="extm-filters" aria-label="筛选外部子号"></div><div class="extm-batch-row">' +
           '<div class="extm-batch-controls"><span class="selc">已选 <b id="extm-selc">0</b></span>' +
           '<button class="extm-btn o sm" id="extm-batch-login" disabled>选中批量重登</button>' +
           '<label class="extm-batch-profile">批量登录配置<select id="extm-batch-profile" class="extm-in" aria-label="批量登录配置" title="仅设置勾选的账号，选择后自动保存，下次登录生效。不指定时沿用原逻辑；组织配置优先会跳过疑似已删除的组织，无可用组织或授权过期时回退个人配置。" disabled><option value="__mixed__" disabled selected>请先勾选账号</option><option value="">不指定（原逻辑）</option><option value="personal">个人配置</option><option value="organization">组织配置优先</option></select></label>' +
@@ -237,7 +225,6 @@
     el('extm-mail-test').onclick = function () { mailAction(this, 'test'); };
     el('extm-mail-clear').onclick = function () { mailAction(this, 'clear'); };
     loadMailConfig();
-    el("extm-refresh").onclick = function () { refreshStock(true).then(function () { return refreshAll(true); }); };
     el("extm-batch-login").onclick = batchLogin;
     el("extm-batch-profile").onchange = function () { saveSelectedProfilePreference(this.value); };
     var moreActions = el("extm-more-actions");
@@ -255,37 +242,25 @@
       }
     });
     el("extm-batch-del").onclick = batchDelete;
-    el("extm-f-status").onchange = function () { st.statusF = this.value; resetPage(1); load(); };
-    el("extm-f-sub").onchange = function () { st.subF = this.value; resetPage(1); load(); };
-    el("extm-f-stock").onchange = function () { st.stockF = this.value; resetPage(1); load(); };
-    el("extm-f-health").onchange = function () { st.healthF = this.value; resetPage(1); load(); };
-    el("extm-f-profile").onchange = function () { st.profileF = this.value; resetPage(1); load(); };
-    el("extm-f-company").onchange = function () { st.companyF = this.value; resetPage(1); load(); };
-    el("extm-f-credits-field").onchange = el("extm-f-credits-min").onchange = el("extm-f-credits-max").onchange = function () {
-      var min = el("extm-f-credits-min"), max = el("extm-f-credits-max");
-      max.setCustomValidity(min.value !== "" && max.value !== "" && Number(min.value) > Number(max.value) ? "积分最大值不能小于最小值" : "");
-      if (!min.reportValidity() || !max.reportValidity()) return;
-      st.creditsField = el("extm-f-credits-field").value;
-      st.creditsMin = min.value; st.creditsMax = max.value;
-      resetPage(1); load();
-    };
-    el("extm-f-import-from").onchange = el("extm-f-import-to").onchange = function () {
-      var from = el("extm-f-import-from"), to = el("extm-f-import-to");
-      to.setCustomValidity(from.value && to.value && from.value > to.value ? "结束日期不能早于开始日期" : "");
-      if (!from.reportValidity() || !to.reportValidity()) return;
-      st.importedFrom = dateBoundary(from.value, false); st.importedBefore = dateBoundary(to.value, true);
-      resetPage(1); load();
-    };
-    el("extm-reset-filters").onclick = function () {
-      clearTimeout(kwT);
-      st.statusF = st.subF = st.stockF = st.healthF = st.importedFrom = st.importedBefore = st.creditsMin = st.creditsMax = st.profileF = st.companyF = st.q = "";
-      st.creditsField = "available"; el("extm-f-credits-field").value = "available";
-      ["extm-f-status", "extm-f-sub", "extm-f-stock", "extm-f-health", "extm-f-import-from", "extm-f-import-to", "extm-f-credits-min", "extm-f-credits-max", "extm-f-profile", "extm-f-company", "extm-f-kw"].forEach(function (id) { el(id).value = ""; });
-      el("extm-f-import-to").setCustomValidity("");
-      el("extm-f-credits-max").setCustomValidity("");
-      resetPage(1); load();
-    };
-    var kwT; el("extm-f-kw").oninput = function () { st.q = this.value.trim(); resetPage(1); clearTimeout(kwT); kwT = setTimeout(load, 300); };
+    var filterHost = el("extm-filters");
+    import(filtersModule).then(function (module) {
+      if (!filterHost.isConnected) return;
+      if (filtersView) filtersView.destroy();
+      filtersView = module.mountFilters(filterHost, {
+        filter: function (f) {
+          filterValues = f;
+          st.statusF = f.status; st.subF = f.sub; st.stockF = f.stock; st.healthF = f.health;
+          st.profileF = f.profile; st.companyF = f.company; st.q = f.keyword;
+          st.creditsField = f.creditsField;
+          st.creditsMin = f.creditsMin == null ? "" : String(f.creditsMin);
+          st.creditsMax = f.creditsMax == null ? "" : String(f.creditsMax);
+          st.importedFrom = dateBoundary(f.from, false); st.importedBefore = dateBoundary(f.to, true);
+          resetPage(1); load();
+        },
+        refresh: function () { return refreshStock(true).then(function () { return refreshAll(true); }); }
+      }, filterValues);
+      filtersView.loading(!!st.loadingSeq);
+    }).catch(function () { filterHost.textContent = "筛选组件加载失败，请刷新页面重试。"; });
     window.OKAD_PAGINATION.bindSize('extm-page-size', function (size) {
       if (st.profileSaving.size || st.noteSaving || !window.OKAD_PAGINATION.valid(size)) { renderPagination(); return; }
       st.size = size; resetPage(1); load();
@@ -375,6 +350,7 @@
 
   function pageCount() { return Math.max(1, Math.ceil(st.total / st.size)); }
   function renderPagination() {
+    if (filtersView) filtersView.loading(!!st.loadingSeq);
     if (!el("extm-page-size")) return;
     var pages = pageCount(), busy = !!st.loadingSeq || st.profileSaving.size > 0 || st.noteSaving;
     var start = st.rows.length ? (st.page - 1) * st.size + 1 : 0;
@@ -1254,7 +1230,7 @@
     if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
     positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
   }
-  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { if (filtersView) filtersView.close(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,

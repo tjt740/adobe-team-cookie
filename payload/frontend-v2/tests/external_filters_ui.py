@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import async_playwright, expect
+from external_controls import select_value, expect_select
 
 FRONT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(__file__).resolve().parents[3] / '.local'
@@ -77,11 +78,10 @@ async def main():
             await page.add_init_script("localStorage.setItem('okad_token','synthetic-filter-test')")
             await page.goto('http://okad.test' + prefix + '/external-members')
             await expect(page.locator('tr[data-member]')).to_have_count(200)
-            await page.locator('.extm-import-card').first.locator('summary').click()
             await page.locator('#extm-next').click()
             await expect(page.locator('#extm-page-info')).to_have_text('第 2 / 2 页')
             await page.locator('tr[data-member] .extm-rowck').first.check()
-            await page.locator('#extm-f-stock').select_option('false')
+            await select_value(page, '#extm-f-stock', 'false')
             await expect(page.locator('#extm-total')).to_have_text('174')
             await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 1 页')
             await expect(page.locator('#extm-selc')).to_have_text('0')
@@ -104,7 +104,7 @@ async def main():
 
             # Reject backwards ranges before sending them to the API.
             await page.locator('#extm-f-import-to').fill('2026-10-11')
-            assert await page.locator('#extm-f-import-to').evaluate('(node) => !node.validity.valid')
+            await expect(page.locator('#extf-date-error')).to_have_text('结束日期不能早于开始日期')
             assert all(calls[-1][key] == value for key, value in expected.items())
             await page.locator('#extm-f-import-to').fill('2026-10-12')
             await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 2 页')
@@ -124,7 +124,7 @@ async def main():
             await page.locator('#extm-reset-filters').click()
             await expect(page.locator('#extm-total')).to_have_text('261')
             await expect(page.locator('#extm-f-import-from')).to_have_value('')
-            await expect(page.locator('#extm-f-stock')).to_have_value('')
+            await expect_select(page, '#extm-f-stock', '')
 
             async def set_bound(which, value):
                 field = page.locator('#extm-f-credits-' + which)
@@ -138,9 +138,9 @@ async def main():
             await set_bound('max', '')
             await set_bound('min', '1000')
             await set_bound('max', '4000')
-            await page.locator('#extm-f-profile').select_option('organization')
-            await page.locator('#extm-f-company').select_option('true')
-            await page.locator('#extm-f-stock').select_option('false')
+            await select_value(page, '#extm-f-profile', 'organization')
+            await select_value(page, '#extm-f-company', 'true')
+            await select_value(page, '#extm-f-stock', 'false')
             await page.locator('#extm-f-import-from').fill('2026-10-12')
             await page.locator('#extm-f-import-to').fill('2026-10-12')
             combined = dict(expected, credits_field='available', credits_min='1000', credits_max='4000',
@@ -160,27 +160,29 @@ async def main():
 
             # Invalid ranges never replace the applied filter; correcting restores it.
             await set_bound('max', '999')
-            assert await page.locator('#extm-f-credits-max').evaluate('(node) => !node.validity.valid')
+            await expect(page.locator('#extf-credit-error')).to_have_text('积分最大值不能小于最小值')
             assert calls[-1]['credits_max'] == '4000'
             await set_bound('max', '4000')
-            await page.locator('#extm-f-credits-field').select_option('total')
+            await select_value(page, '#extm-f-credits-field', 'total')
             await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(combined, credits_field='total')))))
             await expect(page.locator('.extm-company-tag')).to_have_count(len(matches(dict(combined, credits_field='total'))))
             await page.locator('#extm-reset-filters').click()
             await expect(page.locator('#extm-total')).to_have_text('261')
-            for selector in ('credits-min', 'credits-max', 'profile', 'company'):
+            for selector in ('credits-min', 'credits-max'):
                 await expect(page.locator('#extm-f-' + selector)).to_have_value('')
-            await expect(page.locator('#extm-f-credits-field')).to_have_value('available')
-            await page.locator('#extm-f-company').select_option('false')
+            for selector in ('profile', 'company'):
+                await expect_select(page, '#extm-f-' + selector, '')
+            await expect_select(page, '#extm-f-credits-field', 'available')
+            await select_value(page, '#extm-f-company', 'false')
             await expect(page.locator('#extm-total')).to_have_text('131')
             await expect(page.locator('.extm-company-tag')).to_have_count(0)
-            await page.locator('#extm-f-profile').select_option('unknown')
+            await select_value(page, '#extm-f-profile', 'unknown')
             await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(is_company='false', current_profile='unknown')))))
             await page.locator('#extm-reset-filters').click()
             await expect(page.locator('#extm-total')).to_have_text('261')
 
             state['fail'] = True
-            await page.locator('#extm-f-stock').select_option('false')
+            await select_value(page, '#extm-f-stock', 'false')
             await expect(page.locator('#extm-tbody')).to_contain_text('Sub2 库存暂不可用')
             await page.locator('#extm-refresh').click()
             await expect(page.locator('#extm-tbody')).to_contain_text('Sub2 库存暂不可用')
