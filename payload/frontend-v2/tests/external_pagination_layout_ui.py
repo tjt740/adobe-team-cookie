@@ -72,7 +72,6 @@ async def main():
 
             # Reproduces the reported overlap before the fix, even at page scroll zero.
             await assert_layout()
-            await page.locator('.extm-import-card').first.locator('summary').click()
             for width, height in ((2290, 1000), (1440, 900), (900, 800), (640, 780)):
                 await page.set_viewport_size({'width': width, 'height': height})
                 for size in (50, 100, 200):

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import async_playwright, expect
+from external_controls import select_value, expect_select
 
 ROOT = Path(__file__).resolve().parents[3]
 BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
@@ -83,7 +84,7 @@ async def main():
 
         await check(200, 1, '第 1 / 3 页')
         await expect(size).to_have_value('200')
-        assert await size.locator('option').all_text_contents() == ['50 条', '100 条', '200 条']
+        assert await size.locator('option').all_text_contents() == ['50 条', '100 条', '200 条', '300 条', '400 条', '500 条', '1000 条']
         await expect(page.locator('#extm-prev')).to_be_disabled()
         await page.locator('#extm-ckall').check()
         await expect(page.locator('#extm-selc')).to_have_text('200')
@@ -113,13 +114,13 @@ async def main():
         await check(100, 301, '第 4 / 5 页')
 
         # Status, subscription and keyword filters reset the page, with full totals.
-        await page.locator('#extm-f-status').select_option('ok')
+        await select_value(page, '#extm-f-status', 'ok')
         await check(100, 1, '第 1 / 3 页')
         await next_page.click()
         await check(100, 201, '第 2 / 3 页')
-        await page.locator('#extm-f-sub').select_option('true')
+        await select_value(page, '#extm-f-sub', 'true')
         await check(83, 3, '第 1 / 1 页')
-        await page.locator('#extm-f-status').select_option('')
+        await select_value(page, '#extm-f-status', '')
         await check(100, 3, '第 1 / 2 页')
         await next_page.click()
         await check(66, 303, '第 2 / 2 页')
@@ -131,7 +132,7 @@ async def main():
         await expect(next_page).to_be_disabled()
         await page.locator('#extm-f-kw').fill('')
         await check(100, 3, '第 1 / 2 页')
-        await page.locator('#extm-f-sub').select_option('')
+        await select_value(page, '#extm-f-sub', '')
         await check(100, 1, '第 1 / 5 页')
 
         # A slow old page must not overwrite results for newly applied filters.
@@ -139,12 +140,12 @@ async def main():
         await next_page.click()
         await asyncio.wait_for(held.wait(), 5)
         await expect(size).to_be_disabled()
-        await page.locator('#extm-f-status').select_option('ok')
+        await select_value(page, '#extm-f-status', 'ok')
         await check(100, 1, '第 1 / 3 页')
         release.set()
         await asyncio.wait_for(delivered.wait(), 5)
         await check(100, 1, '第 1 / 3 页')
-        await page.locator('#extm-f-status').select_option('')
+        await select_value(page, '#extm-f-status', '')
         await check(100, 1, '第 1 / 5 页')
 
         # Failed navigation clears old rows and remains recoverable via refresh.
