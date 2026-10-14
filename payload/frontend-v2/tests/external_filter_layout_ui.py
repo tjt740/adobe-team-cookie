@@ -40,6 +40,8 @@ async def main():
             assert color == ['rgb(24, 160, 88)', 'rgb(232, 247, 240)', '4px'], color
             for width in (3440, 1920, 1440, 768, 390, 320):
                 await page.set_viewport_size(dict(width=width, height=1100))
+                if width <= 800 and not await page.locator('#extm-f-kw').is_visible():
+                    await page.locator('#extm-filters .ws-filter-toggle').click()
                 await fits(page, '#extm-filters')
                 for selector in ('.extf-field', '.extf-range'):
                     for node in await page.locator(selector).all():

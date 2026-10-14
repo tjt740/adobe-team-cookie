@@ -19,7 +19,7 @@
     value = String(value == null ? '' : value);
     if (node.textContent !== value) node.textContent = value;
   }
-  function notice(message) { text(el('notice'), message || ''); }
+  function notice(message) { text(el('notice'), message || ''); if(el('config-drawer')?.open)text(el('config-result'),message || ''); }
   // Keep existing buttons, focused elements and text selections across polling.
   function patch(node, next) {
     if (node.nodeType !== next.nodeType || node.nodeName !== next.nodeName) {
@@ -201,14 +201,15 @@
         <header class="ws-heading"><div><h2>联动中心</h2><p>查看 Okad 与 Sub2 之间的账号登录、同步和验证状态。</p></div>
           <div class="integration-refresh"><small id="integration-activity" role="status">正在读取状态…</small><button id="integration-refresh" class="secondary">刷新状态</button></div></header>
         <div id="integration-notice" role="status" aria-live="polite"></div>
-        <div id="integration-setup" class="integration-setup" hidden>可靠联动尚未启用，请先展开连接配置并测试保存。原有账号的推送和登录仍可在 <a data-route href="${window.OKAD_ROUTE.href('/external-members')}">外部子号</a> 操作；本页未登记不代表 Sub2 中没有该账号。</div>
+        <div id="integration-setup" class="integration-setup" hidden>可靠联动尚未启用，请先打开连接配置并测试保存。原有账号的推送和登录仍可在 <a data-route href="${window.OKAD_ROUTE.href('/external-members')}">外部子号</a> 操作；本页未登记不代表 Sub2 中没有该账号。</div>
         <div class="integration-metrics">
           <article><small>等待同步 / 重试</small><strong id="integration-queued">—</strong></article>
           <article><small>已验证并可调度</small><strong id="integration-ready">—</strong></article>
           <article><small>需要处理 / 已暂停</small><strong id="integration-attention">—</strong></article>
           <article><small>登录任务进行中</small><strong id="integration-running">—</strong></article>
         </div>
-        <details class="integration-config"><summary>连接配置 <span id="integration-connection">正在读取</span></summary>
+        <div class="integration-config-launch"><button type="button" id="integration-open-config" class="secondary">连接配置</button><span id="integration-connection">正在读取</span></div>
+        <dialog id="integration-config-drawer" class="ws-native-drawer" aria-label="联动连接配置"><header><h3>联动连接配置</h3><button type="button" id="integration-close-config" aria-label="关闭连接配置" autofocus>×</button></header><div class="ws-native-body integration-config">
           <form id="integration-config">
             <label>Sub2 地址<input id="integration-base" type="url" required placeholder="http://127.0.0.1:18080"></label>
             <label>专用联动密钥<input id="integration-key" type="password" autocomplete="new-password" placeholder="已配置时留空保留"></label>
@@ -216,7 +217,8 @@
             <button>测试连接并保存</button>
           </form>
           <p class="integration-muted">首次入库使用 <a data-route href="${window.OKAD_ROUTE.href('/sub2')}">Sub2 管理</a> 中的管理员配置和 Adobe 分组。</p>
-        </details>
+          <p id="integration-config-result" role="status"></p>
+        </div></dialog>
         <section class="integration-section"><div class="integration-section-heading"><h3>账号联动状态</h3>
           <p class="integration-muted">同步与验证不会重新登录，人工暂停会保留；远端状态约每 30 秒核对一次。</p></div>
           <div class="integration-scroll"><table><thead><tr><th>账号 / 来源</th><th>自动恢复</th><th>凭据版本</th><th>同步与验证</th><th>操作</th></tr></thead><tbody id="integration-sources"><tr><td colspan="5" class="integration-empty">正在读取账号状态…</td></tr></tbody></table></div>
@@ -226,6 +228,7 @@
         <p class="integration-footnote integration-muted">凭据验证检查实时 Token 与额度，模型出图能力仍需在 Sub2 实际测试。</p>
       </div>`;
     document.body.appendChild(panel);
+    window.OKAD_WORKSPACE.bindDrawer(el("config-drawer"),el("open-config"),el("close-config"));
     window.OKAD_PAGINATION.bindSize('integration-page-size', function (value) { size = value; refresh(1, true); });
     updateJobsPager = window.OKAD_PAGINATION.mountPager(el('jobs-pager'), {id:'integration-jobs-size',
       state:function () { return {page:jobsPage, size:jobsSize, total:jobsTotal, busy:acting || refreshing}; },
@@ -262,7 +265,7 @@
     clearInterval(poll);
     poll = null;
     cancelReads();
-    if (panel) { panel.hidden = true; el('key').value = ''; }
+    if (panel) { el('config-drawer').close(); panel.hidden = true; el('key').value = ''; }
   }
   function open() {
     if (active) return;

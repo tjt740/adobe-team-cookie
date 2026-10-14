@@ -134,10 +134,11 @@
       '<div class="s2-top"><h2>Sub2 账号管理</h2>' +
         '<span class="s2-conn" id="s2-conn"><span class="d"></span><span id="s2-conn-t">未测试</span></span>' +
         '<div class="sp"></div>' +
+        '<button class="s2-btn dft sm" id="s2-open-config">连接配置</button>' +
         '<button class="s2-btn dft sm" id="s2-reload">↻ 刷新列表</button>' +
         '<button class="s2-x" id="s2-close" title="关闭">✕</button></div>' +
       '<div class="s2-body">' +
-        '<div class="s2-card s2-cfg" id="s2-cfg"><div class="hd" id="s2-cfghd">连接配置 <span class="s2-msg" id="s2-cfgstate"></span><span class="ar">▾</span></div>' +
+        '<dialog id="s2-config-drawer" class="ws-native-drawer" aria-label="Sub2 连接配置"><header><h3>Sub2 连接配置</h3><button type="button" id="s2-config-close" aria-label="关闭连接配置" autofocus>×</button></header><div class="s2-card s2-cfg" id="s2-cfg"><div class="hd" id="s2-cfghd">连接配置 <span class="s2-msg" id="s2-cfgstate"></span><span class="ar">▾</span></div>' +
           '<div class="bd">' +
             '<div class="s2-grid">' +
               '<div class="s2-f" style="grid-column:1/-1"><label>Sub2API 地址</label><input class="s2-in" id="s2-base" placeholder="http://主机(自动补 /api/v1)"></div>' +
@@ -148,7 +149,7 @@
             '<div class="s2-f" style="margin-top:12px"><label>推送绑定分组(点选)</label><div class="s2-chips" id="s2-groups"></div><input class="s2-in" id="s2-gids" placeholder="或手填 26,32" style="margin-top:7px;height:30px;max-width:240px;font-size:12px"></div>' +
             '<div style="display:flex;gap:22px;margin-top:14px"><label class="s2-sw"><input type="checkbox" id="s2-en"><span class="t"></span>启用推送</label><label class="s2-sw"><input type="checkbox" id="s2-auto"><span class="t"></span>巡航自动推送</label></div>' +
             '<div style="display:flex;gap:10px;align-items:center;margin-top:16px"><button class="s2-btn" id="s2-save">保存</button><button class="s2-btn o" id="s2-test">测试连接</button><button class="s2-btn dft" id="s2-loadg">加载分组</button><span class="s2-msg" id="s2-cfgmsg"></span></div>' +
-          '</div></div>' +
+          '</div></div></dialog>' +
         '<div class="s2-card">' +
           '<div class="s2-overview">' +
             '<div class="s2-stats"><div class="s2-stbox"><b id="s2-st-total">–</b><div class="l">Sub2 账号</div></div>' +
@@ -194,7 +195,7 @@
   function wire() {
     el("s2-close").onclick = window.OKAD_NAV.close;
     el("s2-reload").onclick = function () { if (!st.busy) { loadAll(); loadStats(); } };
-    el("s2-cfghd").onclick = function () { el("s2-cfg").classList.toggle("collapsed"); };
+    window.OKAD_WORKSPACE.bindDrawer(el("s2-config-drawer"),el("s2-open-config"),el("s2-config-close"));
     el("s2-save").onclick = saveConfig; el("s2-test").onclick = testConn; el("s2-loadg").onclick = loadGroups;
     el("s2-plat").addEventListener("change", function () { st.sel.clear(); renderGroups(); loadAll(); loadStats(); });
     el("s2-gids").addEventListener("input", renderGroups);
@@ -402,7 +403,7 @@
     st.page = 1; st.sel.clear(); st.q = ""; st.statusF = "";
     loadConfig().then(loadStats); loadAll();
   }
-  function closePanel() { var p = el(PANEL_ID); if (p) p.classList.remove("on"); }
+  function closePanel() { var drawer=el("s2-config-drawer"); if(drawer) drawer.close(); var p = el(PANEL_ID); if (p) p.classList.remove("on"); }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "sub2", panel: PANEL_ID, label: "Sub2 管理", icon: "sub2",
     open: openPanel, close: closePanel, layout: positionPanel

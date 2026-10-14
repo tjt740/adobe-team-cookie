@@ -32,6 +32,10 @@ function harness() {
     return response({message:'已提交'});
   };
   w.eval(fs.readFileSync(path.join(__dirname, '../pagination.js'), 'utf8'));
+  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+  w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
+  // Browser regression covers the shared drawer's native focus and dismissal behavior.
+  w.OKAD_WORKSPACE={bindDrawer:(dialog,trigger,close)=>{trigger.onclick=()=>dialog.showModal();close.onclick=()=>dialog.close();}};
   w.eval(script);
   return {w,state,calls,timers,dom, get: id=>w.document.getElementById('integration-'+id),
     poll:async()=>{for(const cb of timers.values())cb();await flush();},
