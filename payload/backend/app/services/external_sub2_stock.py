@@ -89,3 +89,38 @@ def membership(db, refresh=False):
             items[mid] = {'email': email, 'in_stock': bool(ids), 'account_ids': ids}
     return {'ok': result['ok'], 'configured': True, 'items': items,
             'checked_at': result['checked_at'], 'message': result['message']}
+
+
+def capacity_detail(db, member):
+    """Confirm a capacity shortage on demand; never infer it from proxy_pending alone."""
+    unknown = {'confirmed': False}
+    cfg = external_sub2.config(db)
+    link = (member.sub2_links or {}).get(external_sub2.destination(cfg), {})
+    aid = link.get('account_id')
+    if (link.get('status') != 'pending' or type(aid) is not int or aid <= 0
+            or not cfg.get('base_url') or not cfg.get('admin_token')):
+        return unknown
+    try:
+        account = external_sub2._request(cfg, 'GET', f'/admin/accounts/{aid}')
+        if (account.get('id') != aid or not external_sub2._matches(account, member.email)
+                or 'proxy_id' not in account or account['proxy_id'] is not None
+                or (account.get('extra', {}).get('okad') or {}).get('verification') != 'proxy_pending'):
+            return unknown
+        allocation = external_sub2._request(cfg, 'GET', '/admin/accounts/proxy-allocation')
+        nodes, per_node, total = allocation.get('nodes'), allocation.get('accounts_per_proxy'), allocation.get('accounts')
+        if (allocation.get('enabled') is not True or type(per_node) is not int or per_node <= 0
+                or type(total) is not int or total < 0 or not isinstance(nodes, list)
+                or any(not isinstance(n, dict) or type(n.get('id')) is not int for n in nodes)
+                or len({n['id'] for n in nodes}) != len(nodes)
+                or type(allocation.get('available_slots')) is not int or allocation['available_slots'] != 0):
+            return unknown
+        capacity = len(nodes) * per_node
+        # Count every configured node, even unhealthy ones. A temporary health
+        # failure alone must not be labelled as exceeding the node count limit.
+        if total <= capacity:
+            return unknown
+        return {'confirmed': True, 'account_id': aid, 'accounts': total,
+                'nodes': len(nodes), 'per_node': per_node, 'capacity': capacity,
+                'checked_at': datetime.now(timezone.utc).isoformat()}
+    except Exception:
+        return unknown  # No credentials or upstream errors in the public result.
