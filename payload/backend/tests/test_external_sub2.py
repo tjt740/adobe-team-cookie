@@ -311,9 +311,9 @@ def test_new_cookie_arriving_during_sync_is_sent_last(db, setup_sync, remote, mo
     sync.prepare(db, [row.id])
     original = sync._sync
     count = 0
-    def racing(cfg, email, cookie, link):
+    def racing(cfg, email, cookie, link, metadata=None):
         nonlocal count
-        aid = original(cfg, email, cookie, link)
+        aid = original(cfg, email, cookie, link, metadata)
         count += 1
         if count == 1:
             with SessionLocal() as session:
