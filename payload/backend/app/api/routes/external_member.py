@@ -203,6 +203,15 @@ def update_note(member_id: int, payload: ExternalNoteUpdate,
     return {"note": member.note, "message": "备注已保存"}
 
 
+@router.get("/members/{member_id}/sub2-capacity", summary="只读确认账号是否因 Sub2 节点容量不足而等待")
+def sub2_capacity(member_id: int, response: Response, db: Session = Depends(get_db)) -> dict:
+    response.headers['Cache-Control'] = 'no-store'
+    member = crud.get(db, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    return external_sub2_stock.capacity_detail(db, member)
+
+
 def _save_login_profiles(ids, preference, db) -> dict:
     with _login_lock:
         ids = list(dict.fromkeys(ids))

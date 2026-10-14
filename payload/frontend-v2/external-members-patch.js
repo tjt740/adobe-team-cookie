@@ -59,6 +59,9 @@
     '.extm-t input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#18a058;margin:0;vertical-align:middle}',
     '.extm-pill{display:inline-block;font-size:12px;padding:1px 9px;border-radius:11px;line-height:1.7;white-space:nowrap}',
     '.extm-pill[data-sub2-stock]{padding:0 7px;line-height:18px}',
+    '.extm-sub2-state{display:inline-flex;align-items:center;gap:5px}.extm-link.extm-sub2-details{display:inline-flex;align-items:center;justify-content:center;gap:3px;min-height:24px;color:#2080f0;font:12px system-ui;white-space:nowrap}.extm-sub2-dialog{width:min(540px,calc(100vw - 40px))}.extm-sub2-summary{padding:14px;background:var(--ws-soft,#f5f7fa);border:1px solid var(--ws-line,#e4eaf2);border-radius:8px;margin-bottom:16px}.extm-sub2-summary strong{display:block;font-size:15px;margin-bottom:6px}.extm-sub2-summary p{margin:0;line-height:1.7}.extm-sub2-dialog dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px 12px;font-size:13px;margin:0}.extm-sub2-dialog dt{color:var(--ws-muted,#7d8797)}.extm-sub2-dialog dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}.extm-sub2-dialog h4{font-size:13px;margin:18px 0 6px}.extm-sub2-dialog p.extm-sub2-help{margin:0;line-height:1.7}.extm-sub2-dialog p.extm-sub2-footnote{margin:16px 0 0;font-size:12px}@media(max-width:800px){.extm-link.extm-sub2-details{min-width:44px;min-height:44px}}',
+    '.extm-sub2-dialog,.extm-sub2-dialog .extm-btn.dft{background:var(--ws-paper,#fff);color:var(--ws-text,#273342)}.extm-sub2-dialog p,.extm-sub2-dialog dt{color:var(--text-2,#5a6675)}.extm-link.extm-sub2-details{color:var(--accent,#2080f0)}',
+    '.extm-sub2-stamp-layer{position:absolute;inset:0;overflow:hidden;border-radius:inherit;pointer-events:none;z-index:2}.extm-sub2-stamp-layer[hidden]{display:none}.extm-sub2-stamp{position:absolute;left:50%;top:43%;width:min(360px,calc(100% - 54px));height:auto;transform:translate(-50%,-50%) rotate(-12deg);opacity:.42;pointer-events:none;user-select:none}.extm-sub2-dialog .extm-sub2-capacity{margin:12px 0 0;color:var(--text-2,#5a6675);font-size:12px;line-height:1.7}.extm-sub2-capacity[hidden]{display:none}html.dark .extm-sub2-stamp{opacity:.55}',
     '.extm-pill.ok{background:#e8f7f0;color:#18a058}.extm-pill.bad{background:#fce9ec;color:#d03050}.extm-pill.warn{background:#fdf3e6;color:#f0a020}.extm-pill.mut{background:#f0f2f5;color:#909399}',
     '.extm-credit-warning{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 8px;border:1px solid #f6dfb9;border-radius:5px;background:#fff7e8;color:#a66310;font:12px/1 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;white-space:nowrap;vertical-align:middle;cursor:pointer;transition:background .15s,border-color .15s}.extm-credit-warning:hover{background:#ffedcf;border-color:#e8c28b}.extm-credit-warning:focus-visible{outline:2px solid #2080f0;outline-offset:2px}.extm-credit-warning .okad-icon{opacity:.75}.extm-credit-dialog .extm-credit-error{color:#b2730f;background:#fff7e8;border-radius:6px;padding:12px;overflow-wrap:anywhere}',
     '.extm-sub2-confirm-dialog{width:min(600px,calc(100vw - 40px))}.extm-sub2-confirm-dialog ul{list-style:none;margin:0;padding:0 12px;max-height:240px;overflow:auto;background:var(--ws-soft,#fff7e8);border:1px solid var(--ws-line,#f3e4c5);border-radius:8px}.extm-sub2-confirm-dialog li{padding:10px 0;overflow-wrap:anywhere}.extm-sub2-confirm-dialog li+li{border-top:1px solid var(--ws-line,#f3e4c5)}.extm-sub2-confirm-dialog li strong,.extm-sub2-confirm-dialog li span{display:block;font-size:13px}.extm-sub2-confirm-dialog li span{color:#b2730f;margin-top:4px}.extm-sub2-confirm-dialog .extm-relink-warning{margin-top:16px}.extm-sub2-confirm-dialog [data-confirm]{background:#2080f0;border-color:#2080f0}',
@@ -470,6 +473,7 @@
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
       if (b.hasAttribute("data-credit-error")) showCreditError(Number(b.dataset.creditError));
+      if (b.hasAttribute('data-sub2-details')) showSub2Details(Number(b.dataset.sub2Details));
       if (b.hasAttribute("data-copy-email")) copyEmail(Number(b.dataset.copyEmail));
       if (b.hasAttribute('data-otp-settings')) editOtpMode(Number(b.dataset.otpSettings));
       if (b.hasAttribute("data-note")) editNote(Number(b.dataset.note));
@@ -479,6 +483,7 @@
       if (b.hasAttribute("data-del")) doDelete([Number(b.dataset.del)]);
     };
     updSel();
+    renderSub2Details();
   }
 
   function editOtpMode(id) {
@@ -886,7 +891,7 @@
   }
   function selIds() { return Array.from(st.sel); }
 
-  function sub2Pill(row) {
+  function sub2Stock(row) {
     var stock = st.stock, item = stock && stock.items && stock.items[row.id];
     if (item && String(item.email || '').trim().toLowerCase() !== row.email.trim().toLowerCase()) item = null;
     var tone = 'mut', label = 'Sub2 库存查询中', tip = '正在按完整邮箱核对 Sub2 当前库存';
@@ -898,15 +903,136 @@
       label = stock.configured === false ? 'Sub2 未配置' : 'Sub2 状态暂不可用';
       tip = stock.message || '暂时无法确认 Sub2 库存，请稍后刷新';
     }
+    return {tone: tone, label: label, tip: tip};
+  }
+
+  function sub2Pill(row) {
+    var stock = sub2Stock(row), tip = stock.tip;
     var detail = row.sub2_message || '';
     if (row.sub2_account_id) detail += ' · 账号 #' + row.sub2_account_id;
     if (row.sub2_synced_at) detail += ' · 上次同步 ' + fmtTime(row.sub2_synced_at);
     if (row.sub2_status === 'synced') tip += ' · 本页 Cookie 上次同步成功' + detail;
-    var html = '<span data-sub2-stock class="extm-pill ' + tone + '" style="margin-top:4px" title="' + esc(tip) + '">' + label + '</span>';
+    var html = '<span data-sub2-stock class="extm-pill ' + stock.tone + '" style="margin-top:4px" title="' + esc(tip) + '">' + stock.label + '</span>';
     var state = { pending: ['warn', 'Sub2 待同步'], syncing: ['info', 'Sub2 同步中'], failed: ['bad', 'Sub2 同步失败'] }[row.sub2_status];
-    if (!state) return html;
-    return html + ' <span class="extm-pill ' + state[0] + '" style="margin-top:4px" title="' + esc(detail) + '">' + state[1] + '</span>' +
+    var button = '<button type="button" class="extm-link extm-sub2-details" data-sub2-details="' + row.id + '" aria-haspopup="dialog" aria-label="查看 ' + esc(row.email) + ' 的 Sub2 同步详情">' + window.OKAD_ICONS.svg('info', 12) + '详情</button>';
+    if (!state) return '<span class="extm-sub2-state">' + html + button + '</span>';
+    return html + ' <span class="extm-sub2-state"><span class="extm-pill ' + state[0] + '" style="margin-top:4px" title="' + esc(detail) + '">' + state[1] + '</span>' + button + '</span>' +
       (row.sub2_status === 'failed' ? '<span class="extm-clip" style="font-size:12px;color:#d03050" title="' + esc(detail) + '">' + esc(row.sub2_message || '请重新推送') + '</span>' : '');
+  }
+
+  function sub2Explanation(row) {
+    var status = row.sub2_status || 'not_pushed', message = (row.sub2_message || '').trim();
+    if (status === 'pending' && message === 'Cookie 已写入，等待 Sub2 代理就绪') return {
+      title: '已发送到 Sub2，正在等可用线路',
+      reason: '账号的登录信息已经送到 Sub2。这个账号使用的网络线路暂时没有准备好，所以还不能检查账号能否使用。',
+      action: '不用重新登录，也不用重复推送。请管理员在 Sub2 检查线路是否正常、有没有空位。线路准备好后，系统会自动继续检查。'
+    };
+    if (status === 'pending' && message === 'Cookie 已写入，等待重新验证') return {
+      title: '已发送到 Sub2，正在等再次检查',
+      reason: '账号的登录信息已经送到 Sub2，但这次还没能检查完账号是否可用。系统会保留登录信息，稍后再试。',
+      action: '先等待系统自动重试，不用重新登录。若一直没有变化，请管理员查看 Sub2 中这个账号的检查结果和网络连接。'
+    };
+    if (status === 'pending' || status === 'syncing') return {
+      title: status === 'syncing' ? '正在发送登录信息' : '正在排队处理',
+      reason: '系统已收到同步请求，还没有返回完成结果。「在库 Sub2」只表示 Sub2 里有这个账号，不代表这次登录信息已经更新。',
+      action: '先等一会儿，页面会自动更新。若一直没有变化，请管理员到「联动中心」查看这个账号的处理进度。'
+    };
+    if (status === 'failed') return {
+      title: '这次没有完成，需要处理一下',
+      reason: '发送登录信息或检查账号时遇到了问题。之前保存的登录信息还在，具体原因见下方「系统提示」。',
+      action: /404|关联账号不存在|关联账号已删除/.test(message) ? '请管理员先确认 Sub2 中的账号是否被删除。确定要恢复时，再点击「更多操作 → 重新关联 / 推送」。' : '请管理员按系统提示处理问题，再勾选账号点击「推送 Sub2」重试。已有登录信息时，不用先重新登录。'
+    };
+    if (status === 'synced') return {
+      title: '登录信息已更新',
+      reason: 'Sub2 已收到登录信息。账号能不能正常使用，还要看 Sub2 中的检查结果。',
+      action: '可以到 Sub2 查看这个账号。若显示暂停或异常，请按那里的提示处理。'
+    };
+    return {
+      title: status === 'not_pushed' ? '还没有同步记录' : '暂时无法确认是否已完成',
+      reason: '当前页面还不能确认登录信息是否已成功发送。Sub2 中即使已有这个邮箱，也可能还没收到这里的登录信息。',
+      action: row.has_cookie ? '需要发送到 Sub2 时，勾选这个账号，再点击「推送 Sub2」。' : '先点击账号行的「重登」完成登录，再查看发送结果。'
+    };
+  }
+
+  function renderSub2Details() {
+    var dialog = el('extm-sub2-detail-dialog'); if (!dialog || !dialog.open) return;
+    var row = rowById(Number(dialog.dataset.member));
+    if (!row) { dialog.close(); return; }
+    var info = sub2Explanation(row);
+    var stockText = {'在库 Sub2': '已添加到 Sub2', '未在库 Sub2': 'Sub2 中还没有这个账号', 'Sub2 库存查询中': '正在查询', 'Sub2 状态暂不可用': '暂时查不到，请稍后再看', 'Sub2 未配置': '尚未设置 Sub2 连接'}[sub2Stock(row).label];
+    var messageText = {
+      'Cookie 已写入，等待 Sub2 代理就绪': '登录信息已收到，网络线路还没准备好。',
+      'Cookie 已写入，等待重新验证': '登录信息已收到，稍后会再检查账号是否可用。',
+      '等待同步 Cookie': '已排队，等待发送登录信息。',
+      '正在同步 Cookie': '正在发送登录信息。',
+      '等待版本同步与验证': '已排队，等待更新登录信息并检查账号。',
+      'Cookie 已保存，等待同步与验证': '登录信息已保存，等待发送和检查。',
+      'Cookie 已保存，等待同步': '登录信息已保存，等待发送。',
+      'Cookie 已同步，重登成功后自动更新': '登录信息已更新，下次登录成功后会自动发送新的信息。',
+      '凭据已验证，可调度；模型尚未验证': '登录信息检查通过，账号已启用；还没确认能否正常出图。',
+      '凭据已验证，保持暂停或等待代理分配': '登录信息检查通过，账号仍暂停或在等待网络线路。'
+    }[row.sub2_message] || row.sub2_message || '暂无说明';
+    setHTML(dialog.querySelector('[data-sub2-detail-content]'),
+      '<p>' + esc(row.email) + '</p><div class="extm-sub2-summary"><strong>' + esc(info.title) + '</strong><p>' + esc(info.reason) + '</p></div>' +
+      '<dl><dt>Sub2 中的账号</dt><dd>' + esc(stockText) + '</dd><dt>Sub2 账号编号</dt><dd>' + (row.sub2_account_id ? '#' + esc(row.sub2_account_id) : '暂无编号') + '</dd>' +
+      '<dt>系统提示</dt><dd>' + esc(messageText) + '</dd><dt>最近记录时间</dt><dd>' + esc(fmtTime(row.sub2_synced_at, true)) + '</dd></dl>' +
+      '<h4>接下来怎么做</h4><p class="extm-sub2-help">' + esc(info.action) + '</p><p class="extm-sub2-footnote">这里会随列表自动更新。打开详情只是查看说明，不会重新登录或发送账号信息。</p>');
+    refreshSub2Capacity(dialog, row);
+  }
+
+  function drawSub2Stamp(canvas) {
+    var ctx = canvas.getContext('2d'); if (!ctx) return;
+    canvas.width = 880; canvas.height = 360;
+    ctx.scale(2, 2);
+    ctx.strokeStyle = ctx.fillStyle = '#c72b35';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.roundRect(13, 15, 414, 150, 9); ctx.stroke();
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(22, 24, 396, 132);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '800 29px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillText('账号已经超出', 220, 68);
+    ctx.fillText('节点容量限制，老铁。', 220, 111);
+    // A fixed texture avoids flickering or redrawing random marks on every poll.
+    ctx.globalCompositeOperation = 'destination-out';
+    for (var i = 0; i < 380; i++) {
+      ctx.globalAlpha = .15 + (i % 5) * .1;
+      ctx.fillRect((i * 97 + 31) % 440, (i * 53 + 11) % 180, 1 + i % 3, .7 + i % 2);
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
+  function refreshSub2Capacity(dialog, row) {
+    var layer = dialog.querySelector('.extm-sub2-stamp-layer'), note = dialog.querySelector('[data-sub2-capacity]');
+    var key = [row.email, row.sub2_status, row.sub2_message, row.sub2_account_id, row.sub2_synced_at].join('|');
+    if (key !== dialog._capacityKey) {
+      dialog._capacityKey = key; dialog._capacityChecked = 0; layer.hidden = note.hidden = true;
+    }
+    if (row.sub2_status !== 'pending' || row.sub2_message !== 'Cookie 已写入，等待 Sub2 代理就绪') return;
+    if (dialog._capacityLoading || Date.now() - (dialog._capacityChecked || 0) < 30000) return;
+    dialog._capacityLoading = true;
+    // Hide old evidence while refreshing, and ignore responses for a closed or changed account.
+    layer.hidden = note.hidden = true;
+    api('/members/' + row.id + '/sub2-capacity', {timeout: 55000}).then(function (data) {
+      if (el('extm-sub2-detail-dialog') !== dialog || !dialog.open || dialog._capacityKey !== key) return;
+      var confirmed = data.confirmed === true && data.account_id === row.sub2_account_id;
+      layer.hidden = note.hidden = !confirmed;
+      if (confirmed) note.textContent = '刚刚核对：' + data.accounts + ' 个账号，' + data.nodes + ' 个节点，每个最多 ' + data.per_node + ' 个账号，合计最多 ' + data.capacity + ' 个。请管理员增加节点或减少需要分配线路的账号。';
+    }).catch(function () { /* An unavailable check never means capacity exceeded. */ }).finally(function () {
+      dialog._capacityLoading = false;
+      if (dialog._capacityKey === key) dialog._capacityChecked = Date.now();
+    });
+  }
+
+  function showSub2Details(id) {
+    if (!rowById(id) || el('extm-sub2-detail-dialog')) return;
+    var dialog = document.createElement('dialog'); dialog.id = 'extm-sub2-detail-dialog'; dialog.className = 'extm-note-dialog extm-sub2-dialog'; dialog.dataset.member = id;
+    dialog.setAttribute('aria-labelledby', 'extm-sub2-detail-title');
+    dialog.innerHTML = '<h3 id="extm-sub2-detail-title">Sub2 同步详情</h3><div data-sub2-detail-content></div><p class="extm-sub2-capacity" data-sub2-capacity hidden></p><div class="extm-sub2-stamp-layer" hidden><canvas class="extm-sub2-stamp" role="img" aria-label="账号已经超出节点容量限制，老铁。">账号已经超出节点容量限制，老铁。</canvas></div><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
+    drawSub2Stamp(dialog.querySelector('canvas'));
+    dialog.querySelector('button').onclick = function () { dialog.close(); };
+    dialog.onclose = function () { dialog.remove(); var button = document.querySelector('[data-sub2-details="' + id + '"]'); if (st.open && button) button.focus({preventScroll:true}); };
+    document.body.appendChild(dialog); dialog.showModal(); renderSub2Details();
   }
 
   function sub2SubscriptionWarnings(ids) {
@@ -1086,7 +1212,7 @@
     if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
     positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
   }
-  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,
