@@ -293,10 +293,12 @@ def _find(cfg, email, account_id, *, relink=False):
     return matches[0] if matches else None
 
 
-def _sync(cfg, email, cookie, link):
+def _sync(cfg, email, cookie, link, metadata=None):
     account = _find(cfg, email, link.get('account_id'), relink=bool(link.get('relink_requested')))
     credentials = {'cookie': cookie, 'access_token': '', 'email': email}
     marker = {'adobeteam_external_email': email.lower()}
+    if metadata:
+        marker['okad_account'] = metadata
     if account:
         credentials = {**(account.get('credentials') or {}), **credentials}
         # Native reauthorization merges credentials, preserves groups/proxy/model
@@ -334,6 +336,10 @@ def _run(mid, target):
                     return
                 cfg = config(db)
                 email, cookie = member.email, member.cookie or ''
+                from app.models.setting import Setting
+                from app.services.okad_account_metadata import account_metadata
+                issuer = db.scalar(select(Setting).where(Setting.key == 'okad_instance_id'))
+                metadata = account_metadata(f'external:{mid}', member, issuer.value if issuer else '')
                 _store(member, target, {**link, 'status': 'syncing', 'message': '正在同步 Cookie'})
                 db.commit()
             remote_id, error = None, ''
@@ -343,7 +349,7 @@ def _run(mid, target):
                     raise SyncError('Sub2 地址已改变，请在当前目标重新推送')
                 if not cookie.strip():
                     raise SyncError('账号没有 Cookie，请先登录')
-                remote_id = _sync(cfg, email, cookie, link)
+                remote_id = _sync(cfg, email, cookie, link, metadata)
             except SyncError as exc:
                 error = str(exc)
             except Exception:

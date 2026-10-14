@@ -69,6 +69,7 @@ def member_mail(member_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
+    from app.services.okad_account_metadata import uses_supply_mail
     return ExternalMemberOut(
         id=m.id, email=m.email, note=m.note,
         credits_available=m.credits_available, credits_total=m.credits_total,
@@ -79,7 +80,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
         first_login_done=m.first_login_done, has_cookie=bool(m.cookie),
         has_adobe_password=bool((m.adobe_password or "").strip()),
         force_code_login=bool(m.force_code_login),
-        uses_supply_mail=m.otp_mode != "manual" and not m.mail_url and not (m.refresh_token and m.client_id),
+        uses_supply_mail=uses_supply_mail(m),
         otp_mode=m.otp_mode,
         otp_challenge=manual_otp.BROKER.status(m.id),
         last_login_at=m.last_login_at, message=m.message, created_at=m.created_at,
