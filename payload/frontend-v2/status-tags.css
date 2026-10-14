@@ -1,0 +1,72 @@
+/* Solid, square status tags. Keep the label as well as the semantic color. */
+:root {
+  --tag-success: #47805c;
+  --tag-info: #5177b3;
+  --tag-warning: #9e6b3d;
+  --tag-danger: #ba5858;
+  --tag-neutral: #6b7789;
+  --tag-credential: #437e8d;
+  --tag-personal: #7364b9;
+  --tag-organization: #8963b9;
+}
+
+#extm-embed :is(.extm-pill, .extm-cap, .extm-company-tag, .extm-credit-warning),
+body[data-workspace=dashboard] .dash .pill {
+  --tag-fill: var(--tag-neutral);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--tag-fill);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+#extm-embed .extm-pill.ok,
+body[data-workspace=dashboard] .dash .pill.green {
+  --tag-fill: var(--tag-success);
+}
+#extm-embed .extm-pill.info {
+  --tag-fill: var(--tag-info);
+}
+#extm-embed .extm-pill.warn,
+#extm-embed .extm-cap.missing,
+#extm-embed .extm-credit-warning,
+body[data-workspace=dashboard] .dash .pill.amber {
+  --tag-fill: var(--tag-warning);
+}
+#extm-embed .extm-pill.bad {
+  --tag-fill: var(--tag-danger);
+}
+#extm-embed .extm-cap.ok {
+  --tag-fill: var(--tag-credential);
+}
+#extm-embed .extm-pill.personal {
+  --tag-fill: var(--tag-personal);
+}
+#extm-embed .extm-pill.organization,
+#extm-embed .extm-company-tag {
+  --tag-fill: var(--tag-organization);
+}
+
+#extm-embed :is(.extm-success, .extm-credit-warning):hover {
+  background: var(--tag-fill);
+  border-color: transparent;
+  filter: brightness(.9);
+}
+#extm-embed :is(.extm-success, .extm-credit-warning):focus-visible {
+  outline: 2px solid var(--tag-info);
+  outline-offset: 3px;
+}
+#extm-embed .extm-credit-warning .okad-icon {
+  opacity: 1;
+}
