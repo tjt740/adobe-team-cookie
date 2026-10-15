@@ -100,3 +100,9 @@ html.dark #server-monitor-panel,html[data-theme=dark] #server-monitor-panel,body
 @media(max-width:1200px){.monitor-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:800px){.monitor-health{padding:18px}.monitor-health-overview{grid-template-columns:100px minmax(0,1fr);gap:16px}.monitor-score strong{font-size:48px}.monitor-cards{grid-template-columns:repeat(2,minmax(0,1fr))}#monitor-score-items{grid-template-columns:repeat(2,minmax(0,1fr))}.monitor-health-title h3{font-size:16px}.monitor-score>span{font-size:12px}}
 @media(max-width:480px){.monitor-health-overview{grid-template-columns:minmax(0,1fr);gap:12px}.monitor-cards{grid-template-columns:minmax(0,1fr)}.monitor-cards strong{font-size:30px}.monitor-cards article{padding:16px}.monitor-stats,.monitor-network-stats,.monitor-job-stats{grid-template-columns:minmax(0,1fr)}.monitor-stats article+article{padding-top:12px;border-top:1px solid var(--ws-line,#e3e9f1)}#monitor-score-items{grid-template-columns:minmax(0,1fr)}#monitor-details>div{grid-template-columns:minmax(0,1fr)}#monitor-details dd{text-align:left}.monitor-health{padding:16px}.monitor-actions{width:100%}.monitor-actions #monitor-updated{flex-basis:100%}.monitor-workspace :is(button,select,summary){min-height:36px}}
+
+.monitor-business{margin-top:20px;border-top:3px solid #3b82f6}
+.monitor-business-chart{min-width:0}
+#monitor-business-window{font-variant-numeric:tabular-nums;color:var(--text,#334155)}
+#monitor-business[data-outdated=true] .monitor-stats [data-tone]{--tone:var(--monitor-unknown);--tone-bg:var(--monitor-unknown-bg)}
+#monitor-business-coverage{padding:10px 12px;background:var(--monitor-info-bg);border-radius:7px}
