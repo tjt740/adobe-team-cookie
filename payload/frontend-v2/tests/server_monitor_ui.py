@@ -35,9 +35,21 @@ def snapshot():
                 stale=False, age_seconds=1, platform='Linux', container=True)
 
 
+def business_snapshot(minutes):
+    now = time.time()
+    rows = [dict(ts=now-(14-i)*60, used=(420+i*12)*1024**2, total=8*1024**3, percent=7) for i in range(15)]
+    return dict(status='ok', minutes=minutes, checked_at=now, refresh_seconds=30,
+        requests=dict(start=now-minutes*60, end=now, counts=dict(request_count_total=863, success_count=28,
+            error_count_total=835, business_limited_count=695), average_rps=2.9, bucket_seconds=60,
+            history=[dict(ts=now-(14-i)*60, count=30+i*4) for i in range(15)]),
+        memory=dict(current=rows[-1], stale=False, history=rows, samples=15, observed_from=rows[0]['ts'],
+            observed_to=rows[-1]['ts'], peak=588*1024**2, minimum=420*1024**2, average=504*1024**2,
+            change=168*1024**2))
+
+
 async def check(browser, prefix):
     context = await browser.new_context(viewport={'width':1440, 'height':1100})
-    state = {'fail':False, 'empty':False, 'missing':False, 'hits':0, 'ranges':[], 'cpu':38.2, 'stale':False}
+    state = {'fail':False, 'empty':False, 'missing':False, 'hits':0, 'ranges':[], 'cpu':38.2, 'stale':False, 'business':'ok', 'business_ranges':[]}
     errors, escaped = [], []
 
     async def serve(route):
@@ -66,6 +78,18 @@ async def check(browser, prefix):
                     data['current']['host']['cpu_percent'] = None
                     for row in data['history']:
                         row['cpu'] = row['app_cpu'] = None
+            elif path == '/api/monitor/user-requests':
+                minutes = int(parse_qs(parsed.query)['minutes'][0])
+                state['business_ranges'].append(minutes)
+                data = business_snapshot(minutes)
+                if state['business'] == 'zero':
+                    data['requests']['counts'] = dict(request_count_total=0, success_count=0, error_count_total=0, business_limited_count=0)
+                elif state['business'] == 'stale':
+                    data['memory']['stale'] = True
+                elif state['business'] == 'forbidden':
+                    return await route.fulfill(status=403, json={'detail':'Forbidden'})
+                elif state['business'] != 'ok':
+                    data = dict(status=state['business'], requests=None, memory={})
             elif path == '/api/settings':
                 data = dict(concurrency=2)
             elif path == '/api/adobe-accounts/jobs':
@@ -87,6 +111,24 @@ async def check(browser, prefix):
     await expect(page.locator('#monitor-cpu-chart svg')).to_have_count(1)
     await expect(page.locator('#monitor-app-detail')).to_contain_text('512 MiB')
     await expect(page.locator('#monitor-http')).to_contain_text('230 ms')
+    await expect(page.locator('#monitor-business-counts')).to_contain_text('863 次')
+    await expect(page.locator('#monitor-business-memory')).to_contain_text('588 MiB')
+    await page.locator('#monitor-business-range').select_option('30')
+    await expect(page.locator('#monitor-business-request-chart svg')).to_have_attribute('aria-label', '真实业务请求数量，最近 30 分钟')
+    assert state['business_ranges'][-1] == 30
+    await page.locator('#monitor-business-range').select_option('15')
+    await expect(page.locator('#monitor-business-window')).to_contain_text('最近 15 分钟')
+    for mode, expected in [('zero','0 次'), ('unavailable','—'), ('forbidden','—'), ('ok','863 次')]:
+        state['business'] = mode
+        await page.locator('#monitor-refresh').click()
+        await expect(page.locator('#monitor-business-counts article').first.locator('strong')).to_have_text(expected)
+    state['business'] = 'stale'
+    await page.locator('#monitor-refresh').click()
+    await expect(page.locator('#monitor-business-memory article').first.locator('strong')).to_have_text('—')
+    await expect(page.locator('#monitor-business-counts')).to_contain_text('863 次')
+    state['business'] = 'ok'
+    await page.locator('#monitor-refresh').click()
+    await expect(page.locator('#monitor-business-memory')).to_contain_text('588 MiB')
     await expect(page.locator('#monitor-health')).to_have_attribute('data-tone', 'good')
     await expect(page.locator('#monitor-score')).to_have_text('99')
     await expect(page.locator('.monitor-explanation')).to_have_count(6)
@@ -156,6 +198,9 @@ async def check(browser, prefix):
         overflow = await page.locator('#server-monitor-panel').evaluate('(el) => el.scrollWidth - el.clientWidth')
         assert overflow <= 1, (width, overflow)
         if prefix and width == 393:
+            await page.locator('#monitor-business').scroll_into_view_if_needed()
+            await page.screenshot(path=str(OUTPUT/'business-mobile.png'))
+            await page.locator('#monitor-health').scroll_into_view_if_needed()
             await page.screenshot(path=str(OUTPUT/'mobile.png'))
     await page.get_by_title("切换深色", exact=True).click()
     await page.wait_for_timeout(450)

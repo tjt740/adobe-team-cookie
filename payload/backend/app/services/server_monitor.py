@@ -303,6 +303,8 @@ class Monitor:
             self.history.clear()
         self.thread = threading.Thread(target=self._run, name="server-monitor", daemon=True)
         self.thread.start()
+        from app.services.sub2_monitor import SUB2_MONITOR
+        SUB2_MONITOR.start()
 
     def _run(self):
         while not self.stop_event.is_set():
@@ -329,6 +331,8 @@ class Monitor:
         self.stop_event.set()
         if self.thread:
             self.thread.join(timeout=2)
+        from app.services.sub2_monitor import SUB2_MONITOR
+        SUB2_MONITOR.stop()
 
     def snapshot(self, minutes):
         with self.lock:

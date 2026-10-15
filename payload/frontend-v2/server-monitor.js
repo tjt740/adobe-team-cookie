@@ -43,6 +43,7 @@
   var timer = null, minutes = 15, last = null;
   var colors = ['#3b82f6', '#a78bfa'];
   var disconnected = false;
+  var businessMinutes = 15, businessController = null, businessNext = 0, businessLast = null;
   function el(id) { return panel.querySelector('#monitor-' + id); }
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
@@ -75,7 +76,9 @@
     el(id + '-state').innerHTML = badge(state);
     el(id + '-bar').dataset.tone = state;
   }
-  function chart(id, title, rows, series, format, fixedMax) {
+  function chart(id, title, rows, series, format, fixedMax, options) {
+    options = options || {};
+    var chartMinutes = options.minutes || minutes;
     var host = el(id), values = rows.flatMap(function (row) { return series.map(function (s) { return row[s.key]; }); }).filter(function (v) { return v != null; });
     var legend = series.map(function (s, i) {
       var latest = rows.length ? rows[rows.length - 1][s.key] : null;
@@ -86,10 +89,10 @@
       return;
     }
     var max = fixedMax || Math.max(1, Math.max.apply(null, values) * 1.2);
-    var end = rows[rows.length - 1].ts, start = end - minutes * 60;
+    var end = options.end || rows[rows.length - 1].ts, start = options.start || end - chartMinutes * 60;
     var x = function (ts) { return 65 + (ts - start) / (end - start) * 615; };
     var y = function (value) { return 170 - Math.min(max, Math.max(0, value)) / max * 150; };
-    var svg = '<svg viewBox="0 0 700 205" role="img" aria-label="' + esc(title + '，最近 ' + minutes + ' 分钟') + '"><title>' + esc(title) + '</title>';
+    var svg = '<svg viewBox="0 0 700 205" role="img" aria-label="' + esc(title + '，最近 ' + chartMinutes + ' 分钟') + '"><title>' + esc(title) + '</title>';
     [0, .5, 1].forEach(function (fraction) {
       var level = max * fraction, yy = y(level);
       svg += '<line class="monitor-gridline" x1="65" x2="680" y1="' + yy + '" y2="' + yy + '"/><text x="55" y="' + (yy + 4) + '" text-anchor="end">' + esc(format(level)) + '</text>';
@@ -98,9 +101,9 @@
       var path = '', previous = null, dots = '';
       rows.forEach(function (row) {
         var value = row[s.key];
-        if (value == null) { previous = null; return; }
+        if (value == null || row.ts < start || row.ts > end) { previous = null; return; }
         var xx = x(row.ts).toFixed(1), yy = y(value).toFixed(1);
-        path += (previous != null && row.ts - previous <= 15 ? 'L' : 'M') + xx + ',' + yy;
+        path += (previous != null && row.ts - previous <= (options.maxGap || 15) ? 'L' : 'M') + xx + ',' + yy;
         dots += '<circle cx="' + xx + '" cy="' + yy + '" r="2" fill="' + colors[i] + '"><title>' + esc(time(row.ts) + ' · ' + s.label + ' ' + format(value)) + '</title></circle>';
         previous = row.ts;
       });
@@ -193,6 +196,58 @@
     el('details').innerHTML = rows.map(function (row) { return '<div><dt>' + esc(row[0]) + '</dt><dd>' + esc(row[1]) + '</dd><p>' + esc(row[2]) + '</p></div>'; }).join('');
   }
 
+  function renderBusiness(data) {
+    businessLast = data;
+    var request = data.requests, memory = data.memory || {}, current = memory.current;
+    var usable = data.status === 'ok' && request;
+    var status = {loading:'正在读取 Sub2 业务记录', unconfigured:'请先在 Sub2 设置中配置联动地址与管理员授权', unavailable:'Sub2 统计暂不可用，请检查联动授权和运维监控开关', stale:'统计已过期，请稍后刷新', forbidden:'仅管理员可查看全站业务统计', offline:'读取失败，请稍后刷新'};
+    el('business-status').textContent = paused ? '已暂停刷新' : usable ? '业务统计每 30 秒更新 · 内存约每分钟采样' : status[data.status] || '统计暂不可用';
+    el('business').dataset.outdated = String(!usable || paused);
+    var counts = usable ? request.counts : {};
+    el('business-window').textContent = usable ? '统计区间：' + time(request.start) + ' – ' + time(request.end) + '（最近 ' + businessMinutes + ' 分钟，按记录入库时间）' : '最近 ' + businessMinutes + ' 分钟 · 暂无有效统计，未按 0 次处理';
+    el('business-counts').innerHTML = metric('用户业务请求 · 已记录', number(counts.request_count_total, ' 次'), '成功 + 全部失败；平均 ' + number(usable ? request.average_rps : null, ' 次/秒') + '。请求次数不是独立用户数。') +
+      metric('成功请求', number(counts.success_count, ' 次'), '已写入用量日志的真实成功请求；未使用模拟 Token 数量推算。', usable && counts.success_count > 0 ? 'good' : 'info') +
+      metric('业务限制 / 限流', number(counts.business_limited_count, ' 次'), '属于失败请求，包括服务记录的容量、并发、额度等业务限制；不能全部认定为内存不足。', usable && counts.business_limited_count > 0 ? 'warn' : 'info') +
+      metric('其他失败请求', number(usable ? counts.error_count_total - counts.business_limited_count : null, ' 次'), '失败总数 ' + number(counts.error_count_total, ' 次') + '，扣除左侧业务限制；包括已有记录中的鉴权、上游和服务错误。', usable && counts.error_count_total > counts.business_limited_count ? 'bad' : 'info');
+    var memoryFresh = current && !memory.stale && usable;
+    var change = memory.change;
+    var signed = typeof change === 'number' && Number.isFinite(change) ? (change > 0 ? '+' : change < 0 ? '−' : '') + bytes(Math.abs(change)) : '—';
+    el('business-memory').innerHTML = metric('Sub2 上报内存', memoryFresh ? bytes(current.used) : '—', current ? '采样于 ' + time(current.ts) + '；用量 / 上报总量 ' + bytes(current.used) + ' / ' + bytes(current.total) + '（' + percent(current.percent) + '）' + (memoryFresh ? '。' : '，当前不可确认。') : '等待 Sub2 内存采样；不使用容量预留预算代替实测。', memoryFresh ? tone(current.percent) : 'unknown') +
+      metric('区间采样峰值', usable ? bytes(memory.peak) : '—', '已获得内存样本中的最大值；约 1 分钟采样可能漏过短时尖峰，不等于该区间真实瞬时峰值。') +
+      metric('区间样本平均', usable ? bytes(memory.average) : '—', '已获得内存样本的算术平均；不是每个请求的平均占用。') +
+      metric('首末样本净变化', usable ? signed : '—', '末次减首次；包含请求、后台任务、缓存和回收的共同变化，不能作为请求独占内存。');
+    el('business-coverage').textContent = memory.samples ? '内存样本覆盖：' + time(memory.observed_from) + ' – ' + time(memory.observed_to) + '，共 ' + memory.samples + ' 个样本。仅展示实际采集部分，缺口不补零；Okad 重启后重新积累，最多保留 1 小时。' : '尚未积累内存历史；启动后开始采集，不能回填发布前的占用。';
+    var options = {minutes:businessMinutes, start:usable ? request.start : Date.now()/1000-businessMinutes*60, end:usable ? request.end : Date.now()/1000, maxGap:90};
+    chart('business-request-chart', '真实业务请求数量', usable ? request.history : [], [{key:'count',label:'已记录请求'}], function(v) { return number(v, ' 次'); }, null, Object.assign({}, options, {maxGap:(request && request.bucket_seconds || 60)*1.5}));
+    el('business-bucket').textContent = usable && request.bucket_seconds ? '每点汇总 ' + request.bucket_seconds / 60 + ' 分钟；首尾可能为部分区间。入库延迟可能使曲线与总数有短暂差异。' : '等待请求记录';
+    chart('business-memory-chart', '同期 Sub2 内存用量', usable ? memory.history || [] : [], [{key:'used',label:'实测内存'}], bytes, null, options);
+  }
+  async function refreshBusiness(force) {
+    if (!active || businessController || document.hidden || !force && Date.now() < businessNext) return;
+    var request = new AbortController(), current = generation;
+    businessController = request;
+    var timeout = setTimeout(function () { request.abort(); }, 12000);
+    try {
+      var response = await fetch(window.OKAD_ROUTE.href('/api/monitor/user-requests?minutes=' + businessMinutes), {
+        headers:{Authorization:'Bearer ' + localStorage.getItem('okad_token')}, signal:request.signal, cache:'no-store'
+      });
+      var data = response.ok ? await response.json() : {status:response.status === 403 ? 'forbidden' : 'offline'};
+      if (active && current === generation && businessController === request) {
+        renderBusiness(data);
+        businessNext = Date.now() + (data.status === 'loading' ? 5000 : 30000);
+      }
+    } catch (error) {
+      if (active && current === generation && businessController === request) { renderBusiness({status:'offline'}); businessNext = Date.now() + 30000; }
+    } finally {
+      clearTimeout(timeout);
+      if (businessController === request) businessController = null;
+    }
+  }
+  function stopBusiness() {
+    if (businessController) { businessController.abort(); businessController = null; }
+    businessNext = 0;
+  }
+
   function schedule() {
     clearTimeout(timer);
     if (active && !paused && !document.hidden) timer = setTimeout(refresh, 5000);
@@ -200,6 +255,7 @@
   async function refresh() {
     if (!active || controller || document.hidden) return;
     clearTimeout(timer);
+    refreshBusiness(false);
     var current = generation, request = new AbortController();
     controller = request;
     el('refresh').disabled = true;
@@ -243,6 +299,7 @@
       '<section class="monitor-health" id="monitor-health" data-tone="unknown" aria-label="服务器资源健康评分"><div class="monitor-health-overview"><div class="monitor-score"><strong id="monitor-score">—</strong><span>/ 100</span></div><div><div class="monitor-health-title"><h3>服务器资源健康值</h3><span id="monitor-health-state"></span></div><p id="monitor-health-reason">等待资源采样。</p><p class="monitor-scope-note">范围：整机资源 + Okad 容器资源。分数是压力参考；Sub2 容器是否健康、Adobe 账号是否可用需查看各自监控。</p><a href="/admin/ops" target="_blank" rel="noopener">查看 Sub2 并发、排队与业务错误 ↗</a></div></div>' +
       '<div class="monitor-color-key">' + badge('good','80–100 分 · 正常') + badge('warn','60–79 分 · 关注') + badge('bad','0–59 分 · 高压') + badge('unknown','缺失 / 过期 · 暂不评分') + '</div>' +
       '<details class="monitor-score-method"><summary>评分依据与各项得分</summary><p>按下方权重加权，任一资源到达关注阈值，总分最高 79；任一资源到达高压阈值，总分最高 59。单项评分随用量升高而降低：低于关注阈值的 75% 为 100 分，之后降至 80；关注区间为 79–60，高压区间为 59–0。CPU、内存、磁盘采用 80% / 90%；I/O 等待采用 10% / 20%。这些是本看板的参考规则，不代表服务可用率。</p><ul id="monitor-score-items"></ul><p id="monitor-health-excluded"></p><p>请求速率、耗时、4xx/5xx、任务数、负载、网络和历史 OOM 单独展示，不参与资源评分；没有请求不等于业务已验证正常。</p></details></section>' +
+      '<section id="monitor-business" class="monitor-box monitor-business" aria-label="用户请求与 Sub2 内存"><div class="monitor-section-heading"><div><h3>用户请求与 Sub2 内存</h3><p id="monitor-business-status" class="monitor-section-note">正在读取 Sub2 业务记录</p></div><label>业务时间范围 <select id="monitor-business-range" aria-label="用户请求时间范围"><option value="5">最近 5 分钟</option><option value="15" selected>最近 15 分钟</option><option value="30">最近 30 分钟</option><option value="60">最近 1 小时</option></select></label></div><p id="monitor-business-window"></p><div id="monitor-business-counts" class="monitor-stats"></div><p>范围：Sub2 全平台客户业务的已入库记录，包含失败和业务限流。正在执行、尚未入库、未记录的入口拒绝不计入；管理页面、健康检查和本页轮询不计入，客户端重试会形成新的请求记录。</p><div id="monitor-business-memory" class="monitor-stats"></div><p>内存口径：Sub2 运维采集器优先上报容器用量（含缓存）及容器上限，无有效容器上限时回退宿主机；接口未提供来源标签。它包含后台任务，无法精确归因到每个用户请求，也不代表本区间产生的累计分配量。</p><p id="monitor-business-coverage"></p><div class="monitor-charts"><section class="monitor-business-chart"><h3>真实业务请求数量</h3><p id="monitor-business-bucket" class="monitor-section-note"></p><div id="monitor-business-request-chart"></div></section><section class="monitor-business-chart"><h3>同期 Sub2 内存用量</h3><p class="monitor-section-note">与左侧使用相同时间轴；断点表示未采集，变化不直接证明因果关系。</p><div id="monitor-business-memory-chart"></div></section></div></section>' +
       '<div class="monitor-section-heading"><h3>资源使用与余量</h3><span class="monitor-section-note">每个指标均附口径与判断说明</span></div>' +
       '<div class="monitor-cards">' + cards.map(function (item) { return '<article id="monitor-' + item[0] + '-card" data-tone="unknown"><div class="monitor-metric-heading"><span>' + item[1] + '</span><span id="monitor-' + item[0] + '-state">' + badge('unknown') + '</span></div><strong id="monitor-' + item[0] + '-value">—</strong><div class="monitor-track"><i id="monitor-' + item[0] + '-bar"></i></div><small id="monitor-' + item[0] + '-detail">等待采样</small><p class="monitor-explanation">' + item[2] + '</p></article>'; }).join('') + '</div>' +
       '<div id="monitor-alerts"></div><div class="monitor-section-heading"><h3>资源趋势</h3><label>时间范围 <select id="monitor-range" aria-label="趋势时间范围"><option value="5">最近 5 分钟</option><option value="15" selected>最近 15 分钟</option><option value="60">最近 1 小时</option></select></label></div>' +
@@ -251,23 +308,29 @@
         return '<section class="monitor-box"><h3>' + c[1] + '</h3><p>' + c[2] + '</p><div id="monitor-' + c[0] + '"><div class="monitor-chart-empty">等待采样</div></div></section>';
       }).join('') + '</div>' +
       '<section class="monitor-box"><h3>当前网络速率</h3><div class="monitor-stats monitor-network-stats" id="monitor-network"></div></section>' +
-      '<section class="monitor-box monitor-request-box"><div class="monitor-section-heading"><h3>Okad 应用请求 · 最近 60 秒</h3><a data-route href="' + window.OKAD_ROUTE.href('/logs') + '">查看日志 →</a></div><div class="monitor-stats" id="monitor-http"></div><p>仅统计当前 Okad 进程的 API，排除健康检查和监控轮询。Sub2 出图请求请查看 Sub2 运维监控。</p></section>' +
+      '<section class="monitor-box monitor-request-box"><div class="monitor-section-heading"><h3>Okad 应用请求 · 最近 60 秒</h3><a data-route href="' + window.OKAD_ROUTE.href('/logs') + '">查看日志 →</a></div><div class="monitor-stats" id="monitor-http"></div><p>仅统计当前 Okad 进程的 API，排除健康检查和监控轮询。Sub2 客户业务请求见上方独立统计。</p></section>' +
       '<div class="monitor-bottom"><section class="monitor-box"><div class="monitor-section-heading"><h3>后台任务</h3><a data-route href="' + window.OKAD_ROUTE.href('/jobs') + '">任务中心 →</a></div><div class="monitor-stats monitor-job-stats" id="monitor-jobs"></div><p>当前进程任务管理器中的任务，不含联动中心的独立恢复队列；任务数不等于正在登录的账号数。</p></section>' +
       '<section class="monitor-box"><h3>运行信息与参数说明</h3><dl id="monitor-details"></dl></section></div>' +
       '<details class="monitor-help"><summary>采集范围与刷新说明</summary><p>整机指标来自 Linux 内核可见的主机计数；应用指标来自 Okad 当前资源组，不能用于推断 Sub2 容器上限。网络覆盖当前网络命名空间，磁盘对应应用数据目录所在文件系统。</p><p>采集每 5 秒进行，最多保留 1 小时。暂停刷新、采样过期或读取失败时暂不显示健康分，旧指标仍保留供对照；缺失值显示 —。没有请求时耗时及错误比例没有样本。</p><p>非 Linux 环境可能缺少部分资源指标。默认单进程部署，多 worker 的请求和任务统计仅代表返回数据的进程。</p></details>' +
       '<p class="monitor-footnote">只读监控 · 不会触发登录、推送或外部健康探测</p></div>';
     document.body.appendChild(panel);
-    el('refresh').onclick = refresh;
+    el('refresh').onclick = function () { businessNext = 0; refresh(); };
+    el('business-range').onchange = function () {
+      businessMinutes = Number(el('business-range').value);
+      stopBusiness(); renderBusiness({status:'loading'}); refreshBusiness(true);
+    };
     el('pause').onclick = function () {
       paused = !paused;
       el('pause').textContent = paused ? '继续刷新' : '暂停刷新';
       clearTimeout(timer);
       if (last) render(last);
+      stopBusiness();
+      if (businessLast) renderBusiness(businessLast);
       if (!paused) refresh();
     };
     el('range').onchange = function () {
       minutes = Number(el('range').value);
-      generation++;
+      generation++; stopBusiness();
       if (controller) { controller.abort(); controller = null; }
       refresh();
     };
@@ -284,12 +347,12 @@
     panel.style.left = rect.left + 'px'; panel.style.top = rect.top + 'px';
   }
   function open() {
-    build(); active = true; generation++; panel.hidden = false;
+    build(); businessNext = 0; active = true; generation++; panel.hidden = false;
     el('notice').textContent = ''; el('status').textContent = '正在连接'; el('status').dataset.tone = 'unknown';
     layout(); refresh();
   }
   function close() {
-    active = false; generation++; clearTimeout(timer);
+    active = false; generation++; clearTimeout(timer); stopBusiness();
     if (controller) { controller.abort(); controller = null; }
     if (panel) panel.hidden = true;
   }
@@ -300,7 +363,7 @@
     if (!active) return;
     clearTimeout(timer);
     if (document.hidden) {
-      generation++;
+      generation++; stopBusiness();
       if (controller) { controller.abort(); controller = null; }
     } else if (!paused) refresh();
   });
