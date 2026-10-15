@@ -65,8 +65,10 @@ export function mountFilters(host, actions, initial) {
         errors.value.credits?h('p',{id:'extf-credit-error',class:'extf-error',role:'alert'},errors.value.credits):null,
         errors.value.dates?h('p',{id:'extf-date-error',class:'extf-error',role:'alert'},errors.value.dates):null,
         h('div',{class:'extf-actions'},[
-          h(Button,{id:'extm-refresh',type:'primary',loading:refreshing.value || loading.value,disabled:refreshing.value || loading.value,'aria-busy':String(refreshing.value || loading.value),onClick:refresh},{default:()=> '搜索',icon:()=>h('span',{innerHTML:window.OKAD_ICONS.svg('search',16)})}),
-          h(Button,{id:'extm-reset-filters',onClick:reset},()=> '重置'),
+          h('div',{class:'extf-action-buttons'},[
+            h(Button,{id:'extm-refresh',type:'primary',loading:refreshing.value || loading.value,disabled:refreshing.value || loading.value,'aria-busy':String(refreshing.value || loading.value),onClick:refresh},{default:()=> '搜索',icon:()=>h('span',{innerHTML:window.OKAD_ICONS.svg('search',16)})}),
+            h(Button,{id:'extm-reset-filters',onClick:reset},()=> '重置')
+          ]),
           h('span',{id:'extf-state-help',class:'extf-state-help'},f.states.length?'已选 '+f.states.length+' 个状态，满足任一即可':'账号状态支持多选'),
           loading.value?h('span',{class:'extf-status',role:'status','aria-live':'polite'},[h(Spin,{size:14}),'正在搜索账号…']):null
         ])

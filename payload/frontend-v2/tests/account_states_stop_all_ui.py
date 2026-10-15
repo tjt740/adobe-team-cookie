@@ -107,6 +107,8 @@ async def main():
                 for selector in ['#extm-stop-all','#extm-refresh','#extm-reset-filters','#extm-f-states']:
                     box=await page.locator(selector).bounding_box()
                     assert box and box['x']>=-1 and box['x']+box['width']<=width+1,(width,selector,box)
+                alignment=await page.locator('.extf-actions').evaluate('e=>({right:e.getBoundingClientRect().right,buttons:e.querySelector(".extf-action-buttons").getBoundingClientRect().right})')
+                assert abs(alignment['right']-alignment['buttons'])<=1,(width,alignment)
                 if not prefix:await page.screenshot(path=str(OUT/f'states-{width}.png'))
             await page.evaluate("localStorage.setItem('okad-theme','dark')")
             await page.reload();await expect(page.locator('#extm-stop-all')).to_be_visible()

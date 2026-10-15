@@ -8,7 +8,7 @@
   var filtersView = null, filterValues = null;
   var importView = null;
   var importModule = new URL('external-members-import.js?v=20261015-compact-drawer', document.currentScript.src).href;
-  var filtersModule = new URL('external-members-filters.js?v=20261016-account-states', document.currentScript.src).href;
+  var filtersModule = new URL('external-members-filters.js?v=20261016-right-actions', document.currentScript.src).href;
   var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
