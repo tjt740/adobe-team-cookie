@@ -37,7 +37,7 @@ def snapshot():
 
 async def check(browser, prefix):
     context = await browser.new_context(viewport={'width':1440, 'height':1100})
-    state = {'fail':False, 'empty':False, 'missing':False, 'hits':0, 'ranges':[]}
+    state = {'fail':False, 'empty':False, 'missing':False, 'hits':0, 'ranges':[], 'cpu':38.2, 'stale':False}
     errors, escaped = [], []
 
     async def serve(route):
@@ -58,6 +58,8 @@ async def check(browser, prefix):
                 if state['fail']:
                     return await route.fulfill(status=503, json={'detail':'Unavailable'})
                 data = snapshot()
+                data['current']['host']['cpu_percent'] = state['cpu']
+                data['stale'] = state['stale']
                 if state['empty']:
                     data.update(current=None, history=[], stale=True)
                 if state['missing']:
@@ -85,6 +87,25 @@ async def check(browser, prefix):
     await expect(page.locator('#monitor-cpu-chart svg')).to_have_count(1)
     await expect(page.locator('#monitor-app-detail')).to_contain_text('512 MiB')
     await expect(page.locator('#monitor-http')).to_contain_text('230 ms')
+    await expect(page.locator('#monitor-health')).to_have_attribute('data-tone', 'good')
+    await expect(page.locator('#monitor-score')).to_have_text('99')
+    await expect(page.locator('.monitor-explanation')).to_have_count(6)
+    await expect(page.locator('#monitor-details p')).to_have_count(8)
+    for cpu, level in [(80, 'warn'), (90, 'bad'), (38.2, 'good')]:
+        state['cpu'] = cpu
+        await page.locator('#monitor-refresh').click()
+        await expect(page.locator('#monitor-cpu-value')).to_have_text(str(cpu) + '%')
+        await expect(page.locator('#monitor-health')).to_have_attribute('data-tone', level)
+        await expect(page.locator('#monitor-cpu-card')).to_have_attribute('data-tone', level)
+        colors = await page.evaluate('''() => ['#monitor-cpu-value','#monitor-cpu-state .monitor-badge','#monitor-cpu-bar'].map((s,i) => getComputedStyle(document.querySelector(s))[i===2?'backgroundColor':'color'])''')
+        assert len(set(colors)) == 1, colors
+    state['stale'] = True
+    await page.locator('#monitor-refresh').click()
+    await expect(page.locator('#monitor-score')).to_have_text('—')
+    await expect(page.locator('#monitor-health')).to_have_attribute('data-tone','unknown')
+    state['stale'] = False
+    await page.locator('#monitor-refresh').click()
+    await expect(page.locator('#monitor-score')).to_have_text('99')
     await page.locator('#monitor-range').select_option('60')
     await expect(page.locator('#monitor-cpu-chart svg')).to_have_attribute('aria-label', 'CPU 使用率，最近 60 分钟')
     assert state['ranges'][-1] == '60'
@@ -98,10 +119,12 @@ async def check(browser, prefix):
     await page.wait_for_timeout(5300)
     assert state['hits'] == before
     await expect(page.locator('#monitor-status')).to_have_text('已暂停刷新')
+    await expect(page.locator('#monitor-score')).to_have_text('—')
     state['fail'] = True
     await page.get_by_role('button', name='立即刷新', exact=True).click()
     await expect(page.locator('#monitor-notice')).to_contain_text('503')
     await expect(page.locator('#monitor-status')).to_have_text('连接中断')
+    await expect(page.locator('#monitor-score')).to_have_text('—')
     await expect(page.locator('#monitor-cpu-value')).to_have_text('38.2%')
     state['fail'], state['missing'] = False, True
     await page.get_by_role('button', name='立即刷新', exact=True).click()
@@ -121,18 +144,34 @@ async def check(browser, prefix):
     await page.reload()
     await expect(page.locator('#monitor-cpu-value')).to_have_text('38.2%')
     await page.set_viewport_size({'width':780, 'height':1050})
-    await page.wait_for_timeout(100)
+    await page.wait_for_timeout(450)
     overflow = await page.locator('#server-monitor-panel').evaluate('(el) => el.scrollWidth - el.clientWidth')
     assert overflow <= 1, overflow
     if prefix:
         await page.screenshot(path=str(OUTPUT/'compact.png'), full_page=True)
+    await page.locator('.monitor-score-method summary').click()
+    for width in [320,375,393,430,780,1440]:
+        await page.set_viewport_size({'width':width,'height':900})
+        await page.wait_for_timeout(450)
+        overflow = await page.locator('#server-monitor-panel').evaluate('(el) => el.scrollWidth - el.clientWidth')
+        assert overflow <= 1, (width, overflow)
+        if prefix and width == 393:
+            await page.screenshot(path=str(OUTPUT/'mobile.png'))
+    await page.get_by_title("切换深色", exact=True).click()
+    await page.wait_for_timeout(450)
+    bounds = await page.evaluate("() => ({panel:document.querySelector('#server-monitor-panel').getBoundingClientRect().left,sidebar:document.querySelector('.n-layout-sider').getBoundingClientRect().right})")
+    assert abs(bounds['panel'] - bounds['sidebar']) <= 1, bounds
+    colors = await page.evaluate('''() => ['#monitor-cpu-value','#monitor-cpu-state .monitor-badge','#monitor-cpu-bar'].map((s,i) => getComputedStyle(document.querySelector(s))[i===2?'backgroundColor':'color'])''')
+    assert len(set(colors)) == 1, colors
+    if prefix:
+        await page.screenshot(path=str(OUTPUT/'dark.png'))
     state['empty'] = True
     await page.reload()
     await expect(page.locator('#monitor-status')).to_have_text('等待第一条采样')
     assert not escaped, escaped
     assert not errors, errors
     await context.close()
-    print('PASS', prefix or '/', 'monitor: data, charts, ranges, pause, errors, gaps, navigation, reload, responsive layout', flush=True)
+    print('PASS', prefix or '/', 'monitor: data, charts, ranges, pause, errors, gaps, navigation, reload, responsive layout, score boundaries, semantic colors, stale score, dark theme', flush=True)
 
 
 async def main():
