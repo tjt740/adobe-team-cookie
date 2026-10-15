@@ -492,6 +492,41 @@ class JobManager:
             )
         return bool(res.rowcount)
 
+    def cancel_all(self, job_type: str) -> dict:
+        """Snapshot every active task, including paused and durable orphan tasks."""
+        self._ensure_storage()
+        with engine.begin() as conn:
+            ids = {int(row[0]) for row in conn.execute(text(
+                "SELECT id FROM job_records WHERE deleted=0 AND type=:type "
+                "AND status IN ('running','pausing','paused','cancelling')"
+            ), {"type": job_type})}
+        with self._lock:
+            jobs = {jid: job for jid, job in self._jobs.items() if job.type == job_type}
+            ids.update(jid for jid, job in jobs.items() if job.status in ACTIVE_STATUSES)
+        requested = stopping = skipped = 0
+        failed = []
+        for jid in sorted(ids):
+            if jid in jobs and jobs[jid].cancelled:
+                stopping += 1
+                continue
+            try:
+                ok, _ = self.cancel(jid)
+            except Exception:
+                # Continue signalling other tasks even if one storage write fails.
+                failed.append(jid)
+                continue
+            if ok:
+                requested += 1
+            else:
+                skipped += 1  # It may have completed after the snapshot.
+        message = (f"已请求终止 {requested} 个外部子号登录任务，取消后续排队账号；"
+                   "当前请求退出后结束，已完成结果和日志保留") if requested else (
+                   f"{stopping} 个任务正在终止，请等待当前请求退出" if stopping else "当前没有需要终止的外部子号登录任务")
+        if failed:
+            message = (message if requested or stopping else "终止请求未全部完成") + f"；{len(failed)} 个任务未确认终止，请重试"
+        return {"requested": requested, "already_stopping": stopping, "skipped": skipped,
+                "failed": len(failed), "message": message}
+
     def cancel(self, job_id: int) -> tuple[bool, str]:
         job = self._jobs.get(job_id)
         if not job:

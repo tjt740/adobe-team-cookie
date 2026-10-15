@@ -8,8 +8,8 @@
 .extf-range>span{font-size:12px;color:var(--ws-muted,#7d8797)}
 .extf-credit{display:grid;grid-template-columns:116px minmax(0,1fr);gap:8px}
 #extm-filters :is(.n-input,.n-input-number,.n-select){width:100%;min-width:0}
-.extf-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:10px}
-.extf-status{margin-right:auto;font-size:12px;color:var(--ws-muted,#7d8797)}
+.extf-actions{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:10px;margin-top:12px}
+.extf-status{display:inline-flex;align-items:center;gap:7px;margin-left:auto;font-size:12px;color:var(--ws-muted,#7d8797)}
 .extf-error{font-size:12px;color:#d03050;margin:10px 0 0}
 @container (max-width:1080px){.extf-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.extf-credit{grid-template-columns:104px minmax(0,1fr)}}
 @container (max-width:720px){.extf-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -19,3 +19,20 @@ html.dark #extm-filters input[type=date]{color-scheme:dark}
 
 .extf-status:empty{display:none}
 @container (max-width:360px){.extf-grid{grid-template-columns:minmax(0,1fr)}.extf-wide{grid-column:auto}}
+
+.extf-state-help{font-size:12px;color:var(--ws-muted,#7d8797)}
+#extm-f-states .n-base-selection-tags{flex-wrap:nowrap}
+#extm-f-states .n-tag{max-width:calc(100% - 30px)}
+#extm-f-states .n-tag__content{overflow:hidden;text-overflow:ellipsis}
+.extm-results{position:relative;min-height:100px}
+.extm-results[aria-busy=true]{min-height:180px}
+.extm-results[aria-busy=true] .extm-tw{pointer-events:none}
+.extm-load-overlay{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;gap:10px;min-height:160px;background:rgba(255,255,255,.78);color:var(--ws-text,#333639);font-size:13px;backdrop-filter:blur(1px)}
+.extm-load-overlay[hidden]{display:none}
+.extm-load-overlay .extm-spin{width:22px;height:22px;color:#1890ff}
+html.dark .extm-load-overlay{background:rgba(24,29,38,.82)}
+#extm-embed .extm-btn.stop-all{background:#d03050;border-color:#d03050;color:#fff}
+#extm-embed .extm-btn.stop-all:hover:not(:disabled){background:#de576d;border-color:#de576d}
+#extm-embed .extm-btn.stop-all:focus-visible{outline-color:#d03050}
+#extm-open-import{margin-left:auto}
+@media(max-width:800px){#extm-stop-all{min-height:44px}.extf-actions .n-button{min-height:44px}.extf-status{flex-basis:100%;margin-left:0}.extf-state-help{overflow-wrap:anywhere}}
