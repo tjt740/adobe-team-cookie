@@ -27,3 +27,14 @@ async def select_value(page, selector, value):
 
 async def expect_select(page, selector, value):
     await expect(page.locator(selector).locator('.n-base-selection-label')).to_have_text(label(selector, value))
+
+
+async def set_import_dates(page, start=None, end=None):
+    dialog = page.locator('#extm-import-date-dialog')
+    if not await dialog.is_visible():
+        await page.locator('#extm-f-import-range').click()
+    if start is not None:
+        await dialog.locator('#extm-f-import-from').fill(start)
+    if end is not None:
+        await dialog.locator('#extm-f-import-to').fill(end)
+    await dialog.locator('#extm-date-apply').click()

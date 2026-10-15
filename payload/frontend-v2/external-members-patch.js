@@ -8,8 +8,8 @@
   var filtersView = null, filterValues = null;
   var importView = null;
   var importModule = new URL('external-members-import.js?v=20261015-compact-drawer', document.currentScript.src).href;
-  var filtersModule = new URL('external-members-filters.js?v=20261016-right-actions', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var filtersModule = new URL('external-members-filters.js?v=20261016-filter-repair', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 500, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -167,8 +167,9 @@
     document.body.appendChild(dialog); dialog.showModal();
   }
   function creditCell(row) {
-    var a = row.credits_available == null ? "—" : Math.round(row.credits_available);
-    var t = row.credits_total == null ? "—" : Math.round(row.credits_total);
+    function amount(value) { return value == null || !Number.isFinite(Number(value)) ? "—" : String(Number(value)); }
+    var a = amount(row.credits_available);
+    var t = amount(row.credits_total);
     return '<span class="cr"><b>' + a + "</b> / " + t + "</span>";
   }
 
