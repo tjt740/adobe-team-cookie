@@ -12,7 +12,7 @@ services:
       DATABASE_URL: sqlite:////app/data/app.db
     volumes:
       - ./data:/app/data
-    mem_limit: 512m
+    mem_limit: 2g
     shm_size: 128m
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9500/api/health', timeout=5)"]

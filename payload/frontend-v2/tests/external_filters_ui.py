@@ -6,13 +6,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import async_playwright, expect
-from external_controls import select_value, expect_select
+from external_controls import select_value, expect_select, set_import_dates
 
 FRONT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(__file__).resolve().parents[3] / '.local'
 
 
 async def main():
+    OUTPUT.mkdir(parents=True,exist_ok=True)
     rows = [dict(id=i, email=f'filter{i:03d}@example.test', login_status='ok',
                  has_cookie=True, subscription_ok=True, credits_total=4000,
                  credits_available=None if i % 5 == 0 else (i - 1) * 25,
@@ -77,6 +78,9 @@ async def main():
             await page.route('**/*', serve)
             await page.add_init_script("localStorage.setItem('okad_token','synthetic-filter-test')")
             await page.goto('http://okad.test' + prefix + '/external-members')
+            await expect(page.locator('tr[data-member]')).to_have_count(261)
+            await expect(page.locator('#extm-page-size')).to_have_value('500')
+            await page.locator('#extm-page-size').select_option('200')
             await expect(page.locator('tr[data-member]')).to_have_count(200)
             await page.locator('#extm-next').click()
             await expect(page.locator('#extm-page-info')).to_have_text('第 2 / 2 页')
@@ -85,8 +89,8 @@ async def main():
             await expect(page.locator('#extm-total')).to_have_text('174')
             await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 1 页')
             await expect(page.locator('#extm-selc')).to_have_text('0')
-            await page.locator('#extm-f-import-from').fill('2026-10-12')
-            await page.locator('#extm-f-import-to').fill('2026-10-12')
+            await set_import_dates(page, start='2026-10-12')
+            await set_import_dates(page, end='2026-10-12')
             await expect(page.locator('#extm-total')).to_have_text('87')
             expected = dict(in_stock='false', imported_from='2026-10-11T16:00:00.000Z', imported_before='2026-10-12T16:00:00.000Z')
             assert all(calls[-1][key] == value for key, value in expected.items()), calls[-1]
@@ -103,17 +107,19 @@ async def main():
             assert actions[-1][1] == dict(expected, in_stock=False, login_status=None, subscription_ok=None, keyword=''), actions[-1]
 
             # Reject backwards ranges before sending them to the API.
-            await page.locator('#extm-f-import-to').fill('2026-10-11')
-            await expect(page.locator('#extf-date-error')).to_have_text('结束日期不能早于开始日期')
+            await set_import_dates(page, end='2026-10-11')
+            await expect(page.locator('#extm-import-date-dialog').get_by_role('alert')).to_have_text('结束日期不能早于开始日期')
             assert all(calls[-1][key] == value for key, value in expected.items())
-            await page.locator('#extm-f-import-to').fill('2026-10-12')
+            await set_import_dates(page, end='2026-10-12')
             await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 2 页')
 
             # Both installed paths and narrow layouts keep controls inside the viewport.
             for width in (1440, 390):
                 await page.set_viewport_size({'width': width, 'height': 1000})
+                toggle=page.locator('#extm-filters .ws-filter-toggle')
+                if await toggle.is_visible() and await toggle.get_attribute('aria-expanded')=='false':await toggle.click()
                 await page.locator('#extm-f-stock').scroll_into_view_if_needed()
-                for selector in ('#extm-f-stock', '#extm-f-import-from', '#extm-f-import-to', '#extm-reset-filters',
+                for selector in ('#extm-f-stock', '#extm-f-import-range', '#extm-reset-filters',
                                  '#extm-f-credits-field', '#extm-f-credits-min', '#extm-f-credits-max',
                                  '#extm-f-profile', '#extm-f-company'):
                     box = await page.locator(selector).bounding_box()
@@ -141,8 +147,8 @@ async def main():
             await select_value(page, '#extm-f-profile', 'organization')
             await select_value(page, '#extm-f-company', 'true')
             await select_value(page, '#extm-f-stock', 'false')
-            await page.locator('#extm-f-import-from').fill('2026-10-12')
-            await page.locator('#extm-f-import-to').fill('2026-10-12')
+            await set_import_dates(page, start='2026-10-12')
+            await set_import_dates(page, end='2026-10-12')
             combined = dict(expected, credits_field='available', credits_min='1000', credits_max='4000',
                             current_profile='organization', is_company='true')
             expected_rows = matches(combined)

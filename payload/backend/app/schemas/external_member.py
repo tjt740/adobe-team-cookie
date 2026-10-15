@@ -1,10 +1,12 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.account_profile import AccountProfile, ProfilePreference
+
+AccountState = Annotated[str, StringConstraints(pattern=r"^(ok|never|login_failed|account_disabled|rate_limited|internal|has_cookie|no_cookie|has_password|no_password|task_(pending|running|otp|done|failed|interrupted|cancelled|paused|pausing|cancelling)|sub2_(error|other|recovered|unknown|[45][0-9]{2}))$")]
 
 OtpMode = Literal["auto", "manual"]
 CreditsField = Literal["available", "total"]
@@ -85,6 +87,7 @@ class ExternalBatchProfilePreferenceUpdate(ExternalProfilePreferenceUpdate):
 
 
 class ExternalLoginFilter(BaseModel):
+    account_states: list[AccountState] = Field(default_factory=list, max_length=32)
     login_status: str | None = None
     subscription_ok: bool | None = None
     keyword: str = ""
