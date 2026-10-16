@@ -100,8 +100,9 @@
   function api(path, opts) {
     opts = opts || {};
     var token = localStorage.getItem(TK) || "";
-    var ctrl = new AbortController();
-    var to = setTimeout(function () { ctrl.abort(); }, opts.timeout || 30000);
+    var ctrl = opts.controller || new AbortController();
+    var timedOut = false;
+    var to = setTimeout(function () { timedOut = true; ctrl.abort(); }, opts.timeout || 30000);
     return fetch((opts.base || "/api/external") + path, {
       method: opts.method || "GET", signal: ctrl.signal,
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
@@ -115,7 +116,7 @@
         return d;
       });
     }).catch(function (e) {
-      if (e.name === "AbortError") throw new Error("请求超时(" + Math.round((opts.timeout || 30000) / 1000) + "s)");
+      if (e.name === "AbortError" && timedOut) throw new Error("请求超时(" + Math.round((opts.timeout || 30000) / 1000) + "s)");
       throw e;
     }).finally(function () { clearTimeout(to); });
   }
@@ -370,10 +371,12 @@
     var body = el("extm-tbody"); if (!body) return Promise.resolve();
     if (st.profileSaving.size || st.noteSaving || (silent && st.loadingSeq)) return Promise.resolve();
     var seq = ++st.loadSeq;
+    if (st.loadController) st.loadController.abort();
+    var controller = st.loadController = new AbortController();
     if (!silent) st.loadingSeq = seq;
     renderPagination();
     if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty" aria-hidden="true"></td></tr>';
-    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
+    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&"), {controller:controller}).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.loadError = "";
       st.total = d.total != null ? d.total : (d.items || []).length;
@@ -384,10 +387,11 @@
       st.sel.forEach(function (id) { if (!visible.has(id)) st.sel.delete(id); });
       renderRows();
     }).catch(function (e) {
-      if (seq !== st.loadSeq) return;
+      if (seq !== st.loadSeq || e.name === 'AbortError') return;
       if (!st.rows.length) { st.loadError = e.message; renderRows(); }
       else opMsg("搜索失败: " + e.message + "，当前显示上次结果", "err");
     }).finally(function () {
+      if (st.loadController === controller) st.loadController = null;
       if (st.loadingSeq === seq) st.loadingSeq = 0;
       if (seq === st.loadSeq && !st.rows.length) renderRows();
       else renderPagination();
@@ -1239,7 +1243,7 @@
     if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
     positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
   }
-  function hide() { if (importView) importView.close(); if (filtersView) filtersView.close(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { if (st.loadController) st.loadController.abort(); if (importView) importView.close(); if (filtersView) filtersView.close(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,

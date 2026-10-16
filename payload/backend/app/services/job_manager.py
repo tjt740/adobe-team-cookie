@@ -430,15 +430,9 @@ class JobManager:
             return {}
         self._ensure_storage()
         with engine.begin() as conn:
-            rows = conn.execute(text("""
+            matches = conn.execute(text("""
                 WITH ranked AS (
-                    SELECT j.id, j.type, j.status, j.target, j.success, j.fail,
-                           j.error, j.created_at, j.finished_at,
-                           json_extract(j.meta_json, '$.operator') AS operator,
-                           json_array_length(j.logs_json) AS log_total,
-                           (SELECT i.value FROM json_each(j.extra_json, '$.items') AS i
-                            WHERE json_extract(i.value, '$.id')=e.id LIMIT 1) AS item_json,
-                           json_extract(j.extra_json, '$.batch') AS batch_json,
+                    SELECT j.id,
                            CAST(m.value AS INTEGER) AS member_id,
                            ROW_NUMBER() OVER (
                                PARTITION BY m.value ORDER BY j.id DESC
@@ -453,20 +447,45 @@ class JobManager:
                 )
                 SELECT * FROM ranked WHERE position <= :limit ORDER BY id DESC
             """), {"member_ids": _json_dumps(list(set(member_ids))), "limit": max(1, min(10000, limit))}).mappings().all()
-        out: dict[int, list[dict]] = {}
+            if not matches:
+                return {}
+            # Rank identities first, then read each selected job's JSON once.
+            # Parsing logs and scanning all batch items inside the window query
+            # repeats that work for every account in every historical job.
+            rows = conn.execute(text("""
+                SELECT id, type, status, target, success, fail, error,
+                       created_at, finished_at,
+                       json_extract(meta_json, '$.operator') AS operator,
+                       json_array_length(logs_json) AS log_total,
+                       json_extract(extra_json, '$.items') AS items_json,
+                       json_extract(extra_json, '$.batch') AS batch_json
+                FROM job_records
+                WHERE id IN (SELECT value FROM json_each(:job_ids))
+            """), {"job_ids": _json_dumps(list({row['id'] for row in matches}))}).mappings().all()
+        summaries, items_by_job = {}, {}
         for row in rows:
             data = Job.from_record(dict(row)).to_dict()
             data["operator"] = row["operator"] or ""
             data["log_total"] = int(row["log_total"] or 0)
-            item = _json_loads(row['item_json'], {})
-            data['item_status'] = item.get('status')
-            data['item_message'] = item.get('message', '')
+            items = {}
+            for item in _json_loads(row['items_json'], []):
+                if isinstance(item, dict):
+                    items.setdefault(item.get('id'), item)
+            items_by_job[row['id']] = items
             batch = _json_loads(row['batch_json'], None)
             if batch:
                 data['extra']['batch'] = batch
             # Summary responses have no credentials, metadata or log bodies.
             data.pop("meta", None)
-            out.setdefault(int(row["member_id"]), []).append(data)
+            summaries[row['id']] = data
+        out: dict[int, list[dict]] = {}
+        for row in matches:
+            mid, jid = int(row['member_id']), row['id']
+            data = dict(summaries[jid])
+            item = items_by_job[jid].get(mid, {})
+            data['item_status'] = item.get('status')
+            data['item_message'] = item.get('message', '')
+            out.setdefault(mid, []).append(data)
         return out
 
     def find_active(self, job_type: str, admin_id: int) -> Optional[Job]:
