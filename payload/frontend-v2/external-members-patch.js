@@ -7,7 +7,7 @@
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
   var viewURL = new URL('./external-members-view.js?v=20261015-compact-filters', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -116,13 +116,30 @@
   function el(id) { return document.getElementById(id); }
   function toast(type, m) { opMsg(m, type === "error" ? "err" : (type === "success" ? "ok" : "mut")); var a = window.$message; if (a && typeof a[type] === "function") a[type](m); }
   function opMsg(t, c) { if (view) view.update({message:t || '', messageTone:c || ''}); }
-  function fmtTime(s, seconds) { if (!s) return "—"; var d = new Date(typeof s === "number" ? s * 1000 : (/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(s) ? s + "Z" : s)); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + (seconds ? ":" + p(d.getSeconds()) : ""); }
+  function fmtTime(s, seconds) { return window.OKAD_TIME.datetime(s, !!seconds); }
 
   var STATUS_MAP = {
     ok: ["ok", "正常"], never: ["mut", "未登录"], login_failed: ["bad", "登录失败"],
     account_disabled: ["bad", "已停用"], rate_limited: ["warn", "频繁登录限流"], internal: ["bad", "内部错误"],
   };
   function statusPill(s) { var m = STATUS_MAP[s] || ["mut", s || "—"]; return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + "</span>"; }
+  function healthPills(row) {
+    var stock = st.stock, item = stock && stock.items && stock.items[row.id];
+    if (!stock || !stock.ok) return '<span data-sub2-health class="extm-pill mut">Sub2 状态' + (stock ? '暂不可用' : '查询中') + '</span>';
+    if (!item || String(item.email || '').trim().toLowerCase() !== String(row.email || '').trim().toLowerCase()) return '<span data-sub2-health class="extm-pill mut">Sub2 状态查询中</span>';
+    if (!item.in_stock) return '';
+    var health = item.account_health || {}, codes = health.codes || [];
+    var checked = 'Sub2 状态 · 核对时间 ' + fmtTime(stock.checked_at);
+    if (health.state === 'error') {
+      var labels = codes.slice();
+      if (!labels.length || (health.errors || []).some(function (e) { return !e.code; })) labels.push('其他异常');
+      return labels.map(function (code) {
+        var tone = code === 408 || code === 429 ? 'warn' : 'bad';
+        return '<span data-sub2-health class="extm-pill ' + tone + '" title="' + esc(checked + ' · 异常待成功验证') + '">Sub2 ' + esc(code) + '</span>';
+      }).join('');
+    }
+    return '<span data-sub2-health class="extm-pill ' + (health.state === 'recovered' ? 'ok' : 'mut') + '" title="' + esc(checked) + '">' + (health.state === 'recovered' ? 'Sub2 已有成功证据' : 'Sub2 待验证') + '</span>';
+  }
   function subPill(row) {
     if (row.credits_total == null && (row.credits_error || row.login_status === 'ok' || row.first_login_done)) {
       var reason = row.credits_error || '未保存具体失败原因，重新登录后会再次查询积分。';
@@ -156,7 +173,7 @@
         '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
     view = mount(host, {
       filter: function (filters) {
-        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync;
+        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health;
         st.profileF = filters.profile; st.companyF = filters.company;
         st.creditsField = filters.creditsField;
         st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
@@ -189,14 +206,15 @@
 
   function dateBoundary(value, nextDay) {
     if (!value) return "";
-    var date = new Date(value + 'T00:00:00');
-    if (nextDay) date.setDate(date.getDate() + 1);
+    var date = new Date(value + 'T00:00:00+08:00');
+    if (nextDay) date.setUTCDate(date.getUTCDate() + 1);
     return date.toISOString();
   }
   function extraFilters() {
     var filters = {};
     if (st.stockF !== "") filters.in_stock = st.stockF === "true";
     if (st.syncF) filters.sub2_status = st.syncF;
+    if (st.healthF) filters.sub2_health = st.healthF;
     if (st.importedFrom) filters.imported_from = st.importedFrom;
     if (st.importedBefore) filters.imported_before = st.importedBefore;
     if (st.creditsMin !== "" || st.creditsMax !== "") {
@@ -354,7 +372,7 @@
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
         '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
-        '<td><div class="extm-status">' +
+        '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +

@@ -11,7 +11,7 @@ from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
-from app.services import external_login, external_sub2, external_sub2_stock
+from app.services import external_login, external_sub2, external_sub2_stock, sub2_account_health
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
 from app.schemas.external_member import CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
@@ -69,6 +69,7 @@ def member_mail(member_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
+    from app.services.okad_account_metadata import uses_supply_mail
     return ExternalMemberOut(
         id=m.id, email=m.email, note=m.note,
         credits_available=m.credits_available, credits_total=m.credits_total,
@@ -79,7 +80,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
         first_login_done=m.first_login_done, has_cookie=bool(m.cookie),
         has_adobe_password=bool((m.adobe_password or "").strip()),
         force_code_login=bool(m.force_code_login),
-        uses_supply_mail=m.otp_mode != "manual" and not m.mail_url and not (m.refresh_token and m.client_id),
+        uses_supply_mail=uses_supply_mail(m),
         otp_mode=m.otp_mode,
         otp_challenge=manual_otp.BROKER.status(m.id),
         last_login_at=m.last_login_at, message=m.message, created_at=m.created_at,
@@ -148,7 +149,7 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
     return {"message": "验证码已提交，正在继续登录"}
 
 
-def _member_filters(db, *, in_stock=None, imported_from=None, imported_before=None,
+def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
                     credits_min=None, credits_max=None):
     # created_at is stored as UTC without a timezone; accept browser-local
     # date boundaries with their offset and compare them in UTC.
@@ -163,11 +164,14 @@ def _member_filters(db, *, in_stock=None, imported_from=None, imported_before=No
     if credits_min is not None and credits_max is not None and credits_min > credits_max:
         raise HTTPException(status_code=422, detail="积分最大值不能小于最小值")
     ids = None
-    if in_stock is not None:
+    if in_stock is not None or sub2_health is not None:
         stock = external_sub2_stock.membership(db)
         if not stock.get("ok"):
             raise HTTPException(status_code=503, detail=stock.get("message") or "Sub2 库存暂不可用，请稍后重试")
-        ids = [int(mid) for mid, item in stock["items"].items() if item.get("in_stock") is in_stock]
+        ids = [int(mid) for mid, item in stock["items"].items()
+               if (in_stock is None or item.get("in_stock") is in_stock)
+               and (sub2_health is None or (item.get("in_stock") is True
+                    and sub2_account_health.matches(item.get("account_health"), sub2_health)))]
     return dict(ids=ids, imported_from=imported_from, imported_before=imported_before,
                 credits_min=credits_min, credits_max=credits_max)
 
@@ -179,11 +183,12 @@ def list_members(
     keyword: str = "", db: Session = Depends(get_db),
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
+    sub2_status: Sub2SyncStatus | None = None,
     credits_field: CreditsField = "available",
     credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
-    sub2_status: Sub2SyncStatus | None = None,
 ) -> Page[ExternalMemberOut]:
     target = external_sub2.destination(external_sub2.config(db))
     items, total = crud.list_members(
@@ -191,7 +196,7 @@ def list_members(
         subscription_ok=subscription_ok, keyword=keyword,
         credits_field=credits_field, current_profile=current_profile, is_company=is_company,
         sub2_status=sub2_status, sub2_target=target,
-        **_member_filters(db, in_stock=in_stock, imported_from=imported_from, imported_before=imported_before,
+        **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
                           credits_min=credits_min, credits_max=credits_max),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
@@ -324,6 +329,7 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
     if payload.sub2_status is not None:
         filters["sub2_target"] = external_sub2.destination(external_sub2.config(db))
     filters.update(_member_filters(db, in_stock=filters.pop("in_stock"),
+                                   sub2_health=filters.pop("sub2_health"),
                                    imported_from=filters.pop("imported_from"),
                                    imported_before=filters.pop("imported_before"),
                                    credits_min=filters.pop("credits_min"),
@@ -367,17 +373,18 @@ def export_members(
     db: Session = Depends(get_db),
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
+    sub2_status: Sub2SyncStatus | None = None,
     credits_field: CreditsField = "available",
     credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
-    sub2_status: Sub2SyncStatus | None = None,
 ) -> list[dict]:
     target = external_sub2.destination(external_sub2.config(db)) if sub2_status is not None else ""
     return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
                                credits_field=credits_field, current_profile=current_profile, is_company=is_company,
                                sub2_status=sub2_status, sub2_target=target,
-                               **_member_filters(db, in_stock=in_stock, imported_from=imported_from,
+                               **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
                                                  imported_before=imported_before,
                                                  credits_min=credits_min, credits_max=credits_max))
 

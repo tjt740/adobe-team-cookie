@@ -1,0 +1,128 @@
+/* One compact rhythm for desktop workspaces and accessible phone layouts. */
+.ws-heading,#pool-workspace .pool-heading{margin-bottom:16px;gap:12px}
+.ws-entity>.ws-heading,#pool-workspace .pool-heading{margin-top:16px}
+.ws-page{padding:20px}.ws-stats{gap:10px;margin-bottom:16px}
+.ws-stats>button{padding:10px 14px}.ws-stats b{font-size:21px}
+.ws-filter{padding:12px;gap:10px 12px;border-radius:8px}.ws-field{gap:4px}
+.ws-batch,#pool-workspace .pool-batch-bar{padding:12px 0;gap:10px}
+#pool-workspace .pool-filter-box{padding:12px;border-radius:8px}
+#pool-workspace .pool-filter-grid{gap:10px 12px}
+#pool-workspace .pool-field>label{margin-bottom:4px}
+#pool-workspace .pool-filter-bottom{margin-top:10px}
+#sub2-panel .s2-filters{margin-top:12px;padding:12px}
+#sub2-panel .s2-tools,#sub2-panel .s2-overview{padding:12px 16px}
+#sub2-panel .s2-stbox{padding:10px 14px}
+#integration-panel .integration-workspace,#server-monitor-panel .monitor-workspace{padding:20px}
+#integration-panel .integration-metrics{margin-bottom:16px;gap:10px}
+#integration-panel article{padding:12px 14px}
+.ws-filter-shell{min-width:0}.ws-filter-toggle{display:none}
+/* Naive UI continues to own the backdrop, focus trap, Esc and form events. */
+body .ws-drawer.n-modal,body .ws-native-drawer{
+  position:fixed!important;inset:0 0 0 auto!important;margin:0!important;box-sizing:border-box;
+  width:min(620px,100vw)!important;max-width:100vw!important;min-width:0!important;
+  height:100dvh!important;max-height:100dvh!important;border-radius:0!important;
+  background:var(--ws-paper);color:var(--ws-text);border:0;border-left:1px solid var(--ws-line);
+  box-shadow:-12px 0 48px #18294526;transform:none!important;overflow:hidden!important;
+}
+body .ws-drawer.n-card{display:flex;flex-direction:column;--n-padding-left:24px!important;--n-padding-bottom:20px!important}
+body .ws-drawer>.n-card-header{flex:none;padding:22px 24px;border-bottom:1px solid var(--ws-line);min-width:0}
+body .ws-drawer>.n-card-header .n-card-header__main{font-size:18px;font-weight:600;overflow-wrap:anywhere;min-width:0}
+body .ws-drawer>.n-card__content{flex:1;min-height:0;padding:22px 24px!important;overflow:auto;overscroll-behavior:contain}
+body .ws-drawer>.n-card__footer{flex:none;padding:16px 24px max(16px,env(safe-area-inset-bottom))!important;border-top:1px solid var(--ws-line);max-height:45%;overflow:auto}
+body .ws-drawer .n-card-header__close{min-width:34px;min-height:34px;align-self:flex-start}
+.ws-drawer-actions{display:flex;justify-content:flex-end;gap:12px}.ws-drawer-actions .n-button{min-width:96px}
+.ws-import-example{background:var(--ws-soft);border:1px solid var(--ws-line);border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;line-height:1.6}
+.ws-import-example h4{font-size:12px;margin:0 0 6px}.ws-import-example code{font-size:11px;overflow-wrap:anywhere}.ws-import-example p{color:var(--ws-muted);margin:6px 0 0}
+.ws-content-label{display:block;font-size:14px;font-weight:600;margin:0 0 8px}
+.ws-import-options{display:grid;grid-template-columns:1fr;gap:6px;margin-top:18px;max-width:220px}.ws-import-options>label{font-size:12px;color:var(--ws-muted)}
+.ws-import-error{color:#d03050;font-size:13px;overflow-wrap:anywhere}.ws-import-result{font-size:13px;overflow-wrap:anywhere;margin-bottom:12px}.ws-import-result p{margin:0}.ws-import-result ul{margin:6px 0;padding-left:20px;max-height:96px;overflow:auto}
+body .ws-native-drawer{padding:0;font:inherit}body .ws-native-drawer[open]{display:flex;flex-direction:column}.ws-native-drawer::backdrop{background:#17263d66}
+.ws-native-drawer>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 24px;border-bottom:1px solid var(--ws-line);flex:none}
+.ws-native-drawer>header h3{margin:0;font-size:18px}.ws-native-drawer>header button{width:44px;height:44px;border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer}
+#sub2-panel .ws-native-drawer .s2-cfg{border:0;margin:0;box-shadow:none;flex:1;min-height:0;overflow:auto}
+#sub2-panel .ws-native-drawer .s2-cfg .hd{cursor:default}.ws-native-drawer .s2-cfg .ar{display:none}
+#sub2-panel .ws-native-drawer .s2-cfg .bd{border:0;padding:12px 24px 24px}
+#sub2-panel .ws-native-drawer .s2-cfg .bd>div{flex-wrap:wrap}
+@media(max-width:800px){
+  body .ws-page{padding:12px}body .ws-heading,#pool-workspace .pool-heading{gap:10px;margin:12px 0}
+  body .ws-heading p,#pool-workspace .pool-heading p{margin-top:4px}
+  body .ws-heading h2,#pool-workspace h2{font-size:17px}
+  body .strip{gap:8px;margin-bottom:12px}body .strip .chip{padding:10px 12px}body .strip .v{font-size:20px}
+  body .ws-stats{gap:8px;margin-bottom:12px}.ws-stats>button{padding:10px}
+  body .ws-heading>.ws-actions,#pool-workspace .pool-heading-actions{width:100%;gap:8px}
+  body .ws-filter-toggle{display:flex;width:100%;align-items:center;gap:8px;min-height:44px;border:1px solid var(--ws-line);border-radius:8px;background:var(--ws-soft);padding:10px 12px;color:var(--ws-text);font:13px/1.5 inherit;cursor:pointer}
+  .ws-filter-toggle>:last-child{margin-left:auto;color:var(--ws-blue)}.ws-filter-count{font-size:12px;color:var(--ws-muted)}
+  .ws-filter-toggle:focus-visible{outline:2px solid var(--ws-blue);outline-offset:2px}
+  .ws-filter-shell[data-expanded=false]>.ws-filter-body{display:none!important}
+  .ws-filter-shell[data-expanded=true]>.ws-filter-body{margin-top:8px}
+  #extm-filters{margin:10px 12px}
+  body .ws-filter,body .ws-filter-compact{padding:10px;gap:10px}
+  body .ws-drawer.n-modal,body .ws-native-drawer{top:var(--okad-visual-top,0px)!important;bottom:auto!important;height:var(--okad-visual-height,100dvh)!important;max-height:var(--okad-visual-height,100dvh)!important}
+  body .ws-drawer>.n-card-header,.ws-native-drawer>header{padding:16px;padding-top:max(16px,env(safe-area-inset-top))}
+  body .ws-drawer>.n-card__content{padding:16px!important}
+  body .ws-drawer>.n-card__footer{padding:12px 16px max(12px,env(safe-area-inset-bottom))!important}
+  body .ws-drawer .n-card-header__close{min-width:44px;min-height:44px}
+  #sub2-panel .ws-native-drawer .s2-cfg .bd{padding:12px 16px 24px}
+  body .ws-settings-nav{flex-wrap:nowrap;overflow:auto;padding-bottom:8px;gap:6px;scroll-snap-type:x proximity}
+  body .ws-settings-nav button{white-space:nowrap;flex:none;scroll-snap-align:start}
+  body #integration-panel .integration-workspace,body #server-monitor-panel .monitor-workspace{padding:12px}
+  body :is(.n-pagination,.okad-pagination,.extm-pagination,.s2-pg){gap:8px}
+  body .okad-page-size{gap:8px;flex-wrap:wrap}
+}
+@media(max-width:600px){
+  body .ws-drawer.n-modal,body .ws-native-drawer{width:100vw!important;border-left:0}
+  /* Reflow existing cells into cards; controls, row keys and pagination remain unchanged. */
+  body .ws-card-table.n-data-table::before,body #extm-embed .extm-tw::before,body #sub2-panel .s2-tw::before,body #integration-panel .integration-scroll::before{display:none}
+  body .ws-card-table :is(.n-data-table-wrapper,.n-data-table-base-table){border:0;background:transparent}
+  body .ws-card-table :is(.n-data-table-base-table-body,.n-scrollbar-container){max-height:none!important;overflow:visible!important}
+  body .ws-card-table .n-scrollbar-content{min-width:0!important;width:100%!important}
+  body .ws-card-table .n-scrollbar-rail{display:none}
+  body table.ws-card-table,body .ws-card-table table{display:block;width:100%!important;min-width:0!important;border:0}
+  body .ws-card-table colgroup{display:none}
+  body .ws-card-table :is(thead,tbody){display:block;width:100%}
+  body .ws-card-table thead>tr{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+  body .ws-card-table thead th{display:none}
+  body .ws-card-table thead th:has(input[type=checkbox]),body .ws-card-table thead th:has([role=checkbox]),body .ws-card-table thead th.sortable{display:flex;align-items:center;gap:8px;width:auto!important;min-height:44px;padding:0 10px;background:var(--ws-soft);border:1px solid var(--ws-line);border-radius:6px;position:static}
+  body .ws-card-table thead th:has(input[type=checkbox])::after,body .ws-card-table thead th:has([role=checkbox])::after{content:'全选本页';font-size:12px;font-weight:400}
+  body .ws-card-table [data-ws-row=record]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;padding:12px;margin:0 0 12px;border:1px solid var(--ws-line);border-radius:10px;background:var(--ws-paper);color:var(--ws-text);position:relative}
+  body .ws-card-table [data-ws-row=record]>td{display:block!important;position:static!important;width:auto!important;min-width:0!important;max-width:100%!important;padding:0!important;border:0!important;white-space:normal!important;overflow-wrap:anywhere;box-shadow:none!important;background:transparent!important;font-size:13px;line-height:1.6}
+  body .ws-card-table [data-ws-cell=field]::before{content:attr(data-ws-label);display:block;margin-bottom:3px;color:var(--ws-muted);font-size:11px}
+  body .ws-card-table [data-ws-cell=primary],body .ws-card-table [data-ws-cell=actions]{grid-column:1/-1}
+  body .ws-card-table [data-ws-cell=primary]{font-weight:500}
+  body .ws-card-table [data-ws-cell=actions]{border-top:1px solid var(--ws-line)!important;padding-top:8px!important}
+  body .ws-card-table [data-ws-cell=select]{display:flex!important;align-items:center;gap:8px;min-height:44px}
+  body .ws-card-table [data-ws-cell=select]::after{content:'选择';font-size:12px;color:var(--ws-muted)}
+  body .ws-card-table [data-ws-cell=toggle]{justify-self:end}
+  body .ws-card-table [data-ws-cell=primary] :is(.n-ellipsis,.pool-email,.pool-name,.extm-email){white-space:normal!important;max-width:100%;overflow-wrap:anywhere}
+  body .ws-card-table :is(.ws-row-actions,.pool-row-actions,.extm-actions,.integration-actions){flex-wrap:wrap;gap:8px}
+  body .ws-card-table .n-checkbox{min-width:44px;min-height:44px;justify-content:center;align-items:center}
+  body .ws-card-table [data-ws-row=empty],body .ws-card-table [data-ws-row=detail]{display:block}
+  body .ws-card-table [data-ws-row=empty]>td,body .ws-card-table [data-ws-row=detail]>td{display:block;width:auto;white-space:normal}
+  body #extm-embed .extm-fold{width:100%!important;max-width:100%!important;left:0!important}
+  body #extm-embed .extm-tw,body #sub2-panel .s2-tw,body #integration-panel .integration-scroll{overflow:visible;padding:0 12px;min-width:0}
+  body #extm-embed .extm-tw .extm-status{flex-wrap:wrap}
+  body .ws-card-table :is(.extm-act,.s2-btn,.integration-actions button,.integration-actions a){min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  body .ws-card-table [data-col-key=message]{grid-column:1/-1;max-height:100px;overflow:hidden}
+  body #logs-workspace .n-data-table-base-table-header{display:none}
+  body #extm-embed .extm-card:has(.extm-t),body #sub2-panel .s2-card:has(.s2-t){background:transparent;border:0}
+}
+
+@media(max-width:600px){
+  body .ws-card-table [data-ws-cell=primary]{order:1}
+  body .ws-card-table [data-ws-cell=actions]{order:2}
+  body .ws-card-table [data-ws-cell=field]{order:3}
+  body #extm-embed .extm-batch-row[data-ws-selected=false] :is(#extm-batch-login,.extm-batch-profile,#extm-batch-del,#extm-export-emails,#extm-sub2-push),body #sub2-panel .s2-tools[data-ws-selected=false] :is(#s2-bref,#s2-bbal,#s2-bdel){display:none}
+  body #extm-embed .extm-batch-row{gap:8px}
+  body .ws-entity .strip,body #pool-workspace .strip{display:flex;overflow-x:auto;gap:8px;scroll-snap-type:x proximity;padding-bottom:6px}
+  body .ws-entity .strip .chip,body #pool-workspace .strip .chip{flex:1 0 96px;min-width:0;scroll-snap-align:start}
+}
+
+.ws-native-body{padding:20px 24px;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+#integration-panel .integration-config-launch{display:flex;align-items:center;gap:12px;margin-bottom:16px;font-size:12px;color:var(--ws-muted)}
+#integration-panel .ws-native-drawer .integration-config{margin:0;border:0;border-radius:0}
+#integration-panel .ws-native-drawer #integration-config{display:flex;flex-direction:column;align-items:stretch;padding:0}
+#integration-panel .ws-native-drawer #integration-config input:not([type=checkbox]){width:100%}
+#integration-panel .ws-native-drawer #integration-config button{align-self:flex-end}
+#integration-panel .ws-native-drawer>header button{background:transparent;border:0;color:var(--ws-text);font-size:24px;padding:0}
+@media(max-width:800px){.ws-native-body{padding:16px}}
+@media(max-width:600px){body #okad-user-management .um-actions{flex-wrap:wrap}body #okad-user-management .um-scroll{overflow:visible}body #okad-user-management .ws-card-table [data-ws-cell=actions] button{min-height:44px}}

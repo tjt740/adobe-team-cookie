@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import async_playwright, expect
+from external_controls import select_value, expect_select
 
 BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
 
@@ -76,8 +77,8 @@ async def main():
             await button.click()
         assert requests[-1] == ('GET', {})
         await page.locator('#extm-f-kw').fill('account')
-        await page.locator('#extm-f-status').select_option('ok')
-        await page.locator('#extm-f-sub').select_option('true')
+        await select_value(page, '#extm-f-status', 'ok')
+        await select_value(page, '#extm-f-sub', 'true')
         await expect(button).to_have_text('导出筛选 Cookie')
         async with page.expect_download():
             await button.click()

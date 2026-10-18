@@ -1,3 +1,4 @@
+import {FilterPanel,activeFilters} from './workspace-controls.js?v=20261015-mobile';
 /* Readable view layer for the prebuilt pool page; existing API actions are reused. */
 export function createPoolWorkspace({h, ref, Button, Select, Input, Switch, Table, Tag,
   Dropdown, Popconfirm, Stats, state: s, actions: a, sub2}) {
@@ -82,7 +83,7 @@ export function createPoolWorkspace({h, ref, Button, Select, Input, Switch, Tabl
         {loading: !!exporting.value, disabled: s.exportBusy.value || !s.pagination.itemCount, title: '按当前筛选条件导出'})
       ])
     ]),
-    h('section', {class: 'pool-filter-box', 'aria-label': '筛选账号'}, [
+    h(FilterPanel, {class: 'pool-filter-box',active:activeFilters([s.keyword.value,s.type.value,s.token.value,s.credit.value,s.status.value,s.exportStatus.value,s.registered.value]), 'aria-label': '筛选账号'}, [
       h('div', {class: 'pool-filter-grid'}, [
         field('搜索账号', h(Input, {value: s.keyword.value, 'onUpdate:value': v => s.keyword.value = v,
           placeholder: '搜索邮箱', clearable: true, onKeyup: e => e.key === 'Enter' && a.search()})),

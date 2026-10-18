@@ -8,8 +8,8 @@ from app.schemas.account_profile import AccountProfile, ProfilePreference
 
 OtpMode = Literal["auto", "manual"]
 CreditsField = Literal["available", "total"]
-CurrentProfileKind = Literal["personal", "organization", "unknown"]
 Sub2SyncStatus = Literal["not_pushed", "pending", "syncing", "synced", "failed"]
+CurrentProfileKind = Literal["personal", "organization", "unknown"]
 
 
 class ManualOtpChallenge(BaseModel):
@@ -91,6 +91,7 @@ class ExternalLoginFilter(BaseModel):
     keyword: str = ""
     in_stock: bool | None = None
     sub2_status: Sub2SyncStatus | None = None
+    sub2_health: str | None = Field(default=None, pattern=r"^(error|other|recovered|unknown|[45][0-9]{2})$")
     imported_from: datetime | None = None
     imported_before: datetime | None = None
     credits_field: CreditsField = "available"

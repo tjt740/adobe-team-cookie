@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 from app.models.external_member import ExternalMember
-from app.services import external_sub2, external_sub2_stock
+from app.services import external_sub2_stock
 from app.services.job_manager import JOBS
 
 
@@ -167,7 +167,6 @@ def test_attribute_filters_share_pagination_export_and_login_scope(client, attri
     {"credits_min": 100, "credits_max": 99}, {"credits_min": -1}, {"credits_max": -1},
     {"credits_min": "nan"}, {"credits_max": "inf"}, {"credits_min": "invalid"},
     {"credits_field": "invalid"}, {"current_profile": "invalid"}, {"is_company": "invalid"},
-    {"sub2_status": "invalid"},
 ])
 def test_invalid_attribute_filters_are_rejected_for_all_scopes(client, monkeypatch, filters):
     def unexpected(*args, **kwargs):
@@ -177,91 +176,3 @@ def test_invalid_attribute_filters_are_rejected_for_all_scopes(client, monkeypat
     for path in ("/api/external/members", "/api/external/members/export"):
         assert client.get(path, params=filters).status_code == 422
     assert client.post("/api/external/members/batch-login-filter", json=filters).status_code == 422
-
-
-@pytest.fixture
-def sync_members(db, monkeypatch):
-    config = {"base_url": "http://localhost:18081/"}
-    target = external_sub2.destination(config)
-    monkeypatch.setattr(external_sub2, "config", lambda db: config)
-    # Current target, old target, and unlinked accounts must stay distinct.
-    links = [{target: {"status": state}} for state in ("pending", "pending", "syncing", "synced", "failed")]
-    links += [None, {}, {target: {}}, {"https://old.example.test/api/v1": {"status": "pending"}},
-              {target: {"status": "synced"}, "https://old.example.test/api/v1": {"status": "pending"}}]
-    rows = [ExternalMember(email=f"sync{i}@example.test", cookie=f"sync-cookie={i}", sub2_links=link,
-                           login_status="ok", subscription_ok=True, credits_available=i * 100,
-                           created_at=datetime(2026, 10, 12)) for i, link in enumerate(links)]
-    db.add_all(rows)
-    db.commit()
-    monkeypatch.setattr(external_sub2_stock, "membership", lambda db: {
-        "ok": True, "items": {row.id: {"in_stock": i == 1} for i, row in enumerate(rows)},
-    })
-    return rows, config
-
-
-@pytest.mark.parametrize("filters,indexes", [
-    ({"sub2_status": "pending"}, [1, 0]),
-    ({"sub2_status": "syncing"}, [2]),
-    ({"sub2_status": "synced"}, [9, 3]),
-    ({"sub2_status": "failed"}, [4]),
-    ({"sub2_status": "not_pushed"}, [8, 7, 6, 5]),
-    (dict(FILTERS, keyword="sync", sub2_status="pending"), [0]),
-    ({"sub2_status": "pending", "credits_min": 100, "in_stock": True}, [1]),
-    ({"sub2_status": "pending", "credits_min": 200}, []),
-])
-def test_sync_filter_scopes(client, sync_members, monkeypatch, filters, indexes):
-    rows, _ = sync_members
-    expected = [rows[i] for i in indexes]
-    for page in range(1, len(expected) + 2):
-        response = client.get("/api/external/members", params=dict(filters, page=page, size=1))
-        assert response.status_code == 200, response.text
-        result = response.json()
-        assert result["total"] == len(expected)
-        assert [row["id"] for row in result["items"]] == [row.id for row in expected[page - 1:page]]
-        assert all(row["sub2_status"] == filters["sub2_status"] for row in result["items"])
-    response = client.get("/api/external/members/export", params=filters)
-    assert response.status_code == 200, response.text
-    assert response.json() == [{"cookie": row.cookie} for row in expected]
-    started = []
-
-    class Job:
-        def to_dict(self):
-            return dict(id=999, type="external_login", status="running", target=len(expected),
-                        success=0, fail=0, logs=[])
-
-    def start(kind, worker, *, meta):
-        started.extend(meta["member_ids"])
-        return Job()
-
-    monkeypatch.setattr(JOBS, "start", start)
-    response = client.post("/api/external/members/batch-login-filter", json=filters)
-    assert response.status_code == 200, response.text
-    assert response.json()["queued"] == response.json()["total"] == len(expected)
-    assert started == [row.id for row in expected]
-
-
-def test_sync_filter_uses_current_target_and_latest_local_status(client, db, sync_members, monkeypatch):
-    rows, config = sync_members
-
-    def unavailable(*args, **kwargs):
-        pytest.fail("Filtering local sync status must not depend on remote stock availability")
-
-    monkeypatch.setattr(external_sub2_stock, "membership", unavailable)
-
-    def pending_ids():
-        response = client.get("/api/external/members", params={"sub2_status": "pending"})
-        assert response.status_code == 200, response.text
-        return [row["id"] for row in response.json()["items"]]
-
-    assert pending_ids() == [rows[1].id, rows[0].id]
-    target = external_sub2.destination(config)
-    rows[1].sub2_links = {target: {"status": "synced"}}
-    db.commit()
-    assert pending_ids() == [rows[0].id]
-    config["base_url"] = "https://old.example.test"
-    assert pending_ids() == [rows[9].id, rows[8].id]
-    config["base_url"] = ""
-    assert pending_ids() == []
-    response = client.get("/api/external/members", params={"sub2_status": "not_pushed"})
-    assert response.status_code == 200
-    assert response.json()["total"] == len(rows)

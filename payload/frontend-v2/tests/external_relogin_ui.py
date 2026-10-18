@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
+from external_controls import select_value, expect_select
 
 BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
 ROOT = Path(__file__).resolve().parents[3]

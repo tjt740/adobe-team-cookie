@@ -279,11 +279,13 @@ def _locate(cfg, delivery, email, *, observed=None):
     with SessionLocal() as db:
         row=source(db,delivery.source_key)
         cookie=row.cookie
+        from app.services.okad_account_metadata import account_metadata
+        metadata=account_metadata(delivery.source_key,row,cfg['issuer'])
     result=external_sub2._request(cfg,'POST','/admin/accounts',{
         'name':email,'platform':'adobe','type':'oauth','credentials':{'email':email,'cookie':cookie},
         'group_ids':cfg['group_ids'],'concurrency':cfg.get('concurrency',3),'priority':0,
         'rate_multiplier':external_sub2.sub2_client._safe_float(cfg.get('rate_multiplier'),1),
-        'extra':{'adobeteam_external_email':email.lower(),'okad_initial_verification':True}})
+        'extra':{'adobeteam_external_email':email.lower(),'okad_initial_verification':True,'okad_account':metadata}})
     return result['id']
 
 
@@ -399,9 +401,14 @@ def reconcile_inventory():
             _inventory_candidates(),CredentialDelivery.lease_until<time.time())))
         snapshots=[(d.key,d.source_key,d.version,d.account_id,d.state,d.message,d.updated_at,d.receipt)
                    for d in rows if d.account_id]
-    if not snapshots:return
-    if request(cfg,'GET','/capabilities').get('site_id')!=cfg['site_id']:return
+    capabilities=request(cfg,'GET','/capabilities')
+    if capabilities.get('site_id')!=cfg['site_id']:return
+    if not snapshots and not capabilities.get('account_metadata'):return
     remote={item['id']:item for item in inventory(cfg)}
+    if capabilities.get('account_metadata'):
+        from app.services.okad_account_metadata import sync_inventory_metadata
+        try:sync_inventory_metadata(cfg,list(remote.values()))
+        except IntegrationError:pass  # Retry metadata next interval without blocking receipts.
     for key,source_key,version,aid,old_state,old_message,updated_at,old_receipt in snapshots:
         wake=False
         item=remote.get(aid)
@@ -574,8 +581,6 @@ def tick():
         if not enabled:return
         jobs=list(db.scalars(select(RecoveryJob.id).where(RecoveryJob.state=='queued').order_by(RecoveryJob.created_at).limit(12)))
         deliveries=list(db.scalars(select(CredentialDelivery.key).where(CredentialDelivery.state.in_(['pending','retry']),CredentialDelivery.next_at<=now,CredentialDelivery.lease_until<now).order_by(CredentialDelivery.updated_at).limit(12)))
-        has_receipts=db.scalar(select(CredentialDelivery.key).where(CredentialDelivery.site_id==cfg['site_id'],
-            CredentialDelivery.target==target(cfg),_inventory_candidates()).limit(1))
     for kind,keys,executor,action in [('login',jobs,_login_executor,run_recovery),('delivery',deliveries,_delivery_executor,deliver)]:
         for key in keys:
             tag=(kind,key)
@@ -587,7 +592,6 @@ def tick():
                 finally:
                     with _guard:_pending.discard(tag)
             executor.submit(work)
-    if not has_receipts:return
     tag=('inventory',cfg['site_id'],target(cfg))
     with _guard:
         if tag in _pending or now-_last_inventory.get(tag,0)<INVENTORY_INTERVAL:return

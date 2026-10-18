@@ -3,6 +3,7 @@ from playwright.async_api import expect
 
 LABELS = {
     'stock': {'': '全部库存状态', 'false': '未在库', 'true': '在库'},
+    'health': {'': '全部 Sub2 状态', 'error': '全部异常', '401': '401 · 鉴权失败', '408': '408 · 请求超时', '403':'403', '429':'429 · 限流', '500':'500', '502':'502', '503':'503', '504':'504', '529':'529 · 过载', 'other':'其他异常（非 401/408）', 'recovered':'已有成功证据', 'unknown':'待验证 / 无完整记录'},
     'sync': {'': '全部同步状态', 'pending': 'Sub2 待同步', 'syncing': 'Sub2 同步中',
              'synced': 'Sub2 已同步', 'failed': 'Sub2 同步失败', 'not_pushed': 'Sub2 未推送'},
     'profile': {'': '全部配置', 'personal': '个人配置', 'organization': '组织配置', 'unknown': '未获取'},

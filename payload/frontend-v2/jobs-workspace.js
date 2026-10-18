@@ -1,3 +1,4 @@
+import {FilterPanel,activeFilters} from './workspace-controls.js?v=20261015-mobile';
 import {d as defineComponent,k as h,r as ref,m as computed,J as onMounted,L as onUnmounted,l as watch,g as useRouter,h as useRoute,B as Button} from './assets/index-CrrzYg-U.js';
 import {N as Input} from './assets/Input-fL4pqH-9.js';
 import {b as Select} from './assets/text-C52gYURp.js';
@@ -34,7 +35,7 @@ function state(job) {
   }
   return [job.status || '未知','muted'];
 }
-const time = (value, full=false) => value ? new Date(value*1000).toLocaleString('zh-CN',
+const time = (value, full=false) => value ? window.OKAD_TIME.format(value,
   {year:full?'numeric':undefined,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:full?'2-digit':undefined,hour12:false}) : '尚未结束';
 function duration(job) {
   if(!job.created_at) return '—';
@@ -116,7 +117,7 @@ export default defineComponent({name:'JobsWorkspace',setup(){
       if(disposed) return;
       jobs.value=Array.isArray(data)?data:[];
       selected.value=selected.value.filter(i=>jobs.value.some(j=>j.id===i&&!active(j)));
-      updated.value=new Date().toLocaleTimeString('zh-CN',{hour12:false});error.value='';
+      updated.value=window.OKAD_TIME.clock(Date.now()/1000);error.value='';
     } catch(e){if(!disposed)error.value=e.name==='AbortError'?'读取任务超时，请重试':e.message;}
     finally {loading.value=false;listPending=false;}
   }
@@ -180,7 +181,7 @@ export default defineComponent({name:'JobsWorkspace',setup(){
       h('header',{class:'ws-heading'},[h('div',{},[h('h2',{},'任务中心'),h('p',{},'查看账号处理进度，追溯每一次操作的来源和结果')]),h('div',{class:'ws-actions'},[
         h('label',{class:'ws-switch'},[h(Switch,{size:'small',value:auto.value,'onUpdate:value':v=>auto.value=v}),'自动刷新']),btn('刷新',{loading:loading.value,onClick:loadList})])]),
       h('div',{class:'ws-stats task-stats'},counts.map(([label,count,key])=>h('button',{class:status.value===key?'is-active':'',onClick:()=>status.value=key},[h('b',{},String(count)),h('span',{},label)]))),
-      h('section',{class:'ws-filter','aria-label':'筛选任务'},[
+      h(FilterPanel,{class:'ws-filter',active:activeFilters([keyword.value,type.value,source.value,status.value]),'aria-label':'筛选任务'},[
         field('搜索任务',h(Input,{placeholder:'任务编号、邮箱或操作者',value:keyword.value,clearable:true,'onUpdate:value':v=>keyword.value=v})),
         field('任务类型',selectFilter(type,[{label:'全部类型',value:''},...Object.entries(TYPES).map(([value,d])=>({label:d[0],value}))])),
         field('来源页面',selectFilter(source,[{label:'全部来源',value:''},...Array.from(new Set(jobs.value.map(j=>trace(j).source.label))).map(v=>({label:v,value:v}))])),
