@@ -6,7 +6,7 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261015-compact-filters', document.currentScript.src).href;
+  var viewURL = new URL('./external-members-view.js?v=20261018-nowrap', document.currentScript.src).href;
   var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [

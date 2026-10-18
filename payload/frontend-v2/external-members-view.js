@@ -47,6 +47,17 @@ export function mountExternalMembers(host, actions, tableHTML) {
     importOpen.value = false;
     importDrawer()?.close();
   }
+  function positionActions(event) {
+    const details=event.currentTarget;
+    if(!details.open)return;
+    const menu=details.querySelector('div'), anchor=details.querySelector('summary').getBoundingClientRect();
+    const width=Math.min(menu.offsetWidth,window.innerWidth-24);
+    const below=window.innerHeight-anchor.bottom-12, above=anchor.top-12;
+    const height=Math.min(menu.scrollHeight,Math.max(below,above));
+    Object.assign(menu.style,{left:Math.max(12,Math.min(anchor.right-width,window.innerWidth-width-12))+'px',right:'auto',
+      top:(below>=height?anchor.bottom+6:Math.max(12,anchor.top-height-6))+'px',maxHeight:Math.max(44,height)+'px'});
+  }
+  function closeActions() {const more=host.querySelector('#extm-more-actions');if(more)more.open=false;}
   function apply() {
     const f = filters.value;
     errors.value.credits = f.creditsMin != null && f.creditsMax != null && f.creditsMin > f.creditsMax ? '积分最大值不能小于最小值' : '';
@@ -62,7 +73,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
   };
   const field = (label, id, child, cls='') => h('div', {class:'extv-field '+cls}, [h('label', {id:id+'-label', for:id}, label), child]);
   const input = (id, value, update, props={}) => h(Input, {value, 'onUpdate:value':update, ...props, inputProps:{id, 'aria-labelledby':id+'-label', ...props.inputProps}});
-  const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':update, virtualScroll:!["extm-f-health","extm-f-states"].includes(id),show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
+  const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':value=>{if(!props.multiple)openSelect.value=null;update(value);}, virtualScroll:!["extm-f-health","extm-f-states"].includes(id),show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
   const filterSelect = (key, label, suffix=key) => field(label, 'extm-f-'+suffix, select('extm-f-'+suffix, filters.value[key], filterOptions[key], value => {filters.value[key]=value; apply();}));
   const TableRegion = {name:'ExternalMemberTaskTable', render:() => h('div', {class:'extv-table-region', innerHTML:tableHTML})};
   const app = createApp({name:'ExternalMembersWorkspace', setup() {
@@ -136,7 +147,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
               button('extm-reset-filters','重置筛选',reset),button('extm-refresh','刷新',actions.refresh,{type:'primary',secondary:true})
             ])
           ]),
-          h('div',{class:'extm-batch-row'},[
+          h('div',{class:'extm-batch-row',role:'group',tabindex:0,'aria-label':'批量操作，宽度不足时可左右滚动',onScroll:closeActions},[
             h('div',{class:'extm-batch-controls'},[
               h('span',{class:'selc'},['已选 ',h('b',{id:'extm-selc'},String(ui.value.selected)),' 个']),
               field('批量登录配置','extm-batch-profile',select('extm-batch-profile',ui.value.profile,options([['__mixed__',ui.value.profilePlaceholder],['','不指定（原逻辑）'],['personal','个人配置'],['organization','组织配置优先']]).map(o=>({...o,disabled:o.value==='__mixed__'})),actions.profile,{disabled:ui.value.profileDisabled}),'extv-batch-profile'),
@@ -145,7 +156,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
             ]),
             h('div',{class:'extv-batch-exports'},[
               button('extm-export','导出全部 Cookie',actions.export),button('extm-export-emails','导出选中邮箱',actions.exportEmails),button('extm-sub2-push','推送 Sub2',()=>actions.push(false),{type:'primary',secondary:true}),
-              h('details',{id:'extm-more-actions',class:'ws-maintenance-menu'},[h('summary',{},'更多操作 ▾'),h('div',{},[
+              h('details',{id:'extm-more-actions',class:'ws-maintenance-menu',onToggle:positionActions},[h('summary',{},'更多操作 ▾'),h('div',{},[
                 button('extm-login-all','一键重登全部',()=>{host.querySelector('#extm-more-actions').open=false;actions.loginAll();}),
                 button('extm-sub2-relink','重新关联 / 推送',()=>{host.querySelector('#extm-more-actions').open=false;actions.push(true);})
               ])])
@@ -182,7 +193,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
   host.addEventListener('keydown',closeMenus);
   return {
     form:form.value,
-    update(value) {Object.assign(ui.value,value);},
+    update(value) {if(value.profileDisabled && openSelect.value==='extm-batch-profile')openSelect.value=null;Object.assign(ui.value,value);},
     importResult(message, tone) {Object.assign(ui.value,{importMessage:message,importTone:tone,message,messageTone:tone});},
     button(id, value) {ui.value.buttons[id]={...ui.value.buttons[id],...value};},
     ownsButton(id) {return !!id && !!host.querySelector('#'+id+'.n-button');},

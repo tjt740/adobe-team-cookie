@@ -61,30 +61,26 @@
 }
 .extv-mail-controls { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; }
 .extv-mail-controls .extv-field { width:360px; max-width:100%; }
-#extm-embed .extm-batch-row { --extv-control-height:34px; align-items:flex-end; gap:16px; }
-#extm-embed .extm-batch-controls { display:grid; grid-template-columns:auto minmax(180px,220px) auto auto; align-items:end; gap:10px; min-width:0; }
-#extm-embed .extv-batch-profile { width:auto; gap:6px; }
-#extm-embed .extm-batch-controls>.selc { display:flex; align-items:center; gap:4px; height:var(--extv-control-height); white-space:nowrap; }
-#extm-embed .extv-batch-exports { display:flex; align-items:center; gap:10px; margin-left:auto; min-width:0; }
-#extm-embed :is(.extm-batch-controls,.extv-batch-exports)>.n-button { height:var(--extv-control-height); }
+#extm-embed .extv-list .extm-batch-row { --extv-control-height:34px; display:flex; align-items:center; flex-wrap:nowrap; gap:12px; max-width:100%; padding:12px 18px; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
+#extm-embed .extv-list :is(.extm-batch-controls,.extv-batch-exports) { display:flex; flex:0 0 auto; align-items:center; flex-wrap:nowrap; gap:8px; min-width:0; max-width:none; }
+#extm-embed .extv-list .extv-batch-profile { display:flex; flex:none; flex-direction:row; align-items:center; gap:8px; width:auto; white-space:nowrap; }
+#extm-embed .extv-batch-profile>label { flex:none; white-space:nowrap; }
+#extm-embed .extv-batch-profile>.n-select { width:132px; flex:none; }
+#extm-embed .extm-batch-controls>.selc { display:flex; flex:none; align-items:center; gap:3px; height:var(--extv-control-height); white-space:nowrap; }
+#extm-embed .extv-batch-exports { margin-left:auto; }
+#extm-embed .extm-batch-row .n-button { flex:none; height:var(--extv-control-height); padding:0 10px; font-size:13px; white-space:nowrap; }
 #extm-batch-profile .n-base-selection { --n-height:var(--extv-control-height)!important; }
-#extm-more-actions { min-width:0; }
-#extm-more-actions>summary { height:var(--extv-control-height); display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding:0 12px; white-space:nowrap; }
-#extm-more-actions>div { left:auto; right:0; min-width:180px; max-width:calc(100vw - 72px); }
+#extm-more-actions { flex:none; min-width:0; }
+#extm-more-actions>summary { height:var(--extv-control-height); display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding:0 10px; font-size:13px; white-space:nowrap; }
+#extm-more-actions>div { position:fixed; min-width:180px; max-width:calc(100vw - 24px); overflow-y:auto; z-index:1100; }
 #extm-more-actions>div .n-button { width:100%; }
-@container external-accounts (max-width:1100px) {
-  #extm-embed .extm-batch-row { display:grid; grid-template-columns:minmax(0,1fr); }
-  #extm-embed .extm-batch-controls { grid-template-columns:auto minmax(180px,1fr) auto auto; }
-  #extm-embed .extv-batch-exports { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin-left:0; }
+@container external-accounts (max-width:1150px) {
+  #extm-embed .extv-list .extm-batch-row { gap:8px; }
+  #extm-embed .extv-batch-profile>label { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 }
-@container external-accounts (max-width:600px) {
-  #extm-embed .extm-batch-row { --extv-control-height:44px; gap:12px; }
-  #extm-embed .extm-batch-controls { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-  #extm-embed .extm-batch-controls>.selc { grid-column:1/-1; height:24px; }
-  #extm-embed .extv-batch-profile { grid-column:1/-1; }
-  #extm-embed .extv-batch-exports { grid-template-columns:repeat(2,minmax(0,1fr)); border-top:1px solid var(--ws-line,#e4eaf2); padding-top:12px; }
+@media(max-width:800px) {
+  #extm-embed .extv-list .extm-batch-row { --extv-control-height:44px; padding:12px; }
   #extm-more-actions>div .n-button { min-height:44px; }
-  #extm-more-actions>div .n-button__content { white-space:normal; }
 }
 #extm-embed .extm-page-jump>.n-input-number { width:76px; }
 .extv-page-size { display:flex; align-items:center; flex-wrap:wrap; gap:8px; max-width:100%; }
