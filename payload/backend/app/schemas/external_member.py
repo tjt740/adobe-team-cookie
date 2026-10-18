@@ -7,6 +7,9 @@ from app.schemas.adobe_account import JobStatusOut
 from app.schemas.account_profile import AccountProfile, ProfilePreference
 
 OtpMode = Literal["auto", "manual"]
+CreditsField = Literal["available", "total"]
+CurrentProfileKind = Literal["personal", "organization", "unknown"]
+Sub2SyncStatus = Literal["not_pushed", "pending", "syncing", "synced", "failed"]
 
 
 class ManualOtpChallenge(BaseModel):
@@ -24,6 +27,7 @@ class ExternalMemberOut(BaseModel):
     note: str = ""
     credits_available: float | None = None
     credits_total: float | None = None
+    credits_error: str = ""
     account_profile: AccountProfile | None = None
     profile_preference: ProfilePreference = ""
     login_status: str = "never"
@@ -85,6 +89,15 @@ class ExternalLoginFilter(BaseModel):
     login_status: str | None = None
     subscription_ok: bool | None = None
     keyword: str = ""
+    in_stock: bool | None = None
+    sub2_status: Sub2SyncStatus | None = None
+    imported_from: datetime | None = None
+    imported_before: datetime | None = None
+    credits_field: CreditsField = "available"
+    credits_min: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    credits_max: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    current_profile: CurrentProfileKind | None = None
+    is_company: bool | None = None
 
 
 class ExternalMemberExportItem(BaseModel):

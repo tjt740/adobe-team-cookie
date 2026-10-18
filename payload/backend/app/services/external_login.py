@@ -25,7 +25,7 @@ SUBSCRIPTION_MIN = 1000.0
 # 网络/代理失败时的额外重试轮数(每轮换一个出口 IP)。账号类错误不重试:
 # 重试也救不回来,还会白耗一次验证码、加重 Adobe 对该邮箱来源的发码风控。
 MAX_NETWORK_RETRIES = 1
-LOGIN_BATCH_SIZE = 20
+LOGIN_BATCH_SIZE = 50
 
 # 全部改走验证码登录(不用密码)。默认 false:知道密码就用密码,省一次发码 ——
 # 每多收一次验证码都会加重 Adobe 对该邮箱来源的发码风控。密码被拒时本来就会
@@ -67,7 +67,7 @@ def _classify(err: str) -> str:
         return "rate_limited"
     if "disabled" in low or "not found" in low or "no account" in low or "banned" in low:
         return "account_disabled"
-    if "password" in low or "otp" in low or "captcha" in low or "验证码" in low or "login" in low or "supply.ink" in low:
+    if "authenticationstate" in low or "password" in low or "otp" in low or "captcha" in low or "验证码" in low or "登录" in low or "login" in low or "supply.ink" in low:
         return "login_failed"
     return "internal"
 
@@ -120,6 +120,8 @@ def _login_with_proxy_retry(
             )
         except Exception as e:  # noqa: BLE001
             last_exc = e
+            if isinstance(e, firefly.LoginRoutesExhausted):
+                break  # 修复路线和原路线都已失败，本次到此结束。
             if not _is_network_error(str(e)):
                 break  # 账号/验证码/打码类错误:换 IP 也没用
             proxy_pool.report_failure(proxy, str(e))
@@ -137,7 +139,25 @@ def _login_with_proxy_retry(
     return None, last_exc
 
 
-def login_and_store(member_id: int, *, log=None, check_cancelled=None,
+def login_and_store(member_id: int, *, request_started_at=None, automatic=False, **options) -> dict:
+    from app.services import login_coordinator, reliable_integration
+    with SessionLocal() as db:
+        member = crud.get(db, member_id)
+        if not member:
+            return {"ok": False, "cookie": "", "code": "account_disabled", "message": "账号不存在"}
+        email = member.email
+        destination = reliable_integration.settings(db)
+    def saved(db):
+        member = crud.get(db, member_id)
+        return {"cookie": member.cookie or "", "credits_available": member.credits_available,
+                "credits_total": member.credits_total} if member else {}
+    with reliable_integration.login_destination(destination):
+        return login_coordinator.run(f'external:{member_id}', email,
+            lambda: _login_and_store(member_id, **options), SessionLocal, saved,
+            requested_at=request_started_at, automatic=automatic)
+
+
+def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
                     profile_preference: ProfilePreference | None = None,
                     force_code_login: bool | None = None,
                     otp_mode: str | None = None,
@@ -234,6 +254,8 @@ def login_and_store(member_id: int, *, log=None, check_cancelled=None,
 def _save_credentials(member_id: int, *, refresh_token: str = "", adobe_password: str = "") -> None:
     db = SessionLocal()
     try:
+        from app.services.login_coordinator import assert_owner
+        assert_owner(db)
         member = crud.get(db, member_id)
         if not member:
             return
@@ -252,11 +274,16 @@ def _save_success(member_id: int, rec: dict, sub_ok: bool | None) -> None:
         m = crud.get(db, member_id)
         if not m:
             return
+        from app.services import login_coordinator, reliable_integration
+        login_coordinator.assert_owner(db)
         m.cookie = rec.get("cookie") or m.cookie
         m.access_token = rec.get("access_token") or ""
         m.expires_at = rec.get("expires_at")
         m.credits_available = rec.get("credits")
         m.credits_total = rec.get("credits_total")
+        # Keep the balance failure separate from successful authentication.
+        # A later successful query clears the previous warning.
+        m.credits_error = (rec.get("credits_error") or "")[:255] if sub_ok is None else ""
         # A successful new session supersedes the old profile snapshot, even if
         # metadata could not be fetched this time. Login failures retain it.
         profile = rec.get("account_profile")
@@ -275,6 +302,7 @@ def _save_success(member_id: int, rec: dict, sub_ok: bool | None) -> None:
         set_pw = (rec.get("set_password") or "").strip()
         if set_pw:
             m.adobe_password = set_pw
+        reliable_integration.record_cookie(db, f"external:{member_id}", m.email, m.cookie)
         db.commit()
     finally:
         db.close()

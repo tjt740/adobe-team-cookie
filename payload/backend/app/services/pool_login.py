@@ -21,6 +21,21 @@ from app.services.job_manager import Job
 
 
 def _login_one(payload: dict, proxy_raw: str, job: Job) -> bool:
+    from app.services import login_coordinator
+    executed = False
+    def action():
+        nonlocal executed
+        executed = True
+        return {'ok': _login_one_owned(payload, proxy_raw, job)}
+    result = login_coordinator.run('pool-ios:'+str(payload['id']), payload['email'],
+                                  action, SessionLocal, lambda db: {})
+    if not executed:
+        job.bump(**({'success': 1} if result.get('ok') else {'fail': 1}))
+        job.log('已合并同账号登录' if result.get('ok') else '同邮箱已有登录任务，请稍后重试')
+    return bool(result.get('ok'))
+
+
+def _login_one_owned(payload: dict, proxy_raw: str, job: Job) -> bool:
     email = payload["email"]
     mid = payload["id"]
     if not ((payload["refresh_token"] and payload["client_id"]) or payload.get("mail_url")):
@@ -87,6 +102,8 @@ def _save(member_id: int, *, status: str, message: str, extra: dict | None = Non
     """单独开一个 Session 落库(并发线程各用各的连接)。"""
     db = SessionLocal()
     try:
+        from app.services.login_coordinator import assert_owner
+        assert_owner(db)
         row = member_crud.get(db, member_id)
         if not row:
             return
@@ -108,7 +125,7 @@ def _save(member_id: int, *, status: str, message: str, extra: dict | None = Non
         db.close()
 
 
-def _resolve_creds(db, member) -> tuple[str, str, str]:
+def _resolve_creds(db, member, *, persist=True) -> tuple[str, str, str]:
     """解析收码凭据。
 
     母号镜像以 adobe_accounts 为权威来源,因为母号登录可能轮换
@@ -120,7 +137,7 @@ def _resolve_creds(db, member) -> tuple[str, str, str]:
             rt = account.refresh_token or ""
             cid = account.client_id or ""
             mail_url = account.mail_url or ""
-            if (
+            if persist and (
                 member.refresh_token != rt
                 or member.client_id != cid
                 or member.mail_url != mail_url
@@ -140,7 +157,7 @@ def _resolve_creds(db, member) -> tuple[str, str, str]:
             rt = rt or (pool_email.refresh_token or "")
             cid = cid or (pool_email.client_id or "")
             mail_url = mail_url or (pool_email.mail_url or "")
-            if rt and cid and not (member.refresh_token and member.client_id):
+            if persist and rt and cid and not (member.refresh_token and member.client_id):
                 member.refresh_token = rt
                 member.client_id = cid
                 member.mail_url = mail_url
@@ -177,6 +194,24 @@ def _ids_without_token(member_ids: list[int]) -> list[int]:
 
 
 def refresh_one_sync(member_id: int, log=None) -> dict:
+    from app.services import login_coordinator
+    with SessionLocal() as db:
+        member = member_crud.get(db, member_id)
+        if not member:
+            return {'success': False, 'message': '条目不存在', 'credits': None, 'expires_at': None}
+        email = member.email
+    def action():
+        result = _refresh_one_owned(member_id, log)
+        return {**result, 'ok': result.get('success', False)}
+    def saved(db):
+        member = member_crud.get(db, member_id)
+        return {'success': True, 'message': '同账号刷新已完成', 'credits': member.credits,
+                'expires_at': member.expires_at} if member else {}
+    result = login_coordinator.run('pool-ios-refresh:'+str(member_id), email, action, SessionLocal, saved)
+    return {**result, 'success': bool(result.get('ok'))}
+
+
+def _refresh_one_owned(member_id: int, log=None) -> dict:
     """对单个子号同步刷新 AT,刷新后查询额度。返回 {success,message,credits,expires_at}。
 
     优先用 device_token 免验证码刷新(快);无 device_token 或刷新失败时回退整登。

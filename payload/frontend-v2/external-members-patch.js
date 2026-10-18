@@ -5,7 +5,9 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, statusF: "", subF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var view = null, mounting = null;
+  var viewURL = new URL('./external-members-view.js?v=20261015-compact-filters', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -35,16 +37,11 @@
     '.extm-btn.dft{background:#fff;color:#606266;border-color:#e0e0e6}.extm-btn.dft:hover:not(:disabled){color:#18a058;border-color:#18a058}',
     '.extm-btn.del{background:#fff;color:#d03050;border-color:#f0b3bf}.extm-btn.del:hover:not(:disabled){background:#fef0f2;border-color:#d03050}',
     '.extm-btn.sm{height:28px;padding:0 10px;font-size:12px}',
-    '.extm-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid #efeff5;background:#fcfcfd}',
-    '.extm-tools .sp{flex:1}',
-    '.extm-tools .selc{font-size:13px;color:#909399}.extm-tools .selc b{color:#18a058}',
     '.extm-batch-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.extm-detail:not(.extm-manage-history) .extm-history-select,.extm-detail:not(.extm-manage-history) [data-action=delete]{display:none}.extm-pill.info{background:#eaf2ff;color:#3b82f6}',
     '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
-    '.extm-batch-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266;white-space:nowrap}.extm-batch-profile select.extm-in{height:34px;width:156px;padding:0 6px;font-size:12px}.extm-batch-profile select:disabled{opacity:.55;cursor:not-allowed}',
     '.extm-tw{overflow:auto;max-height:60vh}.extm-t>thead>tr>th{position:sticky;top:0;z-index:2}.extm-t>thead>tr>th:last-child{z-index:3}',
     '.extm-pagination{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:14px 18px;background:var(--ws-card,#fff);border-top:1px solid var(--ws-line,#efeff5);border-radius:0 0 12px 12px;color:var(--ws-muted,#909399);font-size:13px}.extm-pagination label,.extm-page-jump{display:inline-flex;align-items:center;gap:6px}.extm-pagination .extm-page-summary{margin-right:auto}.extm-pagination .extm-page-number{width:70px}.extm-pagination .extm-in:disabled{opacity:.55;cursor:not-allowed}html.dark .extm-pagination{background:var(--bg-card);border-color:var(--border)}',
-    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1860px}',
-    '.extm-note-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}.extm-note-empty{color:#a3acb9}',
+    '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1816px}',
     '.extm-note-dialog{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(480px,calc(100vw - 40px));max-height:calc(100vh - 48px);overflow:auto;border:1px solid var(--ws-line,#e4eaf2);border-radius:14px;padding:24px;background:var(--ws-card,#fff);color:var(--ws-text,#333639);box-shadow:0 20px 80px #18294533}.extm-note-dialog::backdrop{background:#17263d66}.extm-note-dialog .extm-btn[type=submit]{background:#2080f0;border-color:#2080f0}.extm-note-dialog .extm-btn[type=submit]:hover:not(:disabled){background:#4098fc;border-color:#4098fc}.extm-note-dialog .extm-ta:focus{border-color:#2080f0;box-shadow:0 0 0 2px #2080f026}.extm-note-dialog h3{margin:0 0 8px;font-size:18px}.extm-note-dialog p{margin:0 0 18px;color:var(--ws-muted,#7d8797);font-size:13px;overflow-wrap:anywhere}.extm-note-dialog label{display:block;margin-bottom:8px;font-size:13px}.extm-note-dialog .extm-ta{min-height:150px}.extm-note-help{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--ws-muted,#7d8797);margin-top:6px}.extm-note-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.extm-note-error{color:#d03050;font-size:12px;white-space:pre-wrap;margin-top:10px}.extm-note-error:empty{display:none}',
     '.extm-t th{text-align:left;padding:11px 16px;font-size:13px;font-weight:500;color:#909399;background:#fafafc;border-bottom:1px solid #efeff5;white-space:nowrap}',
     '.extm-t td{padding:12px;border-bottom:1px solid #f2f3f5;color:#333639;vertical-align:middle;white-space:nowrap}.extm-t th{padding:11px 12px}',
@@ -57,7 +54,12 @@
     '.extm-t input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#18a058;margin:0;vertical-align:middle}',
     '.extm-pill{display:inline-block;font-size:12px;padding:1px 9px;border-radius:11px;line-height:1.7;white-space:nowrap}',
     '.extm-pill[data-sub2-stock]{padding:0 7px;line-height:18px}',
+    '.extm-sub2-state{display:inline-flex;align-items:center;gap:5px}.extm-link.extm-sub2-details{display:inline-flex;align-items:center;justify-content:center;gap:3px;min-height:24px;color:#2080f0;font:12px system-ui;white-space:nowrap}.extm-sub2-dialog{width:min(540px,calc(100vw - 40px))}.extm-sub2-summary{padding:14px;background:var(--ws-soft,#f5f7fa);border:1px solid var(--ws-line,#e4eaf2);border-radius:8px;margin-bottom:16px}.extm-sub2-summary strong{display:block;font-size:15px;margin-bottom:6px}.extm-sub2-summary p{margin:0;line-height:1.7}.extm-sub2-dialog dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px 12px;font-size:13px;margin:0}.extm-sub2-dialog dt{color:var(--ws-muted,#7d8797)}.extm-sub2-dialog dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}.extm-sub2-dialog h4{font-size:13px;margin:18px 0 6px}.extm-sub2-dialog p.extm-sub2-help{margin:0;line-height:1.7}.extm-sub2-dialog p.extm-sub2-footnote{margin:16px 0 0;font-size:12px}@media(max-width:800px){.extm-link.extm-sub2-details{min-width:44px;min-height:44px}}',
+    '.extm-sub2-dialog,.extm-sub2-dialog .extm-btn.dft{background:var(--ws-paper,#fff);color:var(--ws-text,#273342)}.extm-sub2-dialog p,.extm-sub2-dialog dt{color:var(--text-2,#5a6675)}.extm-link.extm-sub2-details{color:var(--accent,#2080f0)}',
+    '.extm-sub2-stamp-layer{position:absolute;inset:0;overflow:hidden;border-radius:inherit;pointer-events:none;z-index:2}.extm-sub2-stamp-layer[hidden]{display:none}.extm-sub2-stamp{position:absolute;left:50%;top:43%;width:min(360px,calc(100% - 54px));height:auto;transform:translate(-50%,-50%) rotate(-12deg);opacity:.42;pointer-events:none;user-select:none}.extm-sub2-dialog .extm-sub2-capacity{margin:12px 0 0;color:var(--text-2,#5a6675);font-size:12px;line-height:1.7}.extm-sub2-capacity[hidden]{display:none}html.dark .extm-sub2-stamp{opacity:.55}',
     '.extm-pill.ok{background:#e8f7f0;color:#18a058}.extm-pill.bad{background:#fce9ec;color:#d03050}.extm-pill.warn{background:#fdf3e6;color:#f0a020}.extm-pill.mut{background:#f0f2f5;color:#909399}',
+    '.extm-credit-warning{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 8px;border:1px solid #f6dfb9;border-radius:5px;background:#fff7e8;color:#a66310;font:12px/1 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;white-space:nowrap;vertical-align:middle;cursor:pointer;transition:background .15s,border-color .15s}.extm-credit-warning:hover{background:#ffedcf;border-color:#e8c28b}.extm-credit-warning:focus-visible{outline:2px solid #2080f0;outline-offset:2px}.extm-credit-warning .okad-icon{opacity:.75}.extm-credit-dialog .extm-credit-error{color:#b2730f;background:#fff7e8;border-radius:6px;padding:12px;overflow-wrap:anywhere}',
+    '.extm-sub2-confirm-dialog{width:min(600px,calc(100vw - 40px))}.extm-sub2-confirm-dialog ul{list-style:none;margin:0;padding:0 12px;max-height:240px;overflow:auto;background:var(--ws-soft,#fff7e8);border:1px solid var(--ws-line,#f3e4c5);border-radius:8px}.extm-sub2-confirm-dialog li{padding:10px 0;overflow-wrap:anywhere}.extm-sub2-confirm-dialog li+li{border-top:1px solid var(--ws-line,#f3e4c5)}.extm-sub2-confirm-dialog li strong,.extm-sub2-confirm-dialog li span{display:block;font-size:13px}.extm-sub2-confirm-dialog li span{color:#b2730f;margin-top:4px}.extm-sub2-confirm-dialog .extm-relink-warning{margin-top:16px}.extm-sub2-confirm-dialog [data-confirm]{background:#2080f0;border-color:#2080f0}',
     '.extm-cap{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:3px;margin-left:6px;font-family:ui-monospace,Menlo,monospace}',
     '.extm-cap.ok{background:#e8f7f0;color:#18a058}.extm-cap.no{background:#f0f2f5;color:#c0c4cc}',
     '.extm-empty{text-align:center;color:#c0c4cc;padding:48px 0;font-size:13px}',
@@ -89,13 +91,15 @@
   function api(path, opts) {
     opts = opts || {};
     var token = localStorage.getItem(TK) || "";
-    var ctrl = new AbortController();
-    var to = setTimeout(function () { ctrl.abort(); }, opts.timeout || 30000);
+    var ctrl = opts.controller || new AbortController();
+    var timedOut = false;
+    var to = setTimeout(function () { timedOut = true; ctrl.abort(); }, opts.timeout || 30000);
     return fetch((opts.base || "/api/external") + path, {
       method: opts.method || "GET", signal: ctrl.signal,
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     }).then(function (r) {
+      if (opts.blob && r.ok) return r.blob();
       return r.text().then(function (t) {
         var d; try { d = t ? JSON.parse(t) : {}; } catch (e) { d = { raw: t }; }
         if (r.status === 401) throw new Error("未登录,请重新登录后台");
@@ -103,7 +107,7 @@
         return d;
       });
     }).catch(function (e) {
-      if (e.name === "AbortError") throw new Error("请求超时(" + Math.round((opts.timeout || 30000) / 1000) + "s)");
+      if (e.name === "AbortError" && timedOut) throw new Error("请求超时(" + Math.round((opts.timeout || 30000) / 1000) + "s)");
       throw e;
     }).finally(function () { clearTimeout(to); });
   }
@@ -111,8 +115,8 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function el(id) { return document.getElementById(id); }
   function toast(type, m) { opMsg(m, type === "error" ? "err" : (type === "success" ? "ok" : "mut")); var a = window.$message; if (a && typeof a[type] === "function") a[type](m); }
-  function opMsg(t, c) { var e = el("extm-op"); if (e) { e.className = "extm-msg" + (c ? " " + c : ""); e.textContent = t || ""; } }
-  function fmtTime(s) { if (!s) return "—"; var d = new Date(typeof s === "number" ? s * 1000 : (/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(s) ? s + "Z" : s)); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+  function opMsg(t, c) { if (view) view.update({message:t || '', messageTone:c || ''}); }
+  function fmtTime(s, seconds) { if (!s) return "—"; var d = new Date(typeof s === "number" ? s * 1000 : (/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(s) ? s + "Z" : s)); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + (seconds ? ":" + p(d.getSeconds()) : ""); }
 
   var STATUS_MAP = {
     ok: ["ok", "正常"], never: ["mut", "未登录"], login_failed: ["bad", "登录失败"],
@@ -120,8 +124,22 @@
   };
   function statusPill(s) { var m = STATUS_MAP[s] || ["mut", s || "—"]; return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + "</span>"; }
   function subPill(row) {
-    if (row.login_status === "never" || row.credits_total == null) return '<span class="extm-pill mut">—</span>';
+    if (row.credits_total == null && (row.credits_error || row.login_status === 'ok' || row.first_login_done)) {
+      var reason = row.credits_error || '未保存具体失败原因，重新登录后会再次查询积分。';
+      var label = row.credits_error ? '积分查询失败' : '积分未查到';
+      return '<button type="button" class="extm-credit-warning" data-credit-error="' + row.id + '" aria-haspopup="dialog" aria-label="' + label + '，订阅状态未知，点击查看详情" title="' + esc('订阅状态未知；' + reason + '；点击查看详情') + '"><span>' + label + '</span>' + window.OKAD_ICONS.svg('info', 14) + '</button>';
+    }
+    if (row.login_status === "never" || row.credits_total == null) return '<span class="extm-pill mut">待查询</span>';
     return row.subscription_ok ? '<span class="extm-pill ok">订阅正常</span>' : '<span class="extm-pill bad">掉订阅</span>';
+  }
+
+  function showCreditError(id) {
+    var row = rowById(id); if (!row || el('extm-credit-dialog')) return;
+    var dialog = document.createElement('dialog'); dialog.id = 'extm-credit-dialog'; dialog.className = 'extm-note-dialog extm-credit-dialog'; dialog.setAttribute('aria-labelledby', 'extm-credit-title');
+    dialog.innerHTML = '<h3 id="extm-credit-title">' + (row.credits_error ? '积分查询失败' : '积分未查到') + '</h3><p>' + esc(row.email) + '</p><p class="extm-credit-error">' + esc(row.credits_error || '这条历史记录未保存具体失败原因。') + '</p><p>积分未查到，暂时无法判断订阅状态，不代表积分为 0 或已掉订阅。「登录成功」仅表示登录及 Cookie 获取成功。</p><p>可关闭此窗口，点击账号行的「重登」重新查询积分；页面「刷新」只更新已保存的结果。</p><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
+    dialog.querySelector('button').onclick = function () { dialog.close(); };
+    dialog.onclose = function () { dialog.remove(); var button = document.querySelector('[data-credit-error="' + id + '"]'); if (button) button.focus({preventScroll:true}); };
+    document.body.appendChild(dialog); dialog.showModal();
   }
   function creditCell(row) {
     var a = row.credits_available == null ? "—" : Math.round(row.credits_available);
@@ -130,121 +148,79 @@
   }
 
   // ---------- 页面主体(route 与 overlay 共用) ----------
-  function buildBody(host) {
-    host.innerHTML =
-      '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span></div>' +
-      '<details class="extm-card extm-import-card" open><summary>导入外部子号</summary>' +
-        '<div class="bd">' +
-          '<p class="tip">每行只填邮箱，自动取码时按粘贴顺序逐个获取验证码登录。也支持邮箱----Adobe密码（兼容 | 分隔）；每批最多 20 个，登录成功后自动推送 Sub2；推送失败可单独重试。</p><textarea id="extm-import" class="extm-ta" placeholder="user@example.com\n也支持：邮箱----Adobe密码\n完整凭据：邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]"></textarea>' +
-          '<p class="tip">仅邮箱导入固定走验证码；普通账号可选择「手动输入」，收到邮件后在账号行填验证码。自动取码使用原邮箱配置或 supply.ink Token；带密码则优先密码登录，需要验证时使用所选取码方式。已有账号选择「覆盖」可更新设置。</p>' +
-          '<div class="extm-row">' +
-            '<select id="extm-dup" class="extm-in"><option value="skip">重复邮箱:跳过</option><option value="overwrite">重复邮箱:覆盖</option></select>' +
-            '<label for="extm-otp-mode">取码方式</label><select id="extm-otp-mode" class="extm-in"><option value="">保留设置（新账号自动取码）</option><option value="auto">自动取码（supply.ink）</option><option value="manual">手动输入验证码（普通账号）</option></select>' +
-            '<button class="extm-btn" id="extm-do-import">批量导入</button>' +
-            '<span class="sp" style="flex:1"></span><span id="extm-op" class="extm-msg mut"></span>' +
-          '</div>' +
-        '</div>' +
-      '</details>' +
-      '<details class="extm-card extm-import-card" id="extm-mail-config" hidden><summary>邮件配置 · supply.ink <span id="extm-mail-state" class="extm-msg mut">读取中…</span></summary><div class="bd">' +
-        '<p class="tip">在 supply.ink 邮件助手中获取 Token 后粘贴并保存。Token 保存在本项目，所有管理员共享；留空保留已保存配置。</p>' +
-        '<div class="extm-row"><label for="extm-mail-token">邮件 Token</label><input id="extm-mail-token" class="extm-in" type="password" autocomplete="off" placeholder="粘贴 supply.ink Token" style="width:min(360px,100%)">' +
-        '<button type="button" class="extm-btn" id="extm-mail-save">保存 Token</button><button type="button" class="extm-btn dft" id="extm-mail-test">测试连接</button><button type="button" class="extm-btn dft" id="extm-mail-clear">清除 Token</button></div><p id="extm-mail-result" class="extm-msg" role="status"></p>' +
-      '</div></details>' +
-      '<div class="extm-card">' +
-        '<div class="extm-tools">' +
-          '<select id="extm-f-status" class="extm-in"><option value="">全部状态</option><option value="ok">正常</option><option value="never">未登录</option><option value="login_failed">登录失败</option><option value="account_disabled">已停用</option><option value="rate_limited">频繁登录限流</option><option value="internal">内部错误</option></select>' +
-          '<select id="extm-f-sub" class="extm-in"><option value="">全部订阅</option><option value="true">订阅正常</option><option value="false">掉订阅</option></select>' +
-          '<input id="extm-f-kw" class="extm-in" placeholder="搜索邮箱…" style="width:180px">' +
-          '<button class="extm-btn dft sm" id="extm-refresh">刷新</button>' +
-          '</div><div class="extm-batch-row">' +
-          '<div class="extm-batch-controls"><span class="selc">已选 <b id="extm-selc">0</b></span>' +
-          '<button class="extm-btn o sm" id="extm-batch-login" disabled>选中批量重登</button>' +
-          '<label class="extm-batch-profile">批量登录配置<select id="extm-batch-profile" class="extm-in" aria-label="批量登录配置" title="仅设置勾选的账号，选择后自动保存，下次登录生效。不指定时沿用原逻辑；组织配置优先会跳过疑似已删除的组织，无可用组织或授权过期时回退个人配置。" disabled><option value="__mixed__" disabled selected>请先勾选账号</option><option value="">不指定（原逻辑）</option><option value="personal">个人配置</option><option value="organization">组织配置优先</option></select></label>' +
-          '<button class="extm-btn del sm" id="extm-batch-del">删除选中</button></div>' +
-          '<span class="ws-spacer"></span><button class="extm-btn o sm" id="extm-export">导出全部 Cookie</button>' +
-          '<button class="extm-btn o sm" id="extm-sub2-push" disabled>推送 Sub2</button>' +
-          '<details class="ws-maintenance-menu" id="extm-more-actions"><summary>更多操作 ▾</summary><div>' +
-            '<button class="extm-btn dft sm" id="extm-login-all" title="重登全部外部子号，自动跳过任务未结束的账号">一键重登全部</button>' +
-            '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
-          '</div></details>' +
-        '</div>' +
-        '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:96px"><col style="width:158px"><col style="width:158px"><col style="width:200px"><col style="width:96px"><col style="width:270px"></colgroup><thead><tr>' +
+  function buildBody(host, mount) {
+    var tableHTML =
+      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:270px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th>备注</th><th title="最近一次导入或登录的操作人">操作人</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="12" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
-        '<nav class="extm-pagination" aria-label="外部子号分页">' +
-          '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
-          '<label for="extm-page-size">每页<select id="extm-page-size" class="extm-in" aria-label="每页显示条数"><option value="50">50 条</option><option value="100">100 条</option><option value="200" selected>200 条</option></select></label>' +
-          '<button type="button" class="extm-btn dft sm" id="extm-first">首页</button><button type="button" class="extm-btn dft sm" id="extm-prev">上一页</button>' +
-          '<span id="extm-page-info"></span>' +
-          '<button type="button" class="extm-btn dft sm" id="extm-next">下一页</button><button type="button" class="extm-btn dft sm" id="extm-last">末页</button>' +
-          '<form id="extm-page-jump" class="extm-page-jump"><label for="extm-page-number">跳至<input type="number" id="extm-page-number" class="extm-in extm-page-number" min="1" step="1" value="1" required>页</label><button type="submit" class="extm-btn dft sm" id="extm-page-go">跳转</button></form>' +
-        '</nav>' +
-      '</div>';
-
-    el("extm-do-import").onclick = doImport;
-    el('extm-otp-mode').onchange = updateMailConfigVisibility;
-    updateMailConfigVisibility();
-    el('extm-mail-save').onclick = function () { mailAction(this, 'save'); };
-    el('extm-mail-test').onclick = function () { mailAction(this, 'test'); };
-    el('extm-mail-clear').onclick = function () { mailAction(this, 'clear'); };
-    loadMailConfig();
-    el("extm-refresh").onclick = function () { refreshAll(true); refreshStock(true); };
-    el("extm-batch-login").onclick = batchLogin;
-    el("extm-batch-profile").onchange = function () { saveSelectedProfilePreference(this.value); };
-    var moreActions = el("extm-more-actions");
-    el("extm-login-all").onclick = function () { moreActions.open = false; loginAll(); };
-    el("extm-export").onclick = exportCookies;
-    el("extm-sub2-push").onclick = function () { pushSub2(false); };
-    el("extm-sub2-relink").onclick = function () { moreActions.open = false; pushSub2(true); };
-    document.addEventListener("click", function (event) {
-      if (!moreActions.contains(event.target)) moreActions.open = false;
-    });
-    moreActions.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        moreActions.open = false; moreActions.querySelector("summary").focus();
+          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>操作</th>' +
+        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
+    view = mount(host, {
+      filter: function (filters) {
+        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync;
+        st.profileF = filters.profile; st.companyF = filters.company;
+        st.creditsField = filters.creditsField;
+        st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
+        st.creditsMax = filters.creditsMax == null ? '' : String(filters.creditsMax);
+        st.importedFrom = dateBoundary(filters.from, false); st.importedBefore = dateBoundary(filters.to, true);
+        st.q = filters.keyword; resetPage(1); load();
+      },
+      refresh: function () {
+        view.button('extm-refresh', {loading:true, disabled:true});
+        return refreshStock(true).then(function () { return refreshAll(true); }).finally(function () {
+          view.button('extm-refresh', {loading:false, disabled:false});
+        });
+      },
+      import: doImport, mail: mailAction, batchLogin: batchLogin, profile: saveSelectedProfilePreference,
+      delete: batchDelete, export: exportCookies, exportEmails: exportEmails, push: pushSub2, loginAll: loginAll,
+      page: goPage,
+      size: function (size) {
+        if (st.profileSaving.size || st.noteSaving || !window.OKAD_PAGINATION.valid(size)) return;
+        st.size = size; resetPage(1); load();
       }
-    });
-    el("extm-batch-del").onclick = batchDelete;
-    el("extm-f-status").onchange = function () { st.statusF = this.value; resetPage(1); load(); };
-    el("extm-f-sub").onchange = function () { st.subF = this.value; resetPage(1); load(); };
-    var kwT; el("extm-f-kw").oninput = function () { st.q = this.value.trim(); resetPage(1); clearTimeout(kwT); kwT = setTimeout(load, 300); };
-    el("extm-page-size").onchange = function () {
-      var size = Number(this.value);
-      if (st.profileSaving.size || st.noteSaving || ![50, 100, 200].includes(size)) { renderPagination(); return; }
-      st.size = size; resetPage(1); load();
-    };
-    el("extm-first").onclick = function () { goPage(1); };
-    el("extm-prev").onclick = function () { goPage(st.page - 1); };
-    el("extm-next").onclick = function () { goPage(st.page + 1); };
-    el("extm-last").onclick = function () { goPage(pageCount()); };
-    el("extm-page-jump").onsubmit = function (event) { event.preventDefault(); goPage(Number(el("extm-page-number").value)); };
+    }, tableHTML);
     el("extm-ckall").onchange = function () {
       var on = this.checked; st.sel.clear();
       if (on) st.rows.forEach(function (r) { st.sel.add(r.id); });
       Array.prototype.forEach.call(document.querySelectorAll(".extm-rowck"), function (c) { c.checked = on; });
       updSel();
     };
-    load();
+    loadMailConfig(); load();
   }
 
-  function updateMailConfigVisibility() {
-    var panel = el('extm-mail-config');
-    panel.hidden = el('extm-otp-mode').value !== 'auto';
-    if (panel.hidden) panel.open = false;
+  function dateBoundary(value, nextDay) {
+    if (!value) return "";
+    var date = new Date(value + 'T00:00:00');
+    if (nextDay) date.setDate(date.getDate() + 1);
+    return date.toISOString();
   }
-
+  function extraFilters() {
+    var filters = {};
+    if (st.stockF !== "") filters.in_stock = st.stockF === "true";
+    if (st.syncF) filters.sub2_status = st.syncF;
+    if (st.importedFrom) filters.imported_from = st.importedFrom;
+    if (st.importedBefore) filters.imported_before = st.importedBefore;
+    if (st.creditsMin !== "" || st.creditsMax !== "") {
+      filters.credits_field = st.creditsField;
+      if (st.creditsMin !== "") filters.credits_min = Number(st.creditsMin);
+      if (st.creditsMax !== "") filters.credits_max = Number(st.creditsMax);
+    }
+    if (st.profileF) filters.current_profile = st.profileF;
+    if (st.companyF !== "") filters.is_company = st.companyF === "true";
+    return filters;
+  }
   function qs() {
     var a = [];
     if (st.statusF) a.push("login_status=" + encodeURIComponent(st.statusF));
     if (st.subF !== "") a.push("subscription_ok=" + st.subF);
     if (st.q) a.push("keyword=" + encodeURIComponent(st.q));
+    var filters = extraFilters();
+    Object.keys(filters).forEach(function (key) { a.push(key + "=" + encodeURIComponent(filters[key])); });
     return a;
   }
 
   function jobApi(path, opts) { opts = opts || {}; opts.base = "/api/adobe-accounts/jobs"; return api(path, opts); }
   function spinner() { return '<span class="extm-spin" aria-hidden="true"></span>'; }
-  function setLoading(btn, busy, text, spinning) { if (!btn) return; btn.disabled = busy; btn.setAttribute("aria-busy", String(busy)); btn.innerHTML = ((spinning === undefined ? busy : spinning) ? spinner() : "") + esc(text); }
+  function setLoading(btn, busy, text, spinning) { if (!btn) return; if (view && view.ownsButton(btn.id)) { view.button(btn.id, {disabled:busy, loading:spinning === undefined ? busy : spinning, text:text}); return; } btn.disabled = busy; btn.setAttribute("aria-busy", String(busy)); btn.innerHTML = ((spinning === undefined ? busy : spinning) ? spinner() : "") + esc(text); }
   function rowById(id) { return st.rows.find(function (r) { return r.id === id; }); }
   function activeJob(j) { return !!j && ["running", "pausing", "paused", "cancelling"].includes(j.status); }
   function running(r) { return st.pending.has(r.id) || activeJob(r.latest_job) || !!r.otp_challenge; }
@@ -254,18 +230,21 @@
     if (activeJob(job) && (!phase || ['pending', 'running'].includes(phase))) {
       phase = ['paused', 'pausing', 'cancelling'].includes(job.status) ? job.status : (phase || 'running');
     }
-    var states = {submitting:['提交中','warn',true], pending:['排队中','mut',false], running:['登录中','info',true],
+    if (job && !activeJob(job) && ['pending', 'running'].includes(phase)) {
+      phase = job.status === 'cancelled' ? 'cancelled' : job.status === 'error' ? 'failed' : 'interrupted';
+    }
+    var states = {submitting:['提交中','info',true], pending:['排队中','warn',false], running:['登录中','info',true],
       otp:['等待验证码','warn',false], done:['本轮成功','ok',false], failed:['本轮失败','bad',false],
       interrupted:['已中断','warn',false], cancelled:['已终止','mut',false], paused:['已暂停','warn',false],
-      pausing:['暂停中','warn',false], cancelling:['终止中','warn',false]};
+      pausing:['暂停中','info',false], cancelling:['终止中','info',false]};
     var state = states[phase];
     return state ? {label:state[0], tone:state[1], spinning:state[2],
       message:st.pending.has(r.id) ? '正在提交任务…' : r.otp_challenge ? '等待手动验证码' :
-        (job && job.item_message) || (item && item.message) || (job ? '任务 #' + job.id + ' · 展开查看进度' : '')} : null;
+        (job && job.item_message) || (item && item.message) || ''} : null;
   }
-  function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
+  function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], historyPage: 1, historySize: 200, checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
   function jobPill(job) {
-    var m = { running: ["info", "运行中"], pausing: ["warn", "暂停中"], paused: ["warn", "已暂停"], cancelling: ["warn", "终止中"], done: [job.fail ? "bad" : "ok", job.fail ? (job.success ? "部分失败" : "失败") : "已完成"], error: ["bad", "失败"], cancelled: ["mut", "已终止"] }[job.status] || ["mut", job.status];
+    var m = { running: ["info", "运行中"], pausing: ["info", "暂停中"], paused: ["warn", "已暂停"], cancelling: ["info", "终止中"], done: [job.fail ? "bad" : "ok", job.fail ? (job.success ? "部分失败" : "失败") : "已完成"], error: ["bad", "失败"], cancelled: ["mut", "已终止"] }[job.status] || ["mut", job.status];
     return '<span class="extm-pill ' + m[0] + '">' + esc(m[1]) + '</span>';
   }
   function setHTML(node, html) { if (node && node._html !== html) { node.innerHTML = html; node._html = html; } }
@@ -273,22 +252,17 @@
 
   function pageCount() { return Math.max(1, Math.ceil(st.total / st.size)); }
   function renderPagination() {
-    if (!el("extm-page-size")) return;
+    if (!view) return;
     var pages = pageCount(), busy = !!st.loadingSeq || st.profileSaving.size > 0 || st.noteSaving;
     var start = st.rows.length ? (st.page - 1) * st.size + 1 : 0;
-    var end = st.rows.length ? start + st.rows.length - 1 : 0;
-    setText(el("extm-page-summary"), '共 ' + st.total + ' 条 · 当前 ' + start + '–' + end + ' 条');
-    setText(el("extm-page-info"), '第 ' + st.page + ' / ' + pages + ' 页');
-    el("extm-page-size").value = String(st.size);
-    el("extm-page-size").disabled = busy;
-    el("extm-first").disabled = el("extm-prev").disabled = busy || st.page <= 1;
-    el("extm-last").disabled = el("extm-next").disabled = busy || st.page >= pages;
-    var input = el("extm-page-number"); input.max = String(pages); input.disabled = busy;
-    if (document.activeElement !== input) input.value = String(st.page);
-    el("extm-page-go").disabled = busy;
+    view.update({total:st.total, loading:!!st.loadingSeq});
+    view.pagination({page:st.page, pages:pages, size:st.size, total:st.total, start:start, end:st.rows.length ? start + st.rows.length - 1 : 0, busy:busy});
+    ['extm-first','extm-prev'].forEach(function (id) { view.button(id, {disabled:busy || st.page <= 1}); });
+    ['extm-last','extm-next'].forEach(function (id) { view.button(id, {disabled:busy || st.page >= pages}); });
+    view.button('extm-page-go', {disabled:busy});
   }
   function resetPage(page) {
-    ++st.loadSeq; st.page = page; st.rows = []; st.sel.clear(); st.expanded.clear();
+    ++st.loadSeq; st.page = page; st.rows = []; st.loadError = ""; st.sel.clear(); st.expanded.clear();
     Object.keys(st.details).forEach(function (id) { clearTimeout(st.details[id].closeTimer); });
     st.details = {};
     renderRows();
@@ -304,25 +278,30 @@
     var body = el("extm-tbody"); if (!body) return Promise.resolve();
     if (st.profileSaving.size || st.noteSaving || (silent && st.loadingSeq)) return Promise.resolve();
     var seq = ++st.loadSeq;
+    if (st.loadController) st.loadController.abort();
+    var controller = st.loadController = new AbortController();
     if (!silent) st.loadingSeq = seq;
     renderPagination();
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="12" class="extm-empty">加载中…</td></tr>';
-    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty" aria-hidden="true"></td></tr>';
+    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&"), {controller:controller}).then(function (d) {
       if (seq !== st.loadSeq) return;
+      st.loadError = "";
       st.total = d.total != null ? d.total : (d.items || []).length;
-      setText(el("extm-total"), st.total);
+      view.update({total:st.total});
       if (st.page > pageCount()) { resetPage(pageCount()); return load(); }
       st.rows = d.items || [];
       var visible = new Set(st.rows.map(function (r) { return r.id; }));
       st.sel.forEach(function (id) { if (!visible.has(id)) st.sel.delete(id); });
       renderRows();
     }).catch(function (e) {
-      if (seq !== st.loadSeq) return;
-      if (!st.rows.length) body.innerHTML = '<tr><td colspan="12" class="extm-empty" style="color:#d03050">' + esc(e.message) + '</td></tr>';
+      if (seq !== st.loadSeq || e.name === 'AbortError') return;
+      if (!st.rows.length) { st.loadError = e.message; renderRows(); }
       else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
     }).finally(function () {
+      if (st.loadController === controller) st.loadController = null;
       if (st.loadingSeq === seq) st.loadingSeq = 0;
-      renderPagination();
+      if (seq === st.loadSeq && !st.rows.length) renderRows();
+      else renderPagination();
     });
   }
 
@@ -330,7 +309,7 @@
     if (st.polling) return;
     st.polling = true;
     try {
-      await load(true);
+      await load(!force);
       await Promise.all(Array.from(st.expanded).filter(function (id) { return rowById(id) && (force || detailState(id).auto); }).map(function (id) { return refreshDetail(id); }));
     } finally { st.polling = false; }
   }
@@ -356,7 +335,7 @@
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="12" class="extm-empty">暂无匹配的外部子号</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || (st.loadingSeq ? '' : '暂无匹配的外部子号')) + '</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -369,20 +348,20 @@
       var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id), progress = loginProgress(r);
       tr.className = expanded ? "extm-expanded" : "";
       var message = progress ? progress.message : r.message;
+      var hideMessage = !message || (r.login_status === 'ok' && /^登录成功(?:；已提交 Sub2 推送(?:，可查看账号同步状态)?)?$/.test(message.trim()));
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
         '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status">' +
-          '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
+          '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
-          (!busy && r.login_status === 'ok' && (!message || message.trim() === '登录成功') ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
-        '<td>' + subPill(r) + '</td>' +
+          (hideMessage ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
+        '<td data-subscription>' + subPill(r) + '</td>' +
         '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
-        '<td><span class="extm-note-text' + (r.note ? '' : ' extm-note-empty') + '" title="' + esc(r.note || '暂无备注') + '">' + esc(r.note || '—') + '</span></td>' +
-        '<td><span class="extm-clip" title="' + esc(r.operator || "历史记录未记录操作人") + '">' + esc(r.operator || "—") + '</span></td>' +
+        '<td class="cr" data-sub2-pushed-at>' + esc(fmtTime(r.sub2_synced_at, true)) + '</td>' +
         '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
         '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
@@ -392,7 +371,7 @@
         var fresh = false;
         var detail = body.querySelector('tr[data-detail="' + r.id + '"]');
         if (!detail) { fresh = true; detail = document.createElement("tr"); detail.dataset.detail = r.id; detail.className = "extm-detail-row"; detail.innerHTML = '<td><div class="extm-fold is-closed"><div class="extm-fold-clip"><div class="extm-detail" id="extm-detail-' + r.id + '"></div></div></div></td>'; }
-        detail.firstElementChild.colSpan = 12;
+        detail.firstElementChild.colSpan = 11;
         if (detail !== cursor) body.insertBefore(detail, cursor);
         cursor = detail.nextElementSibling;
         renderDetail(r.id);
@@ -411,6 +390,8 @@
     body.onclick = function (e) {
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
+      if (b.hasAttribute("data-credit-error")) showCreditError(Number(b.dataset.creditError));
+      if (b.hasAttribute('data-sub2-details')) showSub2Details(Number(b.dataset.sub2Details));
       if (b.hasAttribute("data-copy-email")) copyEmail(Number(b.dataset.copyEmail));
       if (b.hasAttribute('data-otp-settings')) editOtpMode(Number(b.dataset.otpSettings));
       if (b.hasAttribute("data-note")) editNote(Number(b.dataset.note));
@@ -420,6 +401,7 @@
       if (b.hasAttribute("data-del")) doDelete([Number(b.dataset.del)]);
     };
     updSel();
+    renderSub2Details();
   }
 
   function editOtpMode(id) {
@@ -501,31 +483,30 @@
   }
 
   function mailState(config) {
-    el('extm-mail-state').textContent = config.configured ? '已配置' : '未配置';
-    el('extm-mail-token').placeholder = config.configured ? '已保存；粘贴新 Token 可替换' : '粘贴 supply.ink Token';
+    view.update({mailState:config.configured ? '已配置' : '未配置', mailPlaceholder:config.configured ? '已保存；粘贴新 Token 可替换' : '粘贴 supply.ink Token'});
   }
   function loadMailConfig() {
-    return api('/mail/config').then(mailState).catch(function () { el('extm-mail-state').textContent = '配置读取失败'; });
+    return api('/mail/config').then(mailState).catch(function () { view.update({mailState:'配置读取失败'}); });
   }
-  async function mailAction(button, action) {
+  async function mailAction(action) {
     if (st.mailSaving) return;
-    var label = button.textContent, input = el('extm-mail-token'), result = el('extm-mail-result');
-    if (action === 'save' && !input.value.trim()) { result.textContent = '请先粘贴 supply.ink Token'; return; }
+    if (action === 'save' && !view.form.mailToken.trim()) { view.update({mailResult:'请先粘贴 supply.ink Token'}); return; }
     st.mailSaving = true;
-    ['save', 'test', 'clear'].forEach(function (key) { el('extm-mail-' + key).disabled = true; });
-    setLoading(button, true, '处理中…'); result.textContent = action === 'test' ? '正在测试已保存的邮件连接…' : '正在保存…';
+    ['save', 'test', 'clear'].forEach(function (key) { view.button('extm-mail-' + key, {disabled:true, loading:key === action}); });
+    view.update({mailResult:action === 'test' ? '正在测试已保存的邮件连接…' : '正在保存…'});
     try {
       if (action === 'test') {
-        var data = await api('/mail/test', {method: 'POST'});
-        result.textContent = data.message + ' · 可查询 ' + data.total + ' 个账号';
+        var data = await api('/mail/test', {method:'POST'});
+        view.update({mailResult:data.message + ' · 可查询 ' + data.total + ' 个账号'});
       } else {
-        var config = await api('/mail/config', {method: 'PUT', body: action === 'clear' ? {clear_token: true} : {token: input.value.trim()}});
-        mailState(config); input.value = ''; result.textContent = action === 'clear' ? '邮件 Token 已清除' : '邮件 Token 已保存';
+        var config = await api('/mail/config', {method:'PUT', body:action === 'clear' ? {clear_token:true} : {token:view.form.mailToken.trim()}});
+        mailState(config); view.form.mailToken = '';
+        view.update({mailResult:action === 'clear' ? '邮件 Token 已清除' : '邮件 Token 已保存'});
       }
-    } catch (e) { result.textContent = e.message; }
+    } catch (e) { view.update({mailResult:e.message}); }
     finally {
-      st.mailSaving = false; setLoading(button, false, label);
-      ['save', 'test', 'clear'].forEach(function (key) { el('extm-mail-' + key).disabled = false; });
+      st.mailSaving = false;
+      ['save', 'test', 'clear'].forEach(function (key) { view.button('extm-mail-' + key, {disabled:false, loading:false}); });
     }
   }
   function showMail(id) {
@@ -647,7 +628,7 @@
 
   function profilePill(p) {
     var kind = p && p.current_kind;
-    return '<span class="extm-pill ' + (kind === 'organization' ? 'info' : kind === 'personal' ? 'ok' : 'mut') + '">' +
+    return '<span class="extm-pill ' + (kind === 'organization' ? 'organization' : kind === 'personal' ? 'personal' : 'mut') + '">' +
       (kind === 'organization' ? '组织配置' : kind === 'personal' ? '个人配置' : '未获取') + '</span>';
   }
   function profileDetail(row) {
@@ -684,12 +665,16 @@
       panel.dataset.ready = "1";
       panel.innerHTML = '<section class="extm-profile-card extm-task-card" aria-label="账号配置详情"></section><div class="extm-detail-error" role="status"></div><div class="extm-task-layout">' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务历史</strong><span class="sp"></span><button class="extm-btn dft sm" data-action="manage" aria-pressed="false">管理历史</button><button class="extm-btn del sm" data-action="delete">删除选中</button></div>' +
-        '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col style="width:65px"><col></colgroup>' +
-        '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>操作人</th><th>时间</th></tr></thead><tbody></tbody></table></div></section>' +
+        '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col></colgroup>' +
+        '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>时间</th></tr></thead><tbody></tbody></table></div><nav class="extm-history-pager"></nav></section>' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务详情</strong><div class="extm-task-actions"><label class="extm-auto"><input type="checkbox" data-auto checked>自动刷新</label><button class="extm-btn dft sm" data-action="refresh">刷新</button><button class="extm-btn dft sm" data-action="pause">暂停任务</button><button class="extm-btn del sm" data-action="cancel">终止任务</button></div></div>' +
         '<div class="extm-task-body"><div class="extm-job-title"></div><div class="extm-job-meta"></div><div class="extm-counts"></div><div class="extm-progress" role="progressbar" aria-label="任务进度"><div></div></div><div class="extm-detail-error extm-job-error"></div>' +
         '<div class="extm-log-tools"><span data-log-count>实时日志</span><span class="sp"></span><select class="extm-in" data-log-scope aria-label="日志范围"><option value="member">当前账号日志</option><option value="all">整批任务日志</option></select><button class="extm-btn dft sm" data-action="clear-logs">清空日志</button></div>' +
         '<div class="extm-log-legend" aria-label="日志颜色说明"><span><i class="success"></i>成功</span><span><i class="warn"></i>警告</span><span><i class="error"></i>错误</span><span><i class="progress"></i>进度</span><span><i class="info"></i>普通</span></div><pre class="extm-logs" tabindex="0" aria-label="任务日志"></pre><div class="extm-scope-note"></div></div></section></div>';
+      d.updateHistoryPager = window.OKAD_PAGINATION.mountPager(panel.querySelector('.extm-history-pager'), {id:'extm-history-size-' + id,
+        state:function () { return {page:d.historyPage, size:d.historySize, total:d.jobs.length, busy:d.action}; },
+        onPage:function (value) { d.historyPage = value; d.checked.clear(); renderDetail(id); },
+        onSize:function (value) { d.historySize = value; d.historyPage = 1; d.checked.clear(); renderDetail(id); }});
       panel.onclick = function (e) {
         var action = e.target.closest("[data-action]");
         if (action && !action.disabled) { taskAction(id, action.dataset.action); return; }
@@ -709,13 +694,15 @@
     setText(manage, d.manage ? '结束管理' : '管理历史');
     setText(panel.querySelector(":scope > .extm-detail-error"), d.error);
     var history = panel.querySelector(".extm-history tbody");
-    setHTML(history, d.jobs.length ? d.jobs.map(function (j) {
+    d.historyPage = Math.min(d.historyPage, Math.max(1, Math.ceil(d.jobs.length / d.historySize)));
+    if (d.updateHistoryPager) d.updateHistoryPager();
+    setHTML(history, d.jobs.length ? d.jobs.slice((d.historyPage - 1) * d.historySize, d.historyPage * d.historySize).map(function (j) {
       return '<tr data-job="' + j.id + '" class="' + (j.id === d.selected ? 'active' : '') + '" aria-selected="' + (j.id === d.selected) + '">' +
         '<td class="extm-history-select"><input type="checkbox" data-job-check="' + j.id + '" aria-label="选择任务 #' + j.id + '"' + (d.checked.has(j.id) ? ' checked' : '') + (activeJob(j) ? ' disabled' : '') + '></td>' +
         '<td><button class="extm-link" title="查看任务 #' + j.id + '">#' + j.id + '</button></td><td>' + jobPill(j) + '</td>' +
         '<td title="成功 ' + j.success + '，失败 ' + j.fail + '">' + (j.success + j.fail) + '/' + j.target + '</td>' +
-        '<td title="' + esc(j.operator || '历史记录未记录操作人') + '">' + esc(j.operator || '—') + '</td><td title="' + esc(fmtTime(j.created_at)) + '">' + esc(fmtTime(j.created_at).slice(5)) + '</td></tr>';
-    }).join("") : '<tr><td colspan="' + (d.manage ? 6 : 5) + '" class="extm-empty">' + (d.loading ? '正在读取任务…' : '暂无关联任务，点击重登开始') + '</td></tr>');
+        '<td title="' + esc(fmtTime(j.created_at)) + '">' + esc(fmtTime(j.created_at).slice(5)) + '</td></tr>';
+    }).join("") : '<tr><td colspan="' + (d.manage ? 5 : 4) + '" class="extm-empty">' + (d.loading ? '正在读取任务…' : '暂无关联任务，点击重登开始') + '</td></tr>');
     panel.querySelector("[data-auto]").checked = d.auto;
     panel.querySelector("[data-log-scope]").value = d.scope;
     var job = d.job && d.job.id === d.selected ? d.job : d.jobs.find(function (j) { return j.id === d.selected; });
@@ -731,7 +718,7 @@
     pause.title = '暂停会等待当前账号完成，排队账号不再启动';
     panel.querySelector('[data-action="clear-logs"]').disabled = !job || !job.log_total || d.action;
     setHTML(panel.querySelector(".extm-job-title"), job ? '<strong>外部子号登录 · #' + job.id + '</strong>' + jobPill(job) : '<span class="extm-msg mut">' + (d.loading ? '正在加载…' : '选择历史任务查看详情') + '</span>');
-    setHTML(panel.querySelector(".extm-job-meta"), job ? '<span>操作人 <b>' + esc(job.operator || '—') + '</b></span><span>开始 <b>' + esc(fmtTime(job.created_at)) + '</b></span>' + (job.finished_at ? '<span>结束 <b>' + esc(fmtTime(job.finished_at)) + '</b></span>' : '') : '');
+    setHTML(panel.querySelector(".extm-job-meta"), job ? '<span>开始 <b>' + esc(fmtTime(job.created_at)) + '</b></span>' + (job.finished_at ? '<span>结束 <b>' + esc(fmtTime(job.finished_at)) + '</b></span>' : '') : '');
     var batch = job && job.extra && job.extra.batch;
     var oldBatch = panel.querySelector('[data-login-batch]'); if (oldBatch) oldBatch.remove();
     if (batch) panel.querySelector('.extm-job-meta').insertAdjacentHTML('beforeend', '<span data-login-batch>批次 <b>' + esc(batch.index) + '/' + esc(batch.total) + ' · 每批最多 ' + esc(batch.size) + ' 个</b></span>');
@@ -752,7 +739,7 @@
     var d = detailState(id);
     if (d.loading) return d.promise.then(function () { if (force) return refreshDetail(id); });
     d.loading = true; d.error = ''; renderDetail(id);
-    d.promise = api('/members/' + id + '/jobs?limit=50').then(function (jobs) {
+    d.promise = api('/members/' + id + '/jobs?limit=10000').then(function (jobs) {
       d.jobs = jobs;
       d.checked.forEach(function (jid) { if (!jobs.some(function (j) { return j.id === jid && !activeJob(j); })) d.checked.delete(jid); });
       if (!jobs.some(function (j) { return j.id === d.selected; })) d.selected = jobs.length ? jobs[0].id : null;
@@ -787,87 +774,244 @@
   }
 
   function updSel() {
+    if (!view) return;
     renderPagination();
-    setText(el('extm-selc'), st.sel.size);
-    setLoading(el('extm-export'), !!st.exporting, st.exporting ? '导出中…' : (st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : (qs().length ? '导出筛选 Cookie' : '导出全部 Cookie')));
-    var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
     var busy = st.rows.some(function (r) { return st.sel.has(r.id) && running(r); });
     var saving = Array.from(st.sel).some(function (id) { return st.profileSaving.has(id); });
-    var profileSelect = el('extm-batch-profile');
-    if (profileSelect) {
-      var selectedRows = st.rows.filter(function (row) { return st.sel.has(row.id); });
-      var preferences = new Set(selectedRows.map(function (row) { return row.profile_preference || ''; }));
-      setText(profileSelect.options[0], st.profileSaving.size ? '保存中…' : !st.sel.size ? '请先勾选账号' : '所选配置不一致');
-      profileSelect.value = !st.profileSaving.size && preferences.size === 1 ? selectedRows[0].profile_preference || '' : '__mixed__';
-      profileSelect.disabled = !st.sel.size || busy || st.profileSaving.size > 0 || !!st.loginAllSubmitting;
-    }
-    setLoading(el('extm-batch-login'), busy || saving || !!st.loginAllSubmitting, saving ? '配置保存中…' : busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : ''), busy && st.rows.some(function(r){return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}));
-    if (el('extm-batch-login')) el('extm-batch-login').disabled = busy || saving || !!st.loginAllSubmitting || !st.sel.size;
-    var loginAllButton = el('extm-login-all');
-    setLoading(loginAllButton, !!st.loginAllSubmitting, st.loginAllSubmitting ? '提交重登中…' : (qs().length ? '一键重登筛选结果' : '一键重登全部'));
-    if (loginAllButton) {
-      loginAllButton.disabled = !!st.loginAllSubmitting || st.pending.size > 0 || st.profileSaving.size > 0;
-      loginAllButton.title = (qs().length ? '重登符合当前筛选的全部外部子号' : '重登全部外部子号') + '，自动跳过任务未结束的账号';
-    }
-    if (el('extm-batch-del')) el('extm-batch-del').disabled = busy || saving;
-    var pushing = st.sub2Submitting || st.rows.some(function (r) { return st.sel.has(r.id) && ['pending', 'syncing'].includes(r.sub2_status); });
-    setLoading(el('extm-sub2-push'), !!pushing, pushing ? 'Sub2 同步中…' : '推送 Sub2');
-    if (el('extm-sub2-push')) el('extm-sub2-push').disabled = !!pushing || !st.sel.size || busy;
-    setLoading(el('extm-sub2-relink'), !!pushing, pushing ? 'Sub2 同步中…' : '重新关联 / 推送');
-    if (el('extm-sub2-relink')) el('extm-sub2-relink').disabled = !!pushing || !st.sel.size || busy;
+    var selectedRows = st.rows.filter(function (row) { return st.sel.has(row.id); });
+    var preferences = new Set(selectedRows.map(function (row) { return row.profile_preference || ''; }));
+    view.update({selected:st.sel.size,
+      profilePlaceholder:st.profileSaving.size ? '保存中…' : !st.sel.size ? '请先勾选账号' : '所选配置不一致',
+      profile:!st.profileSaving.size && preferences.size === 1 ? selectedRows[0].profile_preference || '' : '__mixed__',
+      profileDisabled:!st.sel.size || busy || st.profileSaving.size > 0 || !!st.loginAllSubmitting});
+    view.button('extm-export', {disabled:!!st.exporting, loading:!!st.exporting, text:st.exporting ? '导出中…' : st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : qs().length ? '导出筛选 Cookie' : '导出全部 Cookie'});
+    view.button('extm-export-emails', {disabled:!!st.exportingEmails || !st.sel.size, loading:!!st.exportingEmails, text:st.exportingEmails ? '邮箱导出中…' : '导出选中邮箱' + (st.sel.size ? '（' + st.sel.size + '）' : '')});
+    var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
+    view.button('extm-batch-login', {disabled:busy || saving || !!st.loginAllSubmitting || !st.sel.size,
+      loading:busy && st.rows.some(function (r) {return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}),
+      text:saving ? '配置保存中…' : busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : '')});
+    view.button('extm-login-all', {disabled:!!st.loginAllSubmitting || st.pending.size > 0 || st.profileSaving.size > 0, loading:!!st.loginAllSubmitting,
+      text:st.loginAllSubmitting ? '提交重登中…' : qs().length ? '一键重登筛选结果' : '一键重登全部'});
+    view.button('extm-batch-del', {disabled:busy || saving || !st.sel.size});
+    var pushing = st.sub2Submitting || st.rows.some(function (r) {return st.sel.has(r.id) && ['pending','syncing'].includes(r.sub2_status);});
+    ['extm-sub2-push','extm-sub2-relink'].forEach(function (id) {
+      view.button(id, {disabled:!!pushing || !!st.sub2Confirming || !st.sel.size || busy, loading:!!pushing,
+        text:pushing ? 'Sub2 同步中…' : id === 'extm-sub2-push' ? '推送 Sub2' : '重新关联 / 推送'});
+    });
   }
   function selIds() { return Array.from(st.sel); }
 
-  function sub2Pill(row) {
+  function sub2Stock(row) {
     var stock = st.stock, item = stock && stock.items && stock.items[row.id];
     if (item && String(item.email || '').trim().toLowerCase() !== row.email.trim().toLowerCase()) item = null;
-    var tone = 'mut', label = 'Sub2 库存查询中', tip = '正在按完整邮箱核对 Sub2 当前库存';
+    var tone = 'info', label = 'Sub2 库存查询中', tip = '正在按完整邮箱核对 Sub2 当前库存';
     if (stock && stock.ok && item) {
       tone = item.in_stock ? 'ok' : 'mut'; label = item.in_stock ? '在库 Sub2' : '未在库 Sub2';
       tip = (item.in_stock ? 'Sub2 中已存在此邮箱账号，可能由号池或其他入口导入' : '当前 Sub2 中未找到此邮箱账号') + ' · 核对时间 ' + fmtTime(stock.checked_at);
       if (item.account_ids && item.account_ids.length) tip += ' · 账号 #' + item.account_ids.join('、#');
     } else if (stock && !stock.ok) {
+      tone = stock.configured === false ? 'mut' : 'warn';
       label = stock.configured === false ? 'Sub2 未配置' : 'Sub2 状态暂不可用';
       tip = stock.message || '暂时无法确认 Sub2 库存，请稍后刷新';
     }
+    return {tone: tone, label: label, tip: tip};
+  }
+
+  function sub2Pill(row) {
+    var stock = sub2Stock(row), tip = stock.tip;
     var detail = row.sub2_message || '';
     if (row.sub2_account_id) detail += ' · 账号 #' + row.sub2_account_id;
     if (row.sub2_synced_at) detail += ' · 上次同步 ' + fmtTime(row.sub2_synced_at);
     if (row.sub2_status === 'synced') tip += ' · 本页 Cookie 上次同步成功' + detail;
-    var html = '<span data-sub2-stock class="extm-pill ' + tone + '" style="margin-top:4px" title="' + esc(tip) + '">' + label + '</span>';
+    var html = '<span data-sub2-stock class="extm-pill ' + stock.tone + '" style="margin-top:4px" title="' + esc(tip) + '">' + stock.label + '</span>';
     var state = { pending: ['warn', 'Sub2 待同步'], syncing: ['info', 'Sub2 同步中'], failed: ['bad', 'Sub2 同步失败'] }[row.sub2_status];
-    if (!state) return html;
-    return html + ' <span class="extm-pill ' + state[0] + '" style="margin-top:4px" title="' + esc(detail) + '">' + state[1] + '</span>' +
+    var button = '<button type="button" class="extm-link extm-sub2-details" data-sub2-details="' + row.id + '" aria-haspopup="dialog" aria-label="查看 ' + esc(row.email) + ' 的 Sub2 同步详情">' + window.OKAD_ICONS.svg('info', 12) + '详情</button>';
+    if (!state) return '<span class="extm-sub2-state">' + html + button + '</span>';
+    return html + ' <span class="extm-sub2-state"><span class="extm-pill ' + state[0] + '" style="margin-top:4px" title="' + esc(detail) + '">' + state[1] + '</span>' + button + '</span>' +
       (row.sub2_status === 'failed' ? '<span class="extm-clip" style="font-size:12px;color:#d03050" title="' + esc(detail) + '">' + esc(row.sub2_message || '请重新推送') + '</span>' : '');
   }
 
+  function sub2Explanation(row) {
+    var status = row.sub2_status || 'not_pushed', message = (row.sub2_message || '').trim();
+    if (status === 'pending' && message === 'Cookie 已写入，等待 Sub2 代理就绪') return {
+      title: '已发送到 Sub2，正在等可用线路',
+      reason: '账号的登录信息已经送到 Sub2。这个账号使用的网络线路暂时没有准备好，所以还不能检查账号能否使用。',
+      action: '不用重新登录，也不用重复推送。请管理员在 Sub2 检查线路是否正常、有没有空位。线路准备好后，系统会自动继续检查。'
+    };
+    if (status === 'pending' && message === 'Cookie 已写入，等待重新验证') return {
+      title: '已发送到 Sub2，正在等再次检查',
+      reason: '账号的登录信息已经送到 Sub2，但这次还没能检查完账号是否可用。系统会保留登录信息，稍后再试。',
+      action: '先等待系统自动重试，不用重新登录。若一直没有变化，请管理员查看 Sub2 中这个账号的检查结果和网络连接。'
+    };
+    if (status === 'pending' || status === 'syncing') return {
+      title: status === 'syncing' ? '正在发送登录信息' : '正在排队处理',
+      reason: '系统已收到同步请求，还没有返回完成结果。「在库 Sub2」只表示 Sub2 里有这个账号，不代表这次登录信息已经更新。',
+      action: '先等一会儿，页面会自动更新。若一直没有变化，请管理员到「联动中心」查看这个账号的处理进度。'
+    };
+    if (status === 'failed') return {
+      title: '这次没有完成，需要处理一下',
+      reason: '发送登录信息或检查账号时遇到了问题。之前保存的登录信息还在，具体原因见下方「系统提示」。',
+      action: /404|关联账号不存在|关联账号已删除/.test(message) ? '请管理员先确认 Sub2 中的账号是否被删除。确定要恢复时，再点击「更多操作 → 重新关联 / 推送」。' : '请管理员按系统提示处理问题，再勾选账号点击「推送 Sub2」重试。已有登录信息时，不用先重新登录。'
+    };
+    if (status === 'synced') return {
+      title: '登录信息已更新',
+      reason: 'Sub2 已收到登录信息。账号能不能正常使用，还要看 Sub2 中的检查结果。',
+      action: '可以到 Sub2 查看这个账号。若显示暂停或异常，请按那里的提示处理。'
+    };
+    return {
+      title: status === 'not_pushed' ? '还没有同步记录' : '暂时无法确认是否已完成',
+      reason: '当前页面还不能确认登录信息是否已成功发送。Sub2 中即使已有这个邮箱，也可能还没收到这里的登录信息。',
+      action: row.has_cookie ? '需要发送到 Sub2 时，勾选这个账号，再点击「推送 Sub2」。' : '先点击账号行的「重登」完成登录，再查看发送结果。'
+    };
+  }
+
+  function renderSub2Details() {
+    var dialog = el('extm-sub2-detail-dialog'); if (!dialog || !dialog.open) return;
+    var row = rowById(Number(dialog.dataset.member));
+    if (!row) { dialog.close(); return; }
+    var info = sub2Explanation(row);
+    var stockText = {'在库 Sub2': '已添加到 Sub2', '未在库 Sub2': 'Sub2 中还没有这个账号', 'Sub2 库存查询中': '正在查询', 'Sub2 状态暂不可用': '暂时查不到，请稍后再看', 'Sub2 未配置': '尚未设置 Sub2 连接'}[sub2Stock(row).label];
+    var messageText = {
+      'Cookie 已写入，等待 Sub2 代理就绪': '登录信息已收到，网络线路还没准备好。',
+      'Cookie 已写入，等待重新验证': '登录信息已收到，稍后会再检查账号是否可用。',
+      '等待同步 Cookie': '已排队，等待发送登录信息。',
+      '正在同步 Cookie': '正在发送登录信息。',
+      '等待版本同步与验证': '已排队，等待更新登录信息并检查账号。',
+      'Cookie 已保存，等待同步与验证': '登录信息已保存，等待发送和检查。',
+      'Cookie 已保存，等待同步': '登录信息已保存，等待发送。',
+      'Cookie 已同步，重登成功后自动更新': '登录信息已更新，下次登录成功后会自动发送新的信息。',
+      '凭据已验证，可调度；模型尚未验证': '登录信息检查通过，账号已启用；还没确认能否正常出图。',
+      '凭据已验证，保持暂停或等待代理分配': '登录信息检查通过，账号仍暂停或在等待网络线路。'
+    }[row.sub2_message] || row.sub2_message || '暂无说明';
+    setHTML(dialog.querySelector('[data-sub2-detail-content]'),
+      '<p>' + esc(row.email) + '</p><div class="extm-sub2-summary"><strong>' + esc(info.title) + '</strong><p>' + esc(info.reason) + '</p></div>' +
+      '<dl><dt>Sub2 中的账号</dt><dd>' + esc(stockText) + '</dd><dt>Sub2 账号编号</dt><dd>' + (row.sub2_account_id ? '#' + esc(row.sub2_account_id) : '暂无编号') + '</dd>' +
+      '<dt>系统提示</dt><dd>' + esc(messageText) + '</dd><dt>最近记录时间</dt><dd>' + esc(fmtTime(row.sub2_synced_at, true)) + '</dd></dl>' +
+      '<h4>接下来怎么做</h4><p class="extm-sub2-help">' + esc(info.action) + '</p><p class="extm-sub2-footnote">这里会随列表自动更新。打开详情只是查看说明，不会重新登录或发送账号信息。</p>');
+    refreshSub2Capacity(dialog, row);
+  }
+
+  function drawSub2Stamp(canvas) {
+    var ctx = canvas.getContext('2d'); if (!ctx) return;
+    canvas.width = 880; canvas.height = 360;
+    ctx.scale(2, 2);
+    ctx.strokeStyle = ctx.fillStyle = '#c72b35';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.roundRect(13, 15, 414, 150, 9); ctx.stroke();
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(22, 24, 396, 132);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '800 29px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillText('账号已经超出', 220, 68);
+    ctx.fillText('节点容量限制，老铁。', 220, 111);
+    // A fixed texture avoids flickering or redrawing random marks on every poll.
+    ctx.globalCompositeOperation = 'destination-out';
+    for (var i = 0; i < 380; i++) {
+      ctx.globalAlpha = .15 + (i % 5) * .1;
+      ctx.fillRect((i * 97 + 31) % 440, (i * 53 + 11) % 180, 1 + i % 3, .7 + i % 2);
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
+  function refreshSub2Capacity(dialog, row) {
+    var layer = dialog.querySelector('.extm-sub2-stamp-layer'), note = dialog.querySelector('[data-sub2-capacity]');
+    var key = [row.email, row.sub2_status, row.sub2_message, row.sub2_account_id, row.sub2_synced_at].join('|');
+    if (key !== dialog._capacityKey) {
+      dialog._capacityKey = key; dialog._capacityChecked = 0; layer.hidden = note.hidden = true;
+    }
+    if (row.sub2_status !== 'pending' || row.sub2_message !== 'Cookie 已写入，等待 Sub2 代理就绪') return;
+    if (dialog._capacityLoading || Date.now() - (dialog._capacityChecked || 0) < 30000) return;
+    dialog._capacityLoading = true;
+    // Hide old evidence while refreshing, and ignore responses for a closed or changed account.
+    layer.hidden = note.hidden = true;
+    api('/members/' + row.id + '/sub2-capacity', {timeout: 55000}).then(function (data) {
+      if (el('extm-sub2-detail-dialog') !== dialog || !dialog.open || dialog._capacityKey !== key) return;
+      var confirmed = data.confirmed === true && data.account_id === row.sub2_account_id;
+      layer.hidden = note.hidden = !confirmed;
+      if (confirmed) note.textContent = '刚刚核对：' + data.accounts + ' 个账号，' + data.nodes + ' 个节点，每个最多 ' + data.per_node + ' 个账号，合计最多 ' + data.capacity + ' 个。请管理员增加节点或减少需要分配线路的账号。';
+    }).catch(function () { /* An unavailable check never means capacity exceeded. */ }).finally(function () {
+      dialog._capacityLoading = false;
+      if (dialog._capacityKey === key) dialog._capacityChecked = Date.now();
+    });
+  }
+
+  function showSub2Details(id) {
+    if (!rowById(id) || el('extm-sub2-detail-dialog')) return;
+    var dialog = document.createElement('dialog'); dialog.id = 'extm-sub2-detail-dialog'; dialog.className = 'extm-note-dialog extm-sub2-dialog'; dialog.dataset.member = id;
+    dialog.setAttribute('aria-labelledby', 'extm-sub2-detail-title');
+    dialog.innerHTML = '<h3 id="extm-sub2-detail-title">Sub2 同步详情</h3><div data-sub2-detail-content></div><p class="extm-sub2-capacity" data-sub2-capacity hidden></p><div class="extm-sub2-stamp-layer" hidden><canvas class="extm-sub2-stamp" role="img" aria-label="账号已经超出节点容量限制，老铁。">账号已经超出节点容量限制，老铁。</canvas></div><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
+    drawSub2Stamp(dialog.querySelector('canvas'));
+    dialog.querySelector('button').onclick = function () { dialog.close(); };
+    dialog.onclose = function () { dialog.remove(); var button = document.querySelector('[data-sub2-details="' + id + '"]'); if (st.open && button) button.focus({preventScroll:true}); };
+    document.body.appendChild(dialog); dialog.showModal(); renderSub2Details();
+  }
+
+  function sub2SubscriptionWarnings(ids) {
+    return ids.map(function (id) {
+      var row = rowById(id);
+      if (!row) throw new Error('所选账号已发生变化，请重新勾选后推送');
+      var reason = row.credits_error ? '积分查询失败：' + row.credits_error
+        : row.login_status === 'never' ? '订阅状态未知：尚未查询积分'
+        : row.credits_total == null ? '订阅状态未知：积分未查到'
+        : row.subscription_ok !== true ? '订阅状态异常：掉订阅' : '';
+      return reason ? {id:id, email:row.email, reason:reason} : null;
+    }).filter(Boolean);
+  }
+
+  function confirmSub2Subscription(ids, warnings, relink) {
+    return new Promise(function (resolve) {
+      var dialog = document.createElement('dialog'); dialog.id = 'extm-sub2-confirm-dialog'; dialog.className = 'extm-note-dialog extm-sub2-confirm-dialog';
+      dialog.setAttribute('aria-labelledby', 'extm-sub2-confirm-title'); dialog.setAttribute('aria-describedby', 'extm-sub2-confirm-summary');
+      dialog.innerHTML = '<h3 id="extm-sub2-confirm-title">订阅状态异常，是否继续推送？</h3><p id="extm-sub2-confirm-summary">已选 ' + ids.length + ' 个账号，其中 ' + warnings.length + ' 个订阅异常或状态未知。确认后将继续推送本次选中的 ' + ids.length + ' 个账号到 Sub2。</p><ul aria-label="订阅异常或状态未知的账号">' + warnings.map(function (item) { return '<li><strong>' + esc(item.email) + '</strong><span>' + esc(item.reason) + '</span></li>'; }).join('') + '</ul>' +
+        (relink ? '<p class="extm-relink-warning">本次将重新关联：按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。</p>' : '') +
+        '<footer><button type="button" class="extm-btn dft" data-cancel>取消</button><button type="button" class="extm-btn" data-confirm>确认推送</button></footer>';
+      dialog.querySelector('[data-cancel]').onclick = function () { dialog.close(); };
+      dialog.querySelector('[data-confirm]').onclick = function () { dialog.close('confirm'); };
+      dialog.onclose = function () { var approved = dialog.returnValue === 'confirm'; dialog.remove(); resolve(approved); };
+      document.body.appendChild(dialog); dialog.showModal(); dialog.querySelector('[data-cancel]').focus();
+    });
+  }
+
   async function pushSub2(relink) {
-    var ids = selIds(); if (!ids.length || st.sub2Submitting) return;
-    if (relink && !confirm('重新关联选中的 ' + ids.length + ' 个账号？将按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。')) return;
-    st.sub2Submitting = true; updSel();
+    var ids = selIds(); if (!ids.length || st.sub2Submitting || st.sub2Confirming) return;
+    st.sub2Confirming = true; updSel();
     try {
+      var warnings = sub2SubscriptionWarnings(ids), relinkConfirmed = false;
+      while (warnings.length) {
+        var shown = JSON.stringify(warnings);
+        if (!await confirmSub2Subscription(ids, warnings, relink)) return;
+        relinkConfirmed = !!relink;
+        warnings = sub2SubscriptionWarnings(ids);
+        // Polling may discover another abnormal account while the dialog is open.
+        // Consent applies only to the accounts and reasons actually shown.
+        if (JSON.stringify(warnings) === shown) break;
+      }
+      if (relink && !relinkConfirmed && !confirm('重新关联选中的 ' + ids.length + ' 个账号？将按邮箱查找 Sub2 账号，不存在时创建新账号并推送 Cookie。这可能恢复其他管理员已删除的账号。')) return;
+      if (ids.some(function (id) { var row = rowById(id); return !row || running(row); })) throw new Error('所选账号状态已变化，请等待任务结束后重新推送');
+      st.sub2Confirming = false; st.sub2Submitting = true; updSel();
       var result = await api('/members/' + (relink ? 'relink-sub2' : 'push-sub2'), { method: 'POST', body: { ids: ids } });
       toast(result.queued ? 'success' : 'warning', result.message);
       await load(true);
     } catch (e) { toast('error', e.message); }
-    finally { st.sub2Submitting = false; updSel(); }
+    finally { st.sub2Confirming = false; st.sub2Submitting = false; updSel(); }
   }
 
   async function doImport() {
-    var ta = el('extm-import'), btn = el('extm-do-import'), content = (ta && ta.value || '').trim();
-    if (!content) { opMsg('请粘贴要导入的子号', 'err'); return; }
-    setLoading(btn, true, '导入中'); opMsg('导入中…', 'mut');
+    if (st.importing) return;
+    var btn = el('extm-do-import'), content = view.form.content.trim();
+    if (!content) { view.importResult('请粘贴要导入的子号', 'err'); return; }
+    st.importing = true; setLoading(btn, true, '导入中'); view.importResult('导入中…', 'mut');
     try {
-      var payload = {content:content, on_duplicate:el('extm-dup').value};
-      if (el('extm-otp-mode').value) payload.otp_mode = el('extm-otp-mode').value;
+      var payload = {content:content, on_duplicate:view.form.duplicate};
+      if (view.form.otpMode) payload.otp_mode = view.form.otpMode;
       var r = await api('/members/import', { method: 'POST', body: payload });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
-      if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 20 个，成功后自动推送 Sub2';
+      if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 50 个，成功后自动推送 Sub2';
       if (r.sequential_login) msg += ' · 按导入顺序逐个自动取码登录';
       if (r.errors && r.errors.length) msg += ' · ' + r.errors.join('；');
-      opMsg(msg, r.failed ? 'err' : 'ok'); if (!r.failed) ta.value = ''; await load(true);
-    } catch (e) { opMsg(e.message, 'err'); }
-    finally { setLoading(btn, false, '批量导入'); }
+      view.importResult(msg, r.failed ? 'err' : 'ok'); if (!r.failed) view.form.content = ''; await load(true);
+    } catch (e) { view.importResult(e.message, 'err'); }
+    finally { st.importing = false; setLoading(btn, false, '批量导入'); }
   }
 
   async function startLogin(ids, expandFirst) {
@@ -881,7 +1025,7 @@
       ids.forEach(function (id) { var row = rowById(id); if (row) row.latest_job = job; });
       if (expandFirst) st.expanded.add(ids[0]);
       ids.forEach(function (id) { detailState(id).selected = job.id; });
-      toast('success', '已提交登录任务 #' + job.id + '，每批最多 20 个，成功后自动推送 Sub2');
+      toast('success', '已提交登录任务 #' + job.id + '，每批最多 50 个，成功后自动推送 Sub2');
     } catch (e) { toast('error', e.message); }
     finally { ids.forEach(function (id) { st.pending.delete(id); }); renderRows(); await load(true); }
     if (st.expanded.has(ids[0])) await refreshDetail(ids[0], true);
@@ -894,7 +1038,7 @@
 
   async function loginAll() {
     if (st.loginAllSubmitting || st.pending.size || st.profileSaving.size) return;
-    var filters = { login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q };
+    var filters = Object.assign({ login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q }, extraFilters());
     var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
     st.loginAllSubmitting = true;
     ids.forEach(function (id) { st.pending.add(id); });
@@ -925,6 +1069,22 @@
       finally { input.remove(); if (focused && focused.isConnected) focused.focus({ preventScroll: true }); }
     }
     toast(copied ? 'success' : 'error', copied ? '已复制账号：' + row.email : '复制失败，请手动复制账号：' + row.email);
+  }
+
+  async function exportEmails() {
+    if (st.exportingEmails) return;
+    var ids = selIds();
+    if (!ids.length) { toast('warning', '请先勾选要导出的账号'); return; }
+    st.exportingEmails = true; updSel();
+    try {
+      var blob = await api('/members/export-emails', { method: 'POST', body: { ids: ids }, blob: true });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url; a.download = 'external-emails.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      toast('success', '已导出 ' + ids.length + ' 个邮箱（Excel）');
+    } catch (e) { toast('error', e.message); }
+    finally { st.exportingEmails = false; updSel(); }
   }
 
   function exportCookies() {
@@ -958,17 +1118,34 @@
     var r = window.OKAD_NAV.rect(); w.style.left = r.left + "px"; w.style.top = r.top + "px";
     w.style.setProperty("--extm-detail-width", Math.max(320, window.innerWidth - r.left - 86) + "px");
   }
-  function show() {
-    injectStyle();
+  async function show() {
+    injectStyle(); st.open = true;
     var w = el(HOST_ID);
-    if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
-    positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
+    if (!w) {
+      // Logging out removes the shell (and its panel); remount against the new shell on login.
+      if (view) { view.destroy(); view = null; mounting = null; st.total = 0; resetPage(1); }
+      w = document.createElement('div'); w.id = HOST_ID; document.body.appendChild(w);
+    }
+    positionPanel(w); w.classList.add('on');
+    if (!view) {
+      if (!mounting) mounting = import(viewURL).then(function (module) { buildBody(w, module.mountExternalMembers); }).catch(function (error) {
+        console.error('外部子号组件加载失败', error);
+        w.textContent = '页面组件加载失败，请刷新后重试'; mounting = null;
+      });
+      await mounting;
+    }
+    if (!st.open || !view) return;
+    refreshAll(false); refreshStock(true);
   }
-  function hide() { var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { if (st.loadController) st.loadController.abort(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; if (view) view.close(); var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,
     layout: function () { var w = el(HOST_ID); if (w) positionPanel(w); }
+  });
+  // A mobile-to-desktop sidebar transform can finish after ResizeObserver's last measurement.
+  document.addEventListener('transitionend', function (event) {
+    if (st.open && event.target.matches('.n-layout-sider')) positionPanel(el(HOST_ID));
   });
 
   setInterval(function () {

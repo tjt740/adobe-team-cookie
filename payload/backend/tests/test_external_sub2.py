@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -73,6 +74,8 @@ def test_explicit_push_then_relogin_updates_same_remote_account(db, setup_sync, 
     db.refresh(row)
     link = row.sub2_links[target]
     assert link['status'] == 'synced' and link['account_id'] == 10
+    first_push_at = link['synced_at']
+    assert sync.summary(row, target)['sub2_synced_at'] == first_push_at
     assert row.cookie not in json.dumps(row.sub2_links)
     account = remote.accounts[10]
     assert account['group_ids'] == [2] and account['credentials']['access_token'] == ''
@@ -91,6 +94,48 @@ def test_explicit_push_then_relogin_updates_same_remote_account(db, setup_sync, 
     assert account['proxy_id'] == 91 and account['concurrency'] == 6 and account['group_ids'] == [7]
     assert account['credentials']['model_mapping'] == {'model': 'target'}
     assert sync.summary(row, target)['sub2_status'] == 'synced'
+    assert sync.summary(row, target)['sub2_synced_at'] > first_push_at
+
+
+@pytest.mark.parametrize('linked', [False, True])
+@pytest.mark.parametrize('push_fails', [False, True])
+def test_cookie_refresh_updates_last_successful_push_time_in_list(
+        client, db, setup_sync, remote, monkeypatch, SessionLocal, linked, push_fails):
+    from app.crud import setting as setting_crud
+    from app.schemas.setting import SettingsUpdate
+    from app.services import external_login
+
+    old_time = '2026-09-26T01:00:00+00:00' if linked else None
+    links = {TARGET: {'status': 'synced', 'account_id': 10, 'synced_at': old_time}} if linked else {}
+    row = member(db, sub2_links=links)
+    remote.accounts[10] = {
+        'id': 10, 'name': row.email, 'platform': 'adobe', 'type': 'oauth',
+        'credentials': {'email': row.email, 'cookie': 'old-cookie'},
+        'extra': {}, 'group_ids': [2],
+    }
+    remote.fail = push_fails
+    setting_crud.update_settings(db, SettingsUpdate(external_api_key='test-refresh-key'))
+    monkeypatch.setattr(external_login, 'SessionLocal', SessionLocal)
+    monkeypatch.setattr(external_login, '_login_with_proxy_retry', lambda **kw: (
+        {'cookie': 'ims_sid=automatically-refreshed', 'credits': 4000, 'credits_total': 4000}, None))
+    monkeypatch.setattr(sync, 'submit', lambda ids, target: [sync._run(mid, target) for mid in ids])
+    assert client.get('/api/external/members').json()['items'][0]['sub2_synced_at'] == old_time
+
+    started = datetime.now(timezone.utc)
+    response = client.post('/api/v1/adobe/cookie/refresh', json={'email': row.email},
+                           headers={'X-API-Key': 'test-refresh-key'})
+    assert response.status_code == 200 and response.json()['ok']
+    listed = client.get('/api/external/members').json()['items'][0]
+    db.refresh(row)
+    assert row.cookie == 'ims_sid=automatically-refreshed'
+    if push_fails:
+        assert listed['sub2_status'] == 'failed'
+        assert listed['sub2_synced_at'] == old_time
+    else:
+        assert listed['sub2_status'] == 'synced'
+        assert started <= datetime.fromisoformat(listed['sub2_synced_at']) <= datetime.now(timezone.utc)
+        assert listed['sub2_synced_at'] == row.sub2_links[TARGET]['synced_at']
+        assert remote.accounts[10]['credentials']['cookie'] == row.cookie
 
 
 def test_unlinked_accounts_never_auto_push(db, setup_sync, remote, monkeypatch, SessionLocal):

@@ -8,6 +8,7 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -15,7 +16,8 @@ from app.api.routes import admin_user, adobe_account, auth, dashboard, email, ex
 from app.core.config import settings
 from app.db.init_db import init_db
 from app.services import log_store
-from app.api.routes import clash
+from app.api.routes import clash, integration, monitor
+from app.services.server_monitor import MONITOR, RequestMetricsMiddleware
 
 
 @asynccontextmanager
@@ -26,13 +28,23 @@ async def lifespan(app: FastAPI):
     from app.services.job_manager import JOBS
     JOBS.recover_interrupted('pool_cookie_sub2')
     JOBS.recover_interrupted('external_login')
+    JOBS.recover_interrupted('pool_login')
     from app.services import external_sub2
     external_sub2.resume_pending()
+    from app.services import reliable_integration
+    reliable_integration.start()
+    MONITOR.start()
     log_store.STORE.add("INFO", "system", "服务启动完成")
-    yield
+    try:
+        yield
+    finally:
+        MONITOR.stop()
+        reliable_integration.stop()
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
+app.add_middleware(RequestMetricsMiddleware, api_prefix=settings.API_PREFIX)
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,6 +72,8 @@ async def _on_validation_error(request: Request, exc: RequestValidationError):
         return JSONResponse(status_code=422, content={"detail": "请输入本次请求对应的 6 位数字验证码"})
     if request.url.path == settings.API_PREFIX + "/external/mail/config":
         return JSONResponse(status_code=422, content={"detail": "请检查邮件配置参数：Token 最多 512 字符"})
+    if request.url.path.startswith("/api/integration"):
+        return JSONResponse(status_code=422, content={"detail": "请检查联动配置参数"})
     if request.url.path.startswith(settings.API_PREFIX + "/admin/users"):
         # Pydantic's default response and log contain invalid password input.
         return JSONResponse(status_code=422, content={"detail": "请检查参数：用户名 3～50 位字母、数字或 ._-；昵称最多 50 字；密码至少 10 个字符且不超过 72 字节"})
@@ -95,7 +109,10 @@ app.include_router(clash.router, prefix=settings.API_PREFIX)
 app.include_router(log_route.router, prefix=settings.API_PREFIX)
 app.include_router(sub2.router, prefix=settings.API_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_PREFIX)
+app.include_router(monitor.router, prefix=settings.API_PREFIX)
 app.include_router(external_member.router, prefix=settings.API_PREFIX)
+app.include_router(integration.router)
+app.include_router(integration.external)
 app.include_router(external_cookie.router)  # 自带 /api/v1/adobe 前缀,不加 API_PREFIX
 
 

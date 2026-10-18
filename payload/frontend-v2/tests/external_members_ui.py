@@ -138,7 +138,8 @@ async def main():
         assert await page.locator('[data-s2stock]').count() == 0
         widths = await page.locator('[data-member="1"]').evaluate("tr => Array.from(tr.cells).map(td => ({w:td.getBoundingClientRect().width,h:td.getBoundingClientRect().height,wrap:getComputedStyle(td).whiteSpace}))")
         assert widths[2]['w'] == 280 and widths[5]['w'] >= 296, widths
-        assert all(c['wrap'] == 'nowrap' and c['h'] <= 70 for c in widths), widths
+        # Email metadata has two lines; the existing stock-details button makes rows 73px high.
+        assert all(c['wrap'] == 'nowrap' and c['h'] <= 76 for c in widths), widths
         assert '2026-09-19 13:44' in await page.locator('[data-member="1"]').inner_text()
         output = ROOT / '.local'
         output.mkdir(exist_ok=True)
@@ -232,12 +233,14 @@ async def main():
         await expect(page.locator('[data-login="1"]')).to_be_disabled()
         await expect(page.locator('[data-login="3"]')).to_be_disabled()
         # Import button itself also provides loading feedback.
+        await page.locator('#extm-open-import').click()
         await expect(page.locator('#extm-import')).to_be_visible()
         await page.locator('#extm-import').fill('synthetic@example.com----test')
         await page.locator('#extm-do-import').click()
         await expect(page.locator('#extm-do-import')).to_have_attribute('aria-busy', 'true')
         await expect(page.locator('#extm-do-import')).to_be_enabled()
         assert state['import_posts'] == 1
+        await page.locator('#extm-import-done').click()
         await page.set_viewport_size({'width': 1440, 'height': 1000})
         await page.locator('[data-member="1"] .extm-toggle').click()
         await expect(page.locator('#extm-detail-1 .extm-logs')).to_contain_text('开始登录')

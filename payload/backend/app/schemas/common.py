@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 T = TypeVar("T")
 
 DEFAULT_PAGE_SIZE = 200
-MAX_PAGE_SIZE = 500
+MAX_PAGE_SIZE = 10000
 
 
 class Page(BaseModel, Generic[T]):

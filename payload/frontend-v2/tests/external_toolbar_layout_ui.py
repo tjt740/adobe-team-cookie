@@ -1,0 +1,116 @@
+"""Check toolbar alignment, touch targets and menu bounds with synthetic accounts."""
+import asyncio
+import os
+from pathlib import Path
+
+from playwright.async_api import async_playwright, expect
+from mobile_workspace_ui import Fixtures
+
+OUTPUT = Path(__file__).resolve().parents[3] / '.local' / 'batch-layout-preview'
+CONTROLS = ['#extm-batch-profile .n-base-selection', '#extm-batch-login', '#extm-batch-del',
+            '#extm-export', '#extm-export-emails', '#extm-sub2-push', '#extm-more-actions>summary']
+
+
+async def geometry(page, width):
+    result = await page.locator('.extm-batch-row').evaluate('''(el, selectors) => {
+      const rect = node => {
+        const r=node.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};
+      };
+      return {card:rect(el.closest('.extv-list')),row:rect(el),
+        controls:selectors.map(selector=>({selector,...rect(el.querySelector(selector))})),
+        overflow:el.scrollWidth-el.clientWidth,
+        selected:rect(el.querySelector('.selc'))};
+    }''', CONTROLS)
+    assert result['overflow'] <= 1, (width, result)
+    boxes = result['controls']
+    for i, box in enumerate(boxes):
+        assert box['x'] >= result['row']['x'] and box['right'] <= result['row']['right'] + 1, (width, box)
+        assert box['x'] >= 0 and box['right'] <= width + 1, (width, box)
+        assert box['width'] > 70, (width, box)
+        for other in boxes[i+1:]:
+            overlap_x = min(box['right'], other['right']) - max(box['x'], other['x'])
+            overlap_y = min(box['bottom'], other['bottom']) - max(box['y'], other['y'])
+            assert overlap_x <= 1 or overlap_y <= 1, (width, box, other)
+    if result['card']['width'] > 1102:
+        assert max(b['bottom'] for b in boxes) - min(b['bottom'] for b in boxes) <= 1, (width, boxes)
+        assert abs(result['selected']['bottom'] - boxes[0]['bottom']) <= 1
+    elif result['card']['width'] > 602:
+        for group in (boxes[:3], boxes[3:]):
+            assert max(b['bottom'] for b in group) - min(b['bottom'] for b in group) <= 1, (width, group)
+        assert boxes[3]['y'] > boxes[0]['bottom']
+    else:
+        assert all(b['height'] >= 44 for b in boxes), (width, boxes)
+        for left, right in ((boxes[1], boxes[2]), (boxes[3], boxes[4]), (boxes[5], boxes[6])):
+            assert abs(left['y'] - right['y']) <= 1 and abs(left['width'] - right['width']) <= 1, (width, left, right)
+        assert boxes[0]['bottom'] < boxes[1]['y'] and boxes[2]['bottom'] < boxes[3]['y']
+
+
+async def main():
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    engine = os.environ.get('TOOLBAR_BROWSER', 'chromium')
+    async with async_playwright() as p:
+        browser = await getattr(p, engine).launch()
+        for prefix in ('', '/okad'):
+            context = await browser.new_context(viewport={'width':1920,'height':1000}, has_touch=True,
+                                                locale='zh-CN', timezone_id='Asia/Shanghai')
+            fixtures, errors = Fixtures(prefix), []
+            await context.route('**/*', fixtures.serve)
+            await context.add_init_script("localStorage.setItem('okad_token','synthetic-toolbar-test')")
+            page = await context.new_page()
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            await page.goto('http://toolbar.test' + prefix + '/external-members')
+            await expect(page.locator('tr[data-member]')).to_have_count(54)
+            for width in (1920,1440,1280,1100,900,800,768,640,600,430,390,375,320):
+                await page.set_viewport_size({'width':width,'height':1000})
+                await page.locator('.extm-batch-row').scroll_into_view_if_needed()
+                # Wait for the existing sidebar transition before measuring panel width.
+                await expect(page.locator('#extm-embed')).to_be_visible()
+                await page.locator('.extm-batch-row').evaluate('''el => new Promise(resolve =>
+                  requestAnimationFrame(() => requestAnimationFrame(resolve)))''')
+                await geometry(page, width)
+                await expect(page.locator('#extm-batch-login')).to_be_disabled()
+                if not prefix and width in (1920,390,320):
+                    await page.locator('.extm-batch-row').screenshot(path=str(OUTPUT/f'toolbar-{engine}-{width}.png'))
+                await page.locator('#extm-more-actions>summary').click()
+                menu = page.locator('#extm-more-actions>div')
+                await expect(menu).to_be_visible()
+                box = await menu.bounding_box()
+                assert box['x'] >= 0 and box['x'] + box['width'] <= width + 1, (width, box)
+                await page.keyboard.press('Escape')
+                await expect(menu).not_to_be_visible()
+
+            # Selection enables the same controls without moving or resizing them.
+            await page.locator('[data-member="1"] .extm-rowck').check()
+            await expect(page.locator('#extm-selc')).to_have_text('1')
+            await expect(page.locator('#extm-batch-login')).to_be_enabled()
+            await page.locator('.extm-batch-row').scroll_into_view_if_needed()
+            await geometry(page, 320)
+            await page.locator('#extm-batch-profile .n-base-selection').click()
+            await expect(page.locator('.n-base-select-option:visible')).to_have_count(4)
+            menu = page.locator('.n-base-select-menu:visible')
+            box = await menu.bounding_box()
+            assert box['x'] >= 0 and box['x'] + box['width'] <= 321, box
+            await page.keyboard.press('Escape')
+
+            # Returning to desktop and switching to dark theme preserve alignment.
+            await page.set_viewport_size({'width':1920,'height':1000})
+            await page.locator('.extm-batch-row').scroll_into_view_if_needed()
+            await page.locator('.n-layout-sider').evaluate('(el) => Promise.all(el.getAnimations().map(a=>a.finished.catch(()=>{})))')
+            await geometry(page, 1920)
+            await page.evaluate("localStorage.setItem('okad-theme','dark')")
+            await page.reload()
+            await expect(page.locator('tr[data-member]')).to_have_count(54)
+            await page.locator('.extm-batch-row').scroll_into_view_if_needed()
+            await geometry(page, 1920)
+            if not prefix:
+                await page.locator('.extm-batch-row').screenshot(path=str(OUTPUT/f'toolbar-{engine}-dark.png'))
+            assert not errors, errors
+            assert not fixtures.escaped and not fixtures.writes
+            await context.close()
+        await browser.close()
+    print(f'PASS: {engine} toolbar alignment, 320–1920px layouts, 44px mobile controls, menu bounds, selected/disabled states and dark theme on both paths')
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 import re
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.crud.email import _parse_email_line
 from app.models.external_member import ExternalMember
 from app.schemas.account_profile import ProfilePreference
-from app.schemas.external_member import OtpMode
+from app.schemas.external_member import CreditsField, CurrentProfileKind, OtpMode, Sub2SyncStatus
 
 
 def get(db: Session, mid: int) -> ExternalMember | None:
@@ -113,6 +113,59 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
             "failed": failed, "errors": errors, "ids": ids}
 
 
+def _filtered_members(
+    *,
+    login_status: str | None = None,
+    subscription_ok: bool | None = None,
+    keyword: str = "",
+    ids: list[int] | None = None,
+    imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
+    credits_field: CreditsField = "available",
+    credits_min: float | None = None,
+    credits_max: float | None = None,
+    current_profile: CurrentProfileKind | None = None,
+    is_company: bool | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
+    sub2_target: str = "",
+):
+    stmt = select(ExternalMember)
+    if ids is not None:
+        stmt = stmt.where(ExternalMember.id.in_(ids))
+    if imported_from is not None:
+        stmt = stmt.where(ExternalMember.created_at >= imported_from)
+    if imported_before is not None:
+        stmt = stmt.where(ExternalMember.created_at < imported_before)
+    if login_status:
+        stmt = stmt.where(ExternalMember.login_status == login_status)
+    if subscription_ok is not None:
+        stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
+    if sub2_status is not None:
+        # Match the status displayed for the current destination, before pagination.
+        sync_status = func.coalesce(ExternalMember.sub2_links[sub2_target]["status"].as_string(), "not_pushed")
+        stmt = stmt.where(sync_status == sub2_status)
+    credits = ExternalMember.credits_total if credits_field == "total" else ExternalMember.credits_available
+    if credits_min is not None:
+        stmt = stmt.where(credits >= credits_min)
+    if credits_max is not None:
+        stmt = stmt.where(credits <= credits_max)
+    if current_profile is not None:
+        # Use the last actual login result, not the preference for the next login.
+        kind = func.coalesce(ExternalMember.account_profile["current_kind"].as_string(), "unknown")
+        stmt = stmt.where(kind == current_profile)
+    if is_company is not None:
+        # Match the uses_supply_mail label returned by the API, including partial credentials.
+        company = and_(func.coalesce(ExternalMember.otp_mode, "auto") != "manual",
+                       func.coalesce(ExternalMember.mail_url, "") == "",
+                       or_(func.coalesce(ExternalMember.refresh_token, "") == "",
+                           func.coalesce(ExternalMember.client_id, "") == ""))
+        stmt = stmt.where(company if is_company else ~company)
+    if keyword:
+        like = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
+    return stmt
+
+
 def list_members(
     db: Session,
     *,
@@ -121,15 +174,23 @@ def list_members(
     login_status: str | None = None,
     subscription_ok: bool | None = None,
     keyword: str = "",
+    ids: list[int] | None = None,
+    imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
+    credits_field: CreditsField = "available",
+    credits_min: float | None = None,
+    credits_max: float | None = None,
+    current_profile: CurrentProfileKind | None = None,
+    is_company: bool | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
+    sub2_target: str = "",
 ) -> tuple[list[ExternalMember], int]:
-    stmt = select(ExternalMember)
-    if login_status:
-        stmt = stmt.where(ExternalMember.login_status == login_status)
-    if subscription_ok is not None:
-        stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
-    if keyword:
-        like = f"%{keyword.strip()}%"
-        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
+    stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
+                             keyword=keyword, ids=ids, imported_from=imported_from,
+                             imported_before=imported_before, credits_field=credits_field,
+                             credits_min=credits_min, credits_max=credits_max,
+                             current_profile=current_profile, is_company=is_company,
+                             sub2_status=sub2_status, sub2_target=sub2_target)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
         db.scalars(
@@ -146,17 +207,22 @@ def export_cookies(
     subscription_ok: bool | None = None,
     keyword: str = "",
     ids: list[int] | None = None,
+    imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
+    credits_field: CreditsField = "available",
+    credits_min: float | None = None,
+    credits_max: float | None = None,
+    current_profile: CurrentProfileKind | None = None,
+    is_company: bool | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
+    sub2_target: str = "",
 ) -> list[dict]:
-    stmt = select(ExternalMember).where(ExternalMember.cookie != "")
-    if ids is not None:
-        stmt = stmt.where(ExternalMember.id.in_(ids))
-    if login_status:
-        stmt = stmt.where(ExternalMember.login_status == login_status)
-    if subscription_ok is not None:
-        stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
-    if keyword:
-        like = f"%{keyword.strip()}%"
-        stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
+    stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
+                             keyword=keyword, ids=ids, imported_from=imported_from,
+                             imported_before=imported_before, credits_field=credits_field,
+                             credits_min=credits_min, credits_max=credits_max,
+                             current_profile=current_profile, is_company=is_company,
+                             sub2_status=sub2_status, sub2_target=sub2_target).where(ExternalMember.cookie != "")
     rows = db.scalars(stmt.order_by(ExternalMember.id.desc())).all()
     return [{"cookie": r.cookie} for r in rows if (r.cookie or "").strip()]
 

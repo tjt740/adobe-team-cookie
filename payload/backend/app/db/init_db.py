@@ -10,10 +10,12 @@ from app.models import adobe_member as _adobe_member_model  # noqa: F401
 from app.models import email as _email_model  # noqa: F401
 from app.models import external_member as _external_member_model  # noqa: F401
 from app.models import setting as _setting_model  # noqa: F401
+from app.models import integration as _integration_model
 from app.models import user as _user_model  # noqa: F401
 
 # 针对已存在的表新增的列(SQLite 轻量迁移):表名 -> {列名: 列定义}
 _MIGRATIONS: dict[str, dict[str, str]] = {
+    "integration_recovery_jobs": {"automatic": "INTEGER NOT NULL DEFAULT 1"},
     "users": {"token_version": "INTEGER NOT NULL DEFAULT 0"},
     "adobe_accounts": {
         "is_valid": "BOOLEAN",
@@ -70,6 +72,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "expires_at": "INTEGER",
         "credits_available": "FLOAT",
         "credits_total": "FLOAT",
+        "credits_error": "VARCHAR(255) NOT NULL DEFAULT ''",
         "account_profile": "JSON",
         "profile_preference": "VARCHAR(16) NOT NULL DEFAULT ''",
         "sub2_links": "JSON",

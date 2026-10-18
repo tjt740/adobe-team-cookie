@@ -32,7 +32,9 @@ class SyncError(Exception):
 def config(db):
     # Lazy import: Sub2's existing routes also use external_login.
     from app.api.routes.sub2 import _get_config
-    return _get_config(db)
+    from app.services.reliable_integration import settings
+    cfg = settings(db)
+    return cfg if cfg['enabled'] else _get_config(db)
 
 
 def destination(cfg):
@@ -82,6 +84,31 @@ def prepare(db, ids, *, automatic=False, relink=False, operator='',
     cfg = config(db)
     target = destination(cfg)
     queued, skipped = [], []
+    if cfg.get('integration_key') and cfg.get('enabled'):
+        from app.services import reliable_integration as reliable
+        for mid in dict.fromkeys(ids):
+            member = db.get(ExternalMember, mid)
+            if not member or not member.cookie:
+                skipped.append(mid)
+                continue
+            old = (member.sub2_links or {}).get(target, {})
+            if relink:
+                from app.models.integration import CredentialDelivery
+                delivery = db.get(CredentialDelivery, cfg['site_id']+f'/external:{mid}')
+                if delivery and (delivery.lease_until > __import__('time').time() or delivery.state in ('pending', 'retry')):
+                    skipped.append(mid)
+                    continue
+                if delivery:
+                    delivery.account_id = None
+                old = {**old, 'previous_account_id': old.get('account_id'), 'account_id': None,
+                       'relink_operator': operator, 'relink_requested_at': datetime.now(timezone.utc).isoformat()}
+                _store(member, target, old)
+            reliable.record_cookie(db, f'external:{mid}', member.email, member.cookie,
+                                   allow_create=not automatic, account_id=old.get('account_id'))
+            _store(member, target, {**old, 'status': 'pending', 'message': '等待版本同步与验证'})
+            queued.append(mid)
+        db.commit()
+        return target, queued, skipped
     if not automatic:
         validate_config(cfg)
     with _lock:
@@ -115,6 +142,10 @@ def prepare(db, ids, *, automatic=False, relink=False, operator='',
 
 
 def submit(ids, target):
+    with SessionLocal() as db:
+        cfg = config(db)
+        if cfg.get('integration_key') and cfg.get('enabled'):
+            return  # The durable v2 outbox worker owns these deliveries.
     for mid in ids:
         key = (mid, target)
         with _lock:
@@ -175,9 +206,23 @@ def queue_login_push(member_id, expected_target, *, session_factory=SessionLocal
 
 def resume_pending():
     with SessionLocal() as db:
-        target = destination(config(db))
+        cfg = config(db)
+        target = destination(cfg)
         ids = [m.id for m in db.scalars(select(ExternalMember))
                if (m.sub2_links or {}).get(target, {}).get('status') in ('pending', 'syncing')]
+        if cfg.get('enabled') and cfg.get('integration_key'):
+            # Upgrade legacy in-flight markers to durable work before submit's
+            # v2 no-op. Existing outbox rows retain backoff and deletion guards.
+            from app.models.integration import CredentialDelivery
+            missing = [mid for mid in ids if db.get(CredentialDelivery, cfg['site_id']+f'/external:{mid}') is None]
+            if missing:
+                _, _, skipped = prepare(db, missing, automatic=True)
+                for mid in skipped:
+                    member = db.get(ExternalMember, mid)
+                    if member:
+                        old = (member.sub2_links or {}).get(target, {})
+                        _store(member, target, {**old, 'status':'failed', 'message':'没有可同步的 Cookie，请先登录'})
+                db.commit()
     submit(ids, target)
 
 

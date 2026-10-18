@@ -21,6 +21,7 @@ from __future__ import annotations
 import hmac
 import json
 import threading
+import time
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
@@ -70,6 +71,16 @@ async def refresh_cookie(
         return _resp(400, {"detail": "missing email"})
     email = raw_email.strip()
 
+    # V2 submits a durable job and never holds an HTTP connection during OTP.
+    if data.get("request_id"):
+        from app.services import reliable_integration as link
+        try:
+            job = link.submit_recovery(db, str(data['request_id']), email, str(data.get('source_key') or ''))
+            return _resp(200 if job.state in ('done', 'failed') else 202, link.job_result(job))
+        except link.IntegrationError as exc:
+            return _resp(200, {"ok": False, "managed": True, "code": exc.code, "message": str(exc),
+                               "email": email, "job_id": str(data['request_id']), "state": "failed"})
+
     # 3. 查号 → 实时重登(业务结果一律 200)
     m = crud.get_by_email(db, email)
     member_id = m.id if m else None
@@ -78,6 +89,8 @@ async def refresh_cookie(
         _log("WARNING", f"cookie/refresh 未知邮箱 {email}")
         return _resp(200, {"ok": False, "email": email, "cookie": "",
                            "code": "account_disabled", "message": "unknown email"})
+
+    request_started_at = time.time()
 
     def _do_login() -> dict:
         # 锁 + 真正登录都放进线程池同一个同步函数里执行,避免持锁等待时
@@ -92,6 +105,7 @@ async def refresh_cookie(
                 # Sub2 owns the durable two-attempt budget and cooldown.
                 # One callback must represent exactly one login attempt.
                 network_retries=0,
+                request_started_at=request_started_at, automatic=True,
             )
 
     try:
@@ -111,6 +125,7 @@ async def refresh_cookie(
         "ok": bool(res["ok"]), "email": email,
         "cookie": res.get("cookie") or "",
         "code": res.get("code") or "", "message": res.get("message") or "",
+        "retry_after": res.get("retry_after"),
     })
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import time
 from typing import Any, Callable, Optional
 from urllib.parse import urlencode
@@ -29,6 +30,17 @@ except ImportError:  # pragma: no cover
     IMPERSONATE_TARGET = "chrome124"
 
 LogFn = Callable[[str], None]
+
+
+class LoginRoutesExhausted(_adm.AdminError):
+    """两条登录路线均已尝试，外层不再重跑整个登录流程。"""
+
+    def __init__(self, primary: Exception, fallback: Exception):
+        super().__init__(
+            f"两条路线均登录失败；修复路线：{type(primary).__name__}: {str(primary)[:90]}；"
+            f"原路线：{type(fallback).__name__}: {str(fallback)[:120]}"
+        )
+
 
 CLIO_CLIENT_ID = "clio-playground-web"
 FIREFLY_REDIRECT = "https://firefly.adobe.com/"
@@ -221,16 +233,26 @@ def fetch_credits_detail(
     retry_delay: float = 0.0,
     log: Optional[LogFn] = None,
     session=None,
+    error_out: dict | None = None,
 ) -> dict | None:
     """返回 {'available': float, 'total': float};None 表示查询失败。
 
     分母取 data['total']['quota']['total'](已由抓包核实),可用取 ['available']。
+    error_out 可接收最终失败的安全提示；不保存响应正文或凭证。
     """
+    def failed(message):
+        if error_out is not None:
+            error_out["message"] = message
+
+    if error_out is not None:
+        error_out.clear()
     if not token:
+        failed("缺少积分查询凭证")
         return None
     if not account_id:
         account_id = extract_account_id(token)
     if not account_id:
+        failed("缺少积分查询身份")
         return None
     attempts = max(1, int(attempts or 1))
     for attempt in range(attempts):
@@ -250,19 +272,39 @@ def fetch_credits_detail(
                 },
             )
             if r.status_code == 200:
-                data = r.json()
-                quota = (data.get("total") or {}).get("quota") or {}
-                available = quota.get("available")
-                total = quota.get("total")
-                if isinstance(available, (int, float)) or isinstance(total, (int, float)):
-                    return {
-                        "available": float(available) if isinstance(available, (int, float)) else 0.0,
-                        "total": float(total) if isinstance(total, (int, float)) else 0.0,
-                    }
-                return {"available": 0.0, "total": 0.0}
-            if callable(log):
-                log(f"Firefly 额度接口返回 {r.status_code}: {(r.text or '')[:240]}")
+                try:
+                    data = r.json()
+                    quota = data["total"]["quota"]
+                    available, total = quota["available"], quota["total"]
+                    if not all(type(v) in (int, float) and math.isfinite(v) for v in (available, total)):
+                        raise ValueError("Invalid quota")
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    failed("积分接口返回数据不完整，请重新查询")
+                else:
+                    if error_out is not None:
+                        error_out.clear()
+                    return {"available": float(available), "total": float(total)}
+            else:
+                # Only display numeric codes or this known Adobe error identifier.
+                # Never persist arbitrary response text, which may contain secrets.
+                code = ""
+                try:
+                    body = r.json()
+                    value = str(body.get("error_code") or body.get("errorCode") or "")
+                    if (value.isascii() and value.isdigit() and len(value) <= 10) or value == "ErrMismatchOauthToken":
+                        code = value
+                except (TypeError, ValueError, AttributeError):
+                    pass
+                reason = {
+                    401: "积分查询凭证已失效", 403: "Adobe 拒绝访问",
+                    429: "积分查询过于频繁", 451: "Adobe 拒绝查询",
+                }.get(r.status_code, "Adobe 服务暂时异常" if r.status_code >= 500 else "积分接口返回错误")
+                message = f"{reason}（HTTP {r.status_code}" + (f" / {code}" if code else "") + "）"
+                failed(message)
+                if callable(log):
+                    log(message)
         except Exception:
+            failed("积分接口请求失败或超时，请稍后重试")
             if callable(log):
                 log("Firefly 额度接口请求异常")
         finally:
@@ -487,7 +529,8 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
                            poll=None, password: str = "",
                            otp_timeout: int = 180,
                            force_code_login: bool = False,
-                           profile_preference: ProfilePreference = "") -> str:
+                           profile_preference: ProfilePreference = "",
+                           reuse_only: bool = False) -> str:
     """优先沿用已验证的登录会话;会话失效时才重新认证。
 
     浏览器实测、纯 HTTP 可复刻的正确链:
@@ -508,8 +551,13 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         try:
             return _finish_firefly_token(auth, auth, email, lf, capture_existing, profile_preference=profile_preference)
         except _adm.AdminError as exc:
+            if reuse_only:
+                raise
             # 首次激活企业资料可能作废补全会话;仅此时需要重新认证。
             lf(f"firefly:已有会话无法完成 token 交换,重新认证:{str(exc)[:200]}")
+
+    if reuse_only:
+        raise _adm.AdminError("没有可复用的已验证登录会话")
 
     a2 = AdminAuth(auth.client, client_id=SUNBREAK_CLIENT_ID,
                    scope=SUNBREAK_SCOPE, redirect=SUNBREAK_REDIRECT)
@@ -872,22 +920,50 @@ def register_account(
         )
         if not password_logged_in:
             _adm._passwordless_login(auth, email, lf, poll=poller, otp_timeout=otp_timeout)
-        # 首次登录的被邀请号需补全账号(姓名/密码/生日)并激活企业资料。
-        # 返回本次实际设置的密码(账号本来就已补全则是 ""),调用方据此记库。
-        set_password = _adm.complete_sub_account(
-            auth, email, lf, poll=poller, otp_timeout=otp_timeout
-        )
-        if set_password and on_credentials:
-            on_credentials(adobe_password=set_password)
-        # 拿哪个密码去登:本次刚设的 > 库里存的 > 没有(走验证码)。
-        # 不再无条件用 COMPLETE_PASSWORD —— 已补全的号密码未必是我们设的。
-        pwd = set_password or (adobe_password or "").strip()
-        token = _acquire_firefly_token(
-            auth, email, lf, poll=poller, password=pwd,
-            otp_timeout=otp_timeout, force_code_login=force_code_login,
-            profile_preference=profile_preference,
-        )
-        cookie = _adm._session_cookie_str(client)
+        # Adobe 的 OTP 账号可能仍带 IncompleteProfile=ENFORCED，但当前会话
+        # 已能取得有效 Firefly token。先验证现有会话，避免无谓设置密码/改资料。
+        set_password = ""
+        lf("登录路线 1/2：优先尝试修复路线，沿用已验证会话")
+        try:
+            token = _acquire_firefly_token(
+                auth, email, lf, poll=poller, password=adobe_password,
+                otp_timeout=otp_timeout, force_code_login=force_code_login,
+                profile_preference=profile_preference, reuse_only=True,
+            )
+            cookie = _adm._session_cookie_str(client)
+            if not cookie:
+                raise _adm.AdminError("已获取 token，但未取得登录 Cookie")
+        except Exception as primary_error:
+            # 网络异常同样可进入原路线；JobCancelled 继承 BaseException，
+            # 不在这里捕获，用户取消时不会继续补资料或重新发码。
+            lf(
+                "登录路线 1/2：修复路线未成功，切换原路线："
+                f"{type(primary_error).__name__}: {str(primary_error)[:140]}"
+            )
+            lf("登录路线 2/2：尝试原路线，检查补全资料、激活账号并重新获取会话")
+            try:
+                set_password = _adm.complete_sub_account(
+                    auth, email, lf, poll=poller, otp_timeout=otp_timeout,
+                    legacy_completion=True,
+                )
+                if set_password and on_credentials:
+                    on_credentials(adobe_password=set_password)
+                pwd = set_password or (adobe_password or "").strip()
+                token = _acquire_firefly_token(
+                    auth, email, lf, poll=poller, password=pwd,
+                    otp_timeout=otp_timeout, force_code_login=force_code_login,
+                    profile_preference=profile_preference,
+                )
+                cookie = _adm._session_cookie_str(client)
+                if not cookie:
+                    raise _adm.AdminError("已获取 token，但未取得登录 Cookie")
+            except Exception as fallback_error:
+                lf("登录路线 2/2：原路线也未成功，本次登录失败")
+                raise LoginRoutesExhausted(primary_error, fallback_error) from fallback_error
+            lf("✓ 登录路线 2/2：原路线登录成功")
+        else:
+            lf("✓ 登录路线 1/2：修复路线登录成功，不再尝试原路线")
+            lf("✓ 已验证会话可直接登录，跳过自动补全资料和设置密码")
 
         info = fetch_account_info(token, proxy_url, session=client.session) or {}
         token_user_id = extract_account_id(token)
@@ -944,6 +1020,7 @@ def register_account(
             f" entitlement={ent_from_auth or '-'}"
             f" token={user_id or '-'})"
         )
+        credits_error = {}
         credits_detail = fetch_credits_detail(
             token,
             credits_account_id,
@@ -952,6 +1029,7 @@ def register_account(
             retry_delay=3,
             log=lf,
             session=client.session,
+            error_out=credits_error,
         )
         credits = credits_detail["available"] if credits_detail else None
         credits_total = credits_detail["total"] if credits_detail else None
@@ -967,6 +1045,7 @@ def register_account(
             "cookie": cookie,
             "credits": credits,
             "credits_total": credits_total,
+            "credits_error": credits_error.get("message", ""),
             "account_profile": account_profile,
             "expires_at": expires_at,
             "display_name": info.get("display_name") or "",

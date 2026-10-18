@@ -1,6 +1,6 @@
 """Read current Sub2 inventory independently of external Cookie sync history.
 
-Only email identities and remote IDs are cached. Reading inventory never links
+Only email identities, remote IDs and availability counts are cached. Reading inventory never links
 accounts, sends cookies, or changes their login/synchronization history.
 """
 from datetime import datetime, timezone
@@ -15,11 +15,21 @@ from app.services import external_sub2
 
 _lock = Lock()
 _cache = {}
-TTL = 2
+TTL = 30
 
 
 def _read(cfg):
     by_email = {}
+    live = set()
+    if cfg.get('enabled') and cfg.get('integration_key'):
+        from app.services import reliable_integration as link
+        for account in link.inventory(cfg):
+            if account.get('status') == 'active' and account.get('schedulable') is True:
+                live.add(account['id'])
+            email = str(account.get('email') or '').strip().lower()
+            if '@' in email:
+                by_email.setdefault(email, set()).add(account['id'])
+        return {email: sorted(ids) for email, ids in by_email.items()}, len(live)
     fetched = 0
     for page in range(1, 201):
         data = external_sub2._request(
@@ -36,21 +46,25 @@ def _read(cfg):
                         or account.get('name') or '').strip().lower()
             if '@' in email and external_sub2._matches(account, email):
                 by_email.setdefault(email, set()).add(account['id'])
+                if account.get('status') == 'active' and account.get('schedulable') is True:
+                    live.add(account['id'])
         fetched += len(items)
         if fetched >= data['total']:
-            return {email: sorted(ids) for email, ids in by_email.items()}
+            return {email: sorted(ids) for email, ids in by_email.items()}, len(live)
         if not items:
             break
     raise external_sub2.SyncError('Sub2 账号列表不完整，暂时无法确认库存')
 
 
 def _snapshot(cfg, refresh=False):
-    key = (external_sub2.destination(cfg), hashlib.sha256(cfg['admin_token'].encode()).hexdigest())
+    credential = cfg.get('integration_key') if cfg.get('enabled') and cfg.get('integration_key') else cfg.get('admin_token', '')
+    key = (external_sub2.destination(cfg), cfg.get('site_id'), hashlib.sha256(credential.encode()).hexdigest())
     with _lock:
         if not refresh and _cache.get('key') == key and monotonic() - _cache['at'] < TTL:
             return _cache['result']
         try:
-            result = {'ok': True, 'by_email': _read(cfg), 'message': ''}
+            by_email, live = _read(cfg)
+            result = {'ok': True, 'by_email': by_email, 'live': live, 'message': ''}
         except external_sub2.SyncError as exc:
             result = {'ok': False, 'by_email': {}, 'message': str(exc)}
         except Exception:
@@ -62,7 +76,7 @@ def _snapshot(cfg, refresh=False):
 
 def membership(db, refresh=False):
     cfg = external_sub2.config(db)
-    if not cfg.get('base_url') or not cfg.get('admin_token'):
+    if not cfg.get('base_url') or not (cfg.get('admin_token') or (cfg.get('enabled') and cfg.get('integration_key'))):
         return {'ok': False, 'configured': False, 'items': {},
                 'message': '请先在 Sub2 管理配置地址和管理员密钥'}
     result = _snapshot(cfg, refresh)
@@ -75,3 +89,38 @@ def membership(db, refresh=False):
             items[mid] = {'email': email, 'in_stock': bool(ids), 'account_ids': ids}
     return {'ok': result['ok'], 'configured': True, 'items': items,
             'checked_at': result['checked_at'], 'message': result['message']}
+
+
+def capacity_detail(db, member):
+    """Confirm a capacity shortage on demand; never infer it from proxy_pending alone."""
+    unknown = {'confirmed': False}
+    cfg = external_sub2.config(db)
+    link = (member.sub2_links or {}).get(external_sub2.destination(cfg), {})
+    aid = link.get('account_id')
+    if (link.get('status') != 'pending' or type(aid) is not int or aid <= 0
+            or not cfg.get('base_url') or not cfg.get('admin_token')):
+        return unknown
+    try:
+        account = external_sub2._request(cfg, 'GET', f'/admin/accounts/{aid}')
+        if (account.get('id') != aid or not external_sub2._matches(account, member.email)
+                or 'proxy_id' not in account or account['proxy_id'] is not None
+                or (account.get('extra', {}).get('okad') or {}).get('verification') != 'proxy_pending'):
+            return unknown
+        allocation = external_sub2._request(cfg, 'GET', '/admin/accounts/proxy-allocation')
+        nodes, per_node, total = allocation.get('nodes'), allocation.get('accounts_per_proxy'), allocation.get('accounts')
+        if (allocation.get('enabled') is not True or type(per_node) is not int or per_node <= 0
+                or type(total) is not int or total < 0 or not isinstance(nodes, list)
+                or any(not isinstance(n, dict) or type(n.get('id')) is not int for n in nodes)
+                or len({n['id'] for n in nodes}) != len(nodes)
+                or type(allocation.get('available_slots')) is not int or allocation['available_slots'] != 0):
+            return unknown
+        capacity = len(nodes) * per_node
+        # Count every configured node, even unhealthy ones. A temporary health
+        # failure alone must not be labelled as exceeding the node count limit.
+        if total <= capacity:
+            return unknown
+        return {'confirmed': True, 'account_id': aid, 'accounts': total,
+                'nodes': len(nodes), 'per_node': per_node, 'capacity': capacity,
+                'checked_at': datetime.now(timezone.utc).isoformat()}
+    except Exception:
+        return unknown  # No credentials or upstream errors in the public result.

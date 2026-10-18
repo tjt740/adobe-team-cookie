@@ -39,6 +39,7 @@ export function createEntityWorkspace({kind,s,a}) {
         h('div',{class:'ws-actions'},btn('批量删除',{type:'error',text:true,disabled:!s.selected.value.length,onClick:a.delete}))])]),
     h(Table,{columns:columns(),data:s.rows.value,loading:s.loading.value,rowKey:r=>r.id,
       checkedRowKeys:s.selected.value,'onUpdate:checkedRowKeys':v=>s.selected.value=v,scrollX:mail?1040:1110,remote:true,
-      pagination:{...s.pagination,pageSizes:[200,300,400,500],showSizePicker:true,prefix:p=>`共 ${p.itemCount} 个`,onUpdatePage:a.page,onUpdatePageSize:a.size}})
+      pagination:{...s.pagination,showSizePicker:false,prefix:p=>`共 ${p.itemCount} 个`,onUpdatePage:a.page,onUpdatePageSize:a.size}}),
+    window.OKAD_PAGINATION.sizeControl(h,{size:s.pagination.pageSize,onSize:size=>{s.selected.value=[];a.size(size);},busy:s.loading.value})
   ]);
 }

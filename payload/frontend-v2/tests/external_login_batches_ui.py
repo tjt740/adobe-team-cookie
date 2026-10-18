@@ -1,4 +1,4 @@
-"""Per-account login phases while a 20-account batch remains active."""
+"""Per-account login phases while a 50-account batch remains active."""
 import asyncio
 import mimetypes
 import os
@@ -11,8 +11,8 @@ FRONT = Path(os.environ.get('OKAD_FRONTEND_DIR', Path(__file__).resolve().parent
 
 
 async def main():
-    job = dict(id=90, type='external_login', status='running', target=45, success=1, fail=1,
-               created_at=1791680000, logs=[], log_total=0, extra={'batch': {'index': 1, 'total': 3, 'size': 20}})
+    job = dict(id=90, type='external_login', status='running', target=105, success=1, fail=1,
+               created_at=1791680000, logs=[], log_total=0, extra={'batch': {'index': 1, 'total': 3, 'size': 50}})
     phases = ['pending', 'running', 'done', 'failed', 'interrupted']
     rows = [dict(id=i, email=f'batch{i}@example.test', login_status='ok', has_cookie=True,
                  created_at='2026-10-10T00:00:00', subscription_ok=True,
@@ -58,11 +58,11 @@ async def main():
             else:
                 await expect(button).to_be_disabled()
         await page.locator('[data-member="3"] .extm-toggle').click()
-        await expect(page.locator('[data-login-batch]')).to_have_text('批次 1/3 · 每批最多 20 个')
+        await expect(page.locator('[data-login-batch]')).to_have_text('批次 1/3 · 每批最多 50 个')
         await page.locator('[data-action="refresh"]').click()
         await page.locator('[data-action="refresh"]').click()
         await expect(page.locator('[data-login-batch]')).to_have_count(1)
-        await expect(page.locator('.extm-import-card').first).to_contain_text('登录成功后自动推送 Sub2')
+        await expect(page.locator('#extm-import-drawer')).to_contain_text('登录成功后自动推送 Sub2')
         assert not errors, errors
         await browser.close()
         print('PASS: queued/running/success/failure/interrupted rows, spinner accuracy and batch progress')

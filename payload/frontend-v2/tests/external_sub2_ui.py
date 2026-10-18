@@ -11,8 +11,10 @@ BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
 
 async def main():
     rows = [dict(id=i, email=f'external{i}@example.com', login_status='ok',
-                 has_cookie=True, subscription_ok=True, created_at='2026-09-26T00:00:00',
+                 has_cookie=True, subscription_ok=True, credits_available=4000, credits_total=4000, created_at='2026-09-26T00:00:00',
                  sub2_status='not_pushed', message='登录成功') for i in (1, 2)]
+    rows[0]['latest_job'] = dict(id=1, status='running', item_status='done',
+                                item_message='登录成功；已提交 Sub2 推送，可查看账号同步状态')
     pushes = []
     relinks = []
     reject = False
@@ -53,7 +55,7 @@ async def main():
 
     async with async_playwright() as p:
         browser = await p.chromium.launch()
-        page = await browser.new_page(viewport={'width': 1440, 'height': 1000})
+        page = await browser.new_page(viewport={'width': 1440, 'height': 1000}, timezone_id='Asia/Shanghai')
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         await page.route('**/api/**', route_api)
@@ -64,6 +66,13 @@ async def main():
         await expect(button).to_be_disabled()
         first = page.locator('[data-member="1"] [data-sub2-stock]')
         second = page.locator('[data-member="2"] [data-sub2-stock]')
+        pushed_at = page.locator('[data-member="1"] [data-sub2-pushed-at]')
+        await expect(page.locator('.extm-t th').filter(has_text='最后推送cookie 时间')).to_have_count(1)
+        await expect(pushed_at).to_have_text('—')
+        await expect(page.locator('[data-member="2"] [data-sub2-pushed-at]')).to_have_text('—')
+        await expect(page.locator('[data-member="1"] .extm-status')).to_contain_text('本轮成功')
+        await expect(page.locator('[data-member="1"]')).not_to_contain_text('已提交 Sub2 推送')
+        rows[0]['latest_job']['status'] = 'done'
         await expect(first).to_have_text('未在库 Sub2')
         # Another entry point imports both accounts. No click or reload here:
         # polling must update the badges without sending either account again.
@@ -76,17 +85,29 @@ async def main():
         await button.click()
         await expect(button).to_be_disabled()
         await expect(page.locator('[data-member="1"]')).to_contain_text('Sub2 待同步')
+        await expect(pushed_at).to_have_text('—')
+        await expect(page.locator('[data-member="1"]')).not_to_contain_text('已提交 Sub2 推送')
         assert pushes == [[1]]
         rows[0].update(sub2_status='synced', sub2_account_id=12, sub2_synced_at='2026-09-26T01:00:00Z')
         await page.locator('#extm-refresh').click()
         await expect(first).to_have_text('在库 Sub2')
         await expect(first).to_have_attribute('title', re.compile('Cookie 上次同步成功'))
         await expect(second).not_to_have_attribute('title', re.compile('Cookie 上次同步成功'))
+        await expect(pushed_at).to_have_text('2026-09-26 09:00:00')
+        # A Sub2-triggered cookie refresh changes the durable push time. The
+        # visible page must pick it up through polling, without another click.
+        rows[0]['sub2_synced_at'] = '2026-09-26T01:00:35+00:00'
+        await expect(pushed_at).to_have_text('2026-09-26 09:00:35', timeout=6000)
+        assert pushes == [[1]]
         await expect(button).to_be_enabled()
         rows[0].update(sub2_status='failed', sub2_message='Sub2 管理员密钥无效（HTTP 401）')
         await page.locator('#extm-refresh').click()
         await expect(page.locator('[data-member="1"]')).to_contain_text('Sub2 同步失败')
         await expect(page.locator('[data-member="1"]')).to_contain_text('管理员密钥无效')
+        await expect(pushed_at).to_have_text('2026-09-26 09:00:35')
+        rows[0]['latest_job']['item_message'] = '登录成功；Sub2 推送队列暂不可用，请手动重试'
+        await page.locator('#extm-refresh').click()
+        await expect(page.locator('[data-member="1"]')).to_contain_text('Sub2 推送队列暂不可用，请手动重试')
         await expect(page.locator('[data-member="1"]')).to_contain_text('登录成功')
         reject = True
         await button.click()
@@ -130,6 +151,7 @@ async def main():
         stock_ids.clear()
         await page.locator('#extm-nav').click()
         await expect(first).to_have_text('未在库 Sub2')
+        await page.set_viewport_size({'width': 2560, 'height': 1200})
         await page.screenshot(path=str(Path(__file__).resolve().parents[3] / '.local/external-sub2-sync-ui.png'), full_page=True)
         assert not errors, errors
         await browser.close()

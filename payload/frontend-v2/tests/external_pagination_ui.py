@@ -5,9 +5,11 @@ Every API request is intercepted; no account, login or production data is used.
 """
 import asyncio
 import os
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -82,8 +84,10 @@ async def main():
             await expect(size).to_be_enabled()
 
         await check(200, 1, '第 1 / 3 页')
-        await expect(size).to_have_value('200')
-        assert await size.locator('option').all_text_contents() == ['50 条', '100 条', '200 条']
+        await expect_select(page, '#extm-page-size', '200')
+        await size.locator('.n-base-selection').click()
+        assert await page.locator('.n-base-select-option:visible').all_text_contents() == ['50 条', '100 条', '200 条', '300 条', '400 条', '500 条', '1000 条']
+        await page.keyboard.press('Escape')
         await expect(page.locator('#extm-prev')).to_be_disabled()
         await page.locator('#extm-ckall').check()
         await expect(page.locator('#extm-selc')).to_have_text('200')
@@ -92,13 +96,13 @@ async def main():
         await expect(page.locator('#extm-selc')).to_have_text('0')
 
         # Every size starts at page one; the former 500-row cap is gone.
-        await size.select_option('50')
+        await select_value(page, '#extm-page-size', '50')
         await check(50, 1, '第 1 / 11 页')
         await page.locator('#extm-last').click()
         await check(21, 501, '第 11 / 11 页')
         await expect(next_page).to_be_disabled()
         await expect(page.locator('#extm-page-summary')).to_have_text('共 521 条 · 当前 501–521 条')
-        await size.select_option('100')
+        await select_value(page, '#extm-page-size', '100')
         await check(100, 1, '第 1 / 6 页')
         await page.locator('#extm-page-number').fill('6')
         await page.locator('#extm-page-number').press('Enter')
@@ -113,13 +117,13 @@ async def main():
         await check(100, 301, '第 4 / 5 页')
 
         # Status, subscription and keyword filters reset the page, with full totals.
-        await page.locator('#extm-f-status').select_option('ok')
+        await select_value(page, '#extm-f-status', 'ok')
         await check(100, 1, '第 1 / 3 页')
         await next_page.click()
         await check(100, 201, '第 2 / 3 页')
-        await page.locator('#extm-f-sub').select_option('true')
+        await select_value(page, '#extm-f-sub', 'true')
         await check(83, 3, '第 1 / 1 页')
-        await page.locator('#extm-f-status').select_option('')
+        await select_value(page, '#extm-f-status', '')
         await check(100, 3, '第 1 / 2 页')
         await next_page.click()
         await check(66, 303, '第 2 / 2 页')
@@ -131,20 +135,20 @@ async def main():
         await expect(next_page).to_be_disabled()
         await page.locator('#extm-f-kw').fill('')
         await check(100, 3, '第 1 / 2 页')
-        await page.locator('#extm-f-sub').select_option('')
+        await select_value(page, '#extm-f-sub', '')
         await check(100, 1, '第 1 / 5 页')
 
         # A slow old page must not overwrite results for newly applied filters.
         state['hold'] = True
         await next_page.click()
         await asyncio.wait_for(held.wait(), 5)
-        await expect(size).to_be_disabled()
-        await page.locator('#extm-f-status').select_option('ok')
+        await expect(size.locator('.n-base-selection')).to_have_class(re.compile('n-base-selection--disabled'))
+        await select_value(page, '#extm-f-status', 'ok')
         await check(100, 1, '第 1 / 3 页')
         release.set()
         await asyncio.wait_for(delivered.wait(), 5)
         await check(100, 1, '第 1 / 3 页')
-        await page.locator('#extm-f-status').select_option('')
+        await select_value(page, '#extm-f-status', '')
         await check(100, 1, '第 1 / 5 页')
 
         # Failed navigation clears old rows and remains recoverable via refresh.

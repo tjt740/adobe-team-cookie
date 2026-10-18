@@ -307,11 +307,26 @@ class AdminAuth:
             },
             timeout=15,
         )
+        self.last_email_mfa_error = ""
         if r.status_code in (200, 201):
             self.identity_verification_token = r.headers.get("x-identity-verification-token", self.identity_verification_token)
             self.auth_state_encrypted = r.headers.get("x-ims-authentication-state-encrypted", self.auth_state_encrypted)
             return True
-        log(f"[mfa] start failed status={r.status_code} body={r.text[:300]}")
+        # Keep actionable diagnostics without persisting raw responses or tokens.
+        detail = f"HTTP {r.status_code}"
+        try:
+            data = r.json()
+        except Exception:
+            data = {}
+        if isinstance(data, dict):
+            code = data.get("errorCode") or data.get("error")
+            if isinstance(code, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", code):
+                detail += f"; {code}"
+            message = data.get("errorMessage")
+            if isinstance(message, str) and "could not find account for username" in message.lower():
+                detail += "; Adobe 未找到该邮箱对应的个人类型账号，请确认 Adobe 注册/邀请状态后重试"
+        self.last_email_mfa_error = detail
+        log(f"[mfa] start failed: {detail}")
         return False
 
     def send_email_challenge(self) -> bool:

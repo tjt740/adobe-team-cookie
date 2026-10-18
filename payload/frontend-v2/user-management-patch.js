@@ -51,21 +51,30 @@
     card.appendChild(head);
     card.appendChild(element('p', '每人使用独立账号登录。所有管理员均可管理全部账号、任务、系统设置及其他登录用户，数据和 Sub2 连接配置共享。仅为可信任的同事开通管理员。', 'um-lead'));
     const scroll = element('div', undefined, 'um-scroll'); card.appendChild(scroll);
+    const pager = element('nav'); card.appendChild(pager);
     const note = element('div', '加载中…', 'um-note'); note.setAttribute('role', 'status'); card.appendChild(note);
-    let me = null;
+    let me = null, users = [], page = 1, size = 200;
+    const updatePager = window.OKAD_PAGINATION.mountPager(pager, {id:'um-page-size',
+      state:() => ({page, size, total:users.length}),
+      onPage:value => {page = value; render();}, onSize:value => {size = value; page = 1; render();}});
     async function load() {
       try {
         me = await request('/auth/me');
         if (!me.is_superuser) { add.hidden = true; note.textContent = '仅管理员可以管理登录用户。'; return; }
-        const users = await request('/admin/users');
+        users = await request('/admin/users');
         if (!Array.isArray(users)) throw new Error('登录用户列表格式异常');
+        render();
+      } catch (err) { note.className = 'um-note um-error'; note.textContent = err.message; }
+    }
+    function render() {
+        page = Math.min(page, Math.max(1, Math.ceil(users.length / size)));
         scroll.replaceChildren();
         const table = element('table'); table.setAttribute('aria-label', '登录用户');
         const header = element('tr');
         ['用户名', '昵称', '权限', '状态', '创建时间', '操作'].forEach(t => header.appendChild(element('th', t)));
         const thead = element('thead'); thead.appendChild(header); table.appendChild(thead);
         const body = element('tbody');
-        users.forEach(user => {
+        users.slice((page - 1) * size, page * size).forEach(user => {
           const row = element('tr'); row.dataset.userId = user.id;
           [user.username + (user.id === me.id ? '（当前）' : ''), user.nickname || '—', user.is_superuser ? '管理员' : '普通用户'].forEach(t => row.appendChild(element('td', t)));
           row.appendChild(element('td', user.is_active ? '启用' : '停用', user.is_active ? 'um-active' : ''));
@@ -81,8 +90,8 @@
           actions.append(reset, toggle); cell.appendChild(actions); row.appendChild(cell); body.appendChild(row);
         });
         table.appendChild(body); scroll.appendChild(table); add.disabled = false;
+        updatePager();
         note.className = 'um-note'; note.textContent = '共 ' + users.length + ' 个登录用户。停用或重置密码会立即使该用户的旧登录会话失效；已提交的后台任务继续运行。';
-      } catch (err) { note.className = 'um-note um-error'; note.textContent = err.message; }
     }
     function edit(mode, user) {
       if (card.querySelector('dialog')) return;

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from threading import Lock
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
@@ -8,11 +9,12 @@ from app.crud import external_member as crud
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.adobe_account import JobStatusOut
-from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MessageResult, Page
+from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock
 from app.services.job_manager import JOBS
-from app.schemas.external_member import SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
+from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
+from app.schemas.external_member import CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
 from app.services import supply_mail, manual_otp
 from app.crud.setting import _set
 
@@ -70,6 +72,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
     return ExternalMemberOut(
         id=m.id, email=m.email, note=m.note,
         credits_available=m.credits_available, credits_total=m.credits_total,
+        credits_error=m.credits_error or "",
         account_profile=m.account_profile,
         profile_preference=m.profile_preference,
         login_status=m.login_status, subscription_ok=m.subscription_ok,
@@ -145,18 +148,53 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
     return {"message": "验证码已提交，正在继续登录"}
 
 
+def _member_filters(db, *, in_stock=None, imported_from=None, imported_before=None,
+                    credits_min=None, credits_max=None):
+    # created_at is stored as UTC without a timezone; accept browser-local
+    # date boundaries with their offset and compare them in UTC.
+    def utc(value):
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    imported_from, imported_before = utc(imported_from), utc(imported_before)
+    if imported_from is not None and imported_before is not None and imported_from >= imported_before:
+        raise HTTPException(status_code=422, detail="导入时间的结束日期不能早于开始日期")
+    if credits_min is not None and credits_max is not None and credits_min > credits_max:
+        raise HTTPException(status_code=422, detail="积分最大值不能小于最小值")
+    ids = None
+    if in_stock is not None:
+        stock = external_sub2_stock.membership(db)
+        if not stock.get("ok"):
+            raise HTTPException(status_code=503, detail=stock.get("message") or "Sub2 库存暂不可用，请稍后重试")
+        ids = [int(mid) for mid, item in stock["items"].items() if item.get("in_stock") is in_stock]
+    return dict(ids=ids, imported_from=imported_from, imported_before=imported_before,
+                credits_min=credits_min, credits_max=credits_max)
+
+
 @router.get("/members", response_model=Page[ExternalMemberOut], summary="外部子号分页查询")
 def list_members(
-    page: int = 1, size: int = DEFAULT_PAGE_SIZE,
+    page: int = Query(1, ge=1), size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     login_status: str | None = None, subscription_ok: bool | None = None,
     keyword: str = "", db: Session = Depends(get_db),
+    in_stock: bool | None = None, imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
+    credits_field: CreditsField = "available",
+    credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
 ) -> Page[ExternalMemberOut]:
+    target = external_sub2.destination(external_sub2.config(db))
     items, total = crud.list_members(
         db, page=page, size=size, login_status=login_status,
         subscription_ok=subscription_ok, keyword=keyword,
+        credits_field=credits_field, current_profile=current_profile, is_company=is_company,
+        sub2_status=sub2_status, sub2_target=target,
+        **_member_filters(db, in_stock=in_stock, imported_from=imported_from, imported_before=imported_before,
+                          credits_min=credits_min, credits_max=credits_max),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
-    target = external_sub2.destination(external_sub2.config(db))
     return Page(items=[_to_out(m, (jobs.get(m.id) or [None])[0], target) for m in items], total=total, page=page, size=size)
 
 
@@ -174,6 +212,15 @@ def update_note(member_id: int, payload: ExternalNoteUpdate,
     member.note = payload.note.strip()
     db.commit()
     return {"note": member.note, "message": "备注已保存"}
+
+
+@router.get("/members/{member_id}/sub2-capacity", summary="只读确认账号是否因 Sub2 节点容量不足而等待")
+def sub2_capacity(member_id: int, response: Response, db: Session = Depends(get_db)) -> dict:
+    response.headers['Cache-Control'] = 'no-store'
+    member = crud.get(db, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    return external_sub2_stock.capacity_detail(db, member)
 
 
 def _save_login_profiles(ids, preference, db) -> dict:
@@ -273,13 +320,21 @@ def batch_login(payload: BatchIds, db: Session = Depends(get_db),
 @router.post("/members/batch-login-filter", summary="一键重登当前筛选的全部外部子号")
 def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)) -> dict:
+    filters = payload.model_dump()
+    if payload.sub2_status is not None:
+        filters["sub2_target"] = external_sub2.destination(external_sub2.config(db))
+    filters.update(_member_filters(db, in_stock=filters.pop("in_stock"),
+                                   imported_from=filters.pop("imported_from"),
+                                   imported_before=filters.pop("imported_before"),
+                                   credits_min=filters.pop("credits_min"),
+                                   credits_max=filters.pop("credits_max")))
     with _login_lock:
-        members, total = crud.list_members(db, size=None, **payload.model_dump())
+        members, total = crud.list_members(db, size=None, **filters)
         active = _active_jobs([m.id for m in members]) if members else {}
         pending = [m for m in members if m.id not in active]
         job = _start_login(pending, db, user.username) if pending else None
     if job:
-        message = f"已提交 {len(pending)} 个账号，每批最多 20 个，登录成功后自动推送 Sub2；跳过 {len(active)} 个任务未结束的账号"
+        message = f"已提交 {len(pending)} 个账号，每批最多 {external_login.LOGIN_BATCH_SIZE} 个，登录成功后自动推送 Sub2；跳过 {len(active)} 个任务未结束的账号"
     else:
         message = "当前范围暂无外部子号" if not total else f"当前范围的 {len(active)} 个账号任务未结束，无需重复提交"
     return {"job": JobStatusOut(**job.to_dict()) if job else None,
@@ -287,7 +342,7 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
 
 
 @router.get("/members/{member_id}/jobs", response_model=list[JobStatusOut], summary="外部子号任务历史")
-def member_jobs(member_id: int, limit: int = Query(default=50, ge=1, le=100),
+def member_jobs(member_id: int, limit: int = Query(default=200, ge=1, le=MAX_PAGE_SIZE),
                 db: Session = Depends(get_db)) -> list[JobStatusOut]:
     if not crud.get(db, member_id):
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -310,13 +365,42 @@ def export_members(
     login_status: str | None = None, subscription_ok: bool | None = None,
     keyword: str = "",
     db: Session = Depends(get_db),
+    in_stock: bool | None = None, imported_from: datetime | None = None,
+    imported_before: datetime | None = None,
+    credits_field: CreditsField = "available",
+    credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+    current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
 ) -> list[dict]:
-    return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword)
+    target = external_sub2.destination(external_sub2.config(db)) if sub2_status is not None else ""
+    return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
+                               credits_field=credits_field, current_profile=current_profile, is_company=is_company,
+                               sub2_status=sub2_status, sub2_target=target,
+                               **_member_filters(db, in_stock=in_stock, imported_from=imported_from,
+                                                 imported_before=imported_before,
+                                                 credits_min=credits_min, credits_max=credits_max))
 
 
 @router.post("/members/export", summary="导出选中账号的 Cookie")
 def export_selected_members(payload: BatchIds, db: Session = Depends(get_db)) -> list[dict]:
     return crud.export_cookies(db, ids=payload.ids)
+
+
+@router.post("/members/export-emails", summary="导出选中外部子号邮箱为 Excel")
+def export_selected_emails(payload: BatchIds, db: Session = Depends(get_db)) -> Response:
+    ids = list(dict.fromkeys(payload.ids))
+    if not ids:
+        raise HTTPException(status_code=400, detail="请先勾选要导出的账号")
+    members = crud.get_many(db, ids)
+    if len(members) != len(ids):
+        raise HTTPException(status_code=404, detail="所选账号已不存在，请刷新后重新勾选导出")
+    return Response(
+        content=emails_xlsx([member.email for member in members]),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="external-emails.xlsx"',
+                 "Cache-Control": "no-store"},
+    )
 
 
 @router.delete("/members/batch-delete", response_model=MessageResult, summary="批量删除")

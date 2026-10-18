@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 
 FRONT = Path(os.environ.get('OKAD_FRONTEND_DIR', Path(__file__).resolve().parents[1]))
@@ -72,11 +73,10 @@ async def main():
 
             # Reproduces the reported overlap before the fix, even at page scroll zero.
             await assert_layout()
-            await page.locator('.extm-import-card').first.locator('summary').click()
             for width, height in ((2290, 1000), (1440, 900), (900, 800), (640, 780)):
                 await page.set_viewport_size({'width': width, 'height': height})
                 for size in (50, 100, 200):
-                    await page.locator('#extm-page-size').select_option(str(size))
+                    await select_value(page, '#extm-page-size', str(size))
                     await expect(page.locator('tr[data-member]')).to_have_count(size)
                     await expect(page.locator('#extm-page-size')).to_be_enabled()
                     for position in ('0', 'node.scrollHeight / 2', 'node.scrollHeight'):

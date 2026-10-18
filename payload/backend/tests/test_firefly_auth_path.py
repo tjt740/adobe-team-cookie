@@ -123,6 +123,22 @@ def test_exchange_network_error_does_not_request_another_code(spy, monkeypatch):
     assert spy["code_login"] == 0
 
 
+@pytest.mark.parametrize("has_session", [True, False])
+def test_reuse_only_does_not_send_another_code_or_password(spy, monkeypatch, has_session):
+    auth = _auth(_FakeResp())
+    auth.susi_token = "verified-session" if has_session else ""
+
+    def fail(*args, **kwargs):
+        raise ff._adm.AdminError("account requires completion")
+
+    monkeypatch.setattr(ff, "_finish_firefly_token", fail)
+    monkeypatch.setattr(ff, "AdminAuth", lambda *a, **kw: pytest.fail("must not reauthenticate"))
+    with pytest.raises(ff._adm.AdminError):
+        ff._acquire_firefly_token(auth, "otp@ex.com", lambda _: None,
+                                 password="Known1!", reuse_only=True)
+    assert spy["code_login"] == 0 and not _pwd_tried(auth)
+
+
 def test_no_password_goes_straight_to_code_login(spy, monkeypatch):
     """库里没存密码 → 不猜密码,直接验证码登录。"""
     auth = _auth(_FakeResp(401, {"errorCode": "invalid_authentication"}))

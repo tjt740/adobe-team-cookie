@@ -105,13 +105,8 @@ def _random_dob() -> dict[str, int]:
 
 
 _COMPLETE_PUT_TIMEOUT = 60
-# PUT v4 回 400 但 errorCode=SERVICE_ERROR 时额外重试几次。
-# 实测线上:同一个号相隔 90 秒两次提交,一次 captcha_required、一次
-#   400 {"errorCode":"SERVICE_ERROR","errorMessage":"Error validating password
-#        policy in CS for userId ...@AdobeID"}
-# 同样的 payload、同样的密码却报不一样的错 —— 确定性的密码不合规不会时有时无,
-# 这是 Adobe 侧的上游抖动。以前只对 status>=500 重试,这种包在 400 里的服务端
-# 错误一次都不重试就把号判死了。
+# Adobe 也会把 SERVICE_ERROR 放在 HTTP 400 中，保留有上限的重试。
+# 该错误本身不能证明账号需要补全；调用方须先尝试复用已验证会话。
 _COMPLETE_SERVICE_ERROR_RETRIES = 2
 _COMPLETE_PUT_URL = "/signin/v4/accounts"
 
@@ -254,6 +249,7 @@ def complete_sub_account(
     auth: "AdminAuth", email: str, lf: LogFn, password: str | None = None,
     *, country: str = "", locale: str = "",
     poll: Optional[Callable] = None, otp_timeout: int = 180,
+    legacy_completion: bool = False,
 ) -> str:
     """被邀请子号首次登录:若账号未补全,自动填写姓名/密码/生日并接受条款,
     然后激活并切换到企业(被邀请)资料,使后续可换取 firefly token。
@@ -262,6 +258,7 @@ def complete_sub_account(
 
     返回**本次实际设置的密码**;账号本来就已补全(密码不是我们设的)时返回 ""。
     调用方据此决定要不要把密码记进库里。
+    legacy_completion 仅供直接登录失败后的原路线使用，保留原来的补全判定。
     """
     try:
         r = auth.client.get(
@@ -278,8 +275,14 @@ def complete_sub_account(
     profile = data.get("profileData") or {}
     actions = profile.get("actions") or []
     incomplete = any(
-        (a.get("code") == "IncompleteProfile") for a in actions if isinstance(a, dict)
-    ) or not data.get("firstName")
+        a.get("code") == "IncompleteProfile" and a.get("status") == "ENFORCED"
+        for a in actions if isinstance(a, dict)
+    )
+    if legacy_completion:
+        incomplete = any(
+            a.get("code") == "IncompleteProfile"
+            for a in actions if isinstance(a, dict)
+        ) or not data.get("firstName")
 
     if incomplete:
         password = password or _new_sub_password()
@@ -584,7 +587,8 @@ def _passwordless_login(
 ) -> None:
     poll = poll or _p.poll_otp
     if not auth.start_email_mfa(email):
-        raise AdminError("发起邮箱验证失败 (authenticationstate)")
+        detail = getattr(auth, "last_email_mfa_error", "")
+        raise AdminError("发起邮箱验证失败 (authenticationstate)" + (f": {detail}" if detail else ""))
     _refresh_incomplete_challenge(auth)
     _send_incomplete_account_email(auth)
     lf("已发送验证码邮件 …")

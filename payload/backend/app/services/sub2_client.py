@@ -419,6 +419,8 @@ def _import_native_cookies(cfg: dict, items: list[dict]) -> dict:
             "concurrency": int(cfg.get("concurrency") or 10), "priority": 0,
             "rate_multiplier": _safe_float(cfg.get("rate_multiplier"), 1.0),
         }
+        if cfg.get('integration_key'):
+            body['extra'] = {'okad_initial_verification': True}
         code, data = _native_request(cfg, "/admin/accounts", body)
         created = code in (200, 201) and isinstance(data.get("id"), int)
         result["created" if created else "failed"] += 1

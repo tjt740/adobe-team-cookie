@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 
 BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
@@ -120,8 +121,8 @@ async def main():
 
         rows[2]['latest_job']['status'] = 'done'
         await page.locator('#extm-f-kw').fill('account3')
-        await page.locator('#extm-f-status').select_option('ok')
-        await page.locator('#extm-f-sub').select_option('true')
+        await select_value(page, '#extm-f-status', 'ok')
+        await select_value(page, '#extm-f-sub', 'true')
         await expect(page.locator('tr[data-member]')).to_have_count(1)
         await expect(all_button).to_have_text('一键重登筛选结果')
         await click_all()
@@ -140,8 +141,8 @@ async def main():
         await expect(page.locator('#extm-op')).to_contain_text('已提交 0 个账号重登，跳过 0 个')
         await expect(all_button).to_be_enabled()
         await page.locator('#extm-f-kw').fill('')
-        await page.locator('#extm-f-status').select_option('')
-        await page.locator('#extm-f-sub').select_option('')
+        await select_value(page, '#extm-f-status', '')
+        await select_value(page, '#extm-f-sub', '')
         await expect(page.locator('tr[data-member]')).to_have_count(3)
         output = ROOT / '.local'
         output.mkdir(exist_ok=True)
