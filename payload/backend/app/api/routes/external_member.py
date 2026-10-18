@@ -14,7 +14,7 @@ from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, Ex
 from app.services import external_login, external_sub2, external_sub2_stock, sub2_account_health
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
-from app.schemas.external_member import CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
+from app.schemas.external_member import AccountState, CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
 from app.services import supply_mail, manual_otp
 from app.crud.setting import _set
 
@@ -149,7 +149,7 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
     return {"message": "验证码已提交，正在继续登录"}
 
 
-def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
+def _member_filters(db, *, account_states=None, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
                     credits_min=None, credits_max=None):
     # created_at is stored as UTC without a timezone; accept browser-local
     # date boundaries with their offset and compare them in UTC.
@@ -164,6 +164,7 @@ def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, 
     if credits_min is not None and credits_max is not None and credits_min > credits_max:
         raise HTTPException(status_code=422, detail="积分最大值不能小于最小值")
     ids = None
+    stock = None
     if in_stock is not None or sub2_health is not None:
         stock = external_sub2_stock.membership(db)
         if not stock.get("ok"):
@@ -172,6 +173,14 @@ def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, 
                if (in_stock is None or item.get("in_stock") is in_stock)
                and (sub2_health is None or (item.get("in_stock") is True
                     and sub2_account_health.matches(item.get("account_health"), sub2_health)))]
+    if account_states:
+        from app.services import account_state_filter
+        if any(value.startswith('sub2_') for value in account_states) and stock is None:
+            stock = external_sub2_stock.membership(db)
+            if not stock.get("ok"):
+                raise HTTPException(status_code=503, detail=stock.get("message") or "Sub2 库存暂不可用，请稍后重试")
+        matched = account_state_filter.match_ids(db, account_states, stock)
+        ids = sorted(matched if ids is None else matched.intersection(ids))
     return dict(ids=ids, imported_from=imported_from, imported_before=imported_before,
                 credits_min=credits_min, credits_max=credits_max)
 
@@ -185,6 +194,7 @@ def list_members(
     imported_before: datetime | None = None,
     sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
     sub2_status: Sub2SyncStatus | None = None,
+    account_states: list[AccountState] | None = Query(None, max_length=32),
     credits_field: CreditsField = "available",
     credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
@@ -196,7 +206,7 @@ def list_members(
         subscription_ok=subscription_ok, keyword=keyword,
         credits_field=credits_field, current_profile=current_profile, is_company=is_company,
         sub2_status=sub2_status, sub2_target=target,
-        **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
+        **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
                           credits_min=credits_min, credits_max=credits_max),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
@@ -305,6 +315,12 @@ def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db)
     return result
 
 
+@router.post("/members/cancel-all-jobs", summary="终止所有外部子号登录任务")
+def cancel_all_jobs() -> dict:
+    with _login_lock:
+        return JOBS.cancel_all("external_login")
+
+
 @router.post("/members/batch-login", response_model=JobStatusOut, summary="批量登录刷新cookie")
 def batch_login(payload: BatchIds, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)) -> JobStatusOut:
@@ -328,7 +344,7 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
     filters = payload.model_dump()
     if payload.sub2_status is not None:
         filters["sub2_target"] = external_sub2.destination(external_sub2.config(db))
-    filters.update(_member_filters(db, in_stock=filters.pop("in_stock"),
+    filters.update(_member_filters(db, account_states=filters.pop("account_states"), in_stock=filters.pop("in_stock"),
                                    sub2_health=filters.pop("sub2_health"),
                                    imported_from=filters.pop("imported_from"),
                                    imported_before=filters.pop("imported_before"),
@@ -375,6 +391,7 @@ def export_members(
     imported_before: datetime | None = None,
     sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
     sub2_status: Sub2SyncStatus | None = None,
+    account_states: list[AccountState] | None = Query(None, max_length=32),
     credits_field: CreditsField = "available",
     credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
@@ -384,7 +401,7 @@ def export_members(
     return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
                                credits_field=credits_field, current_profile=current_profile, is_company=is_company,
                                sub2_status=sub2_status, sub2_target=target,
-                               **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
+                               **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
                                                  imported_before=imported_before,
                                                  credits_min=credits_min, credits_max=credits_max))
 

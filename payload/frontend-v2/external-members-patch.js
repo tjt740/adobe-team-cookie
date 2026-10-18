@@ -7,7 +7,7 @@
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
   var viewURL = new URL('./external-members-view.js?v=20261015-compact-filters', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -153,14 +153,15 @@
   function showCreditError(id) {
     var row = rowById(id); if (!row || el('extm-credit-dialog')) return;
     var dialog = document.createElement('dialog'); dialog.id = 'extm-credit-dialog'; dialog.className = 'extm-note-dialog extm-credit-dialog'; dialog.setAttribute('aria-labelledby', 'extm-credit-title');
-    dialog.innerHTML = '<h3 id="extm-credit-title">' + (row.credits_error ? '积分查询失败' : '积分未查到') + '</h3><p>' + esc(row.email) + '</p><p class="extm-credit-error">' + esc(row.credits_error || '这条历史记录未保存具体失败原因。') + '</p><p>积分未查到，暂时无法判断订阅状态，不代表积分为 0 或已掉订阅。「登录成功」仅表示登录及 Cookie 获取成功。</p><p>可关闭此窗口，点击账号行的「重登」重新查询积分；页面「刷新」只更新已保存的结果。</p><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
+    dialog.innerHTML = '<h3 id="extm-credit-title">' + (row.credits_error ? '积分查询失败' : '积分未查到') + '</h3><p>' + esc(row.email) + '</p><p class="extm-credit-error">' + esc(row.credits_error || '这条历史记录未保存具体失败原因。') + '</p><p>积分未查到，暂时无法判断订阅状态，不代表积分为 0 或已掉订阅。「登录成功」仅表示登录及 Cookie 获取成功。</p><p>可关闭此窗口，点击账号行的「重登」重新查询积分；页面「搜索」只更新已保存的结果。</p><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
     dialog.querySelector('button').onclick = function () { dialog.close(); };
     dialog.onclose = function () { dialog.remove(); var button = document.querySelector('[data-credit-error="' + id + '"]'); if (button) button.focus({preventScroll:true}); };
     document.body.appendChild(dialog); dialog.showModal();
   }
   function creditCell(row) {
-    var a = row.credits_available == null ? "—" : Math.round(row.credits_available);
-    var t = row.credits_total == null ? "—" : Math.round(row.credits_total);
+    function amount(value) { return value == null || !Number.isFinite(Number(value)) ? "—" : String(Number(value)); }
+    var a = amount(row.credits_available);
+    var t = amount(row.credits_total);
     return '<span class="cr"><b>' + a + "</b> / " + t + "</span>";
   }
 
@@ -173,7 +174,7 @@
         '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
     view = mount(host, {
       filter: function (filters) {
-        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health;
+        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health; st.statesF = filters.states || [];
         st.profileF = filters.profile; st.companyF = filters.company;
         st.creditsField = filters.creditsField;
         st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
@@ -187,7 +188,7 @@
           view.button('extm-refresh', {loading:false, disabled:false});
         });
       },
-      import: doImport, mail: mailAction, batchLogin: batchLogin, profile: saveSelectedProfilePreference,
+      import: doImport, mail: mailAction, stopAll: stopAllTasks, batchLogin: batchLogin, profile: saveSelectedProfilePreference,
       delete: batchDelete, export: exportCookies, exportEmails: exportEmails, push: pushSub2, loginAll: loginAll,
       page: goPage,
       size: function (size) {
@@ -214,6 +215,7 @@
     var filters = {};
     if (st.stockF !== "") filters.in_stock = st.stockF === "true";
     if (st.syncF) filters.sub2_status = st.syncF;
+    if (st.statesF.length) filters.account_states = st.statesF;
     if (st.healthF) filters.sub2_health = st.healthF;
     if (st.importedFrom) filters.imported_from = st.importedFrom;
     if (st.importedBefore) filters.imported_before = st.importedBefore;
@@ -232,7 +234,7 @@
     if (st.subF !== "") a.push("subscription_ok=" + st.subF);
     if (st.q) a.push("keyword=" + encodeURIComponent(st.q));
     var filters = extraFilters();
-    Object.keys(filters).forEach(function (key) { a.push(key + "=" + encodeURIComponent(filters[key])); });
+    Object.keys(filters).forEach(function (key) { (Array.isArray(filters[key]) ? filters[key] : [filters[key]]).forEach(function (value) { a.push(key + "=" + encodeURIComponent(value)); }); });
     return a;
   }
 
@@ -314,7 +316,7 @@
     }).catch(function (e) {
       if (seq !== st.loadSeq || e.name === 'AbortError') return;
       if (!st.rows.length) { st.loadError = e.message; renderRows(); }
-      else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
+      else opMsg("搜索失败: " + e.message + "，当前显示上次结果", "err");
     }).finally(function () {
       if (st.loadController === controller) st.loadController = null;
       if (st.loadingSeq === seq) st.loadingSeq = 0;
@@ -769,6 +771,20 @@
     return d.promise;
   }
 
+  async function stopAllTasks() {
+    if (st.stoppingAll) return;
+    st.stoppingAll = true;
+    setLoading(el('extm-stop-all'), true, '正在终止…');
+    updSel();
+    try {
+      var result = await api('/members/cancel-all-jobs', {method:'POST'});
+      toast(result.failed ? 'warning' : 'success', result.message);
+      await load(true);
+      await Promise.all(Array.from(st.expanded).filter(rowById).map(function (mid) { return refreshDetail(mid, true); }));
+    } catch (e) { toast('error', '终止失败：' + e.message); }
+    finally { st.stoppingAll = false; setLoading(el('extm-stop-all'), false, '终止所有任务'); updSel(); }
+  }
+
   async function taskAction(id, action) {
     var d = detailState(id);
     if (d.action) return;
@@ -798,6 +814,7 @@
     var saving = Array.from(st.sel).some(function (id) { return st.profileSaving.has(id); });
     var selectedRows = st.rows.filter(function (row) { return st.sel.has(row.id); });
     var preferences = new Set(selectedRows.map(function (row) { return row.profile_preference || ''; }));
+    view.button("extm-stop-all", {disabled:st.stoppingAll, loading:st.stoppingAll, text:st.stoppingAll ? "正在终止…" : "终止所有任务"});
     view.update({selected:st.sel.size,
       profilePlaceholder:st.profileSaving.size ? '保存中…' : !st.sel.size ? '请先勾选账号' : '所选配置不一致',
       profile:!st.profileSaving.size && preferences.size === 1 ? selectedRows[0].profile_preference || '' : '__mixed__',
@@ -805,10 +822,10 @@
     view.button('extm-export', {disabled:!!st.exporting, loading:!!st.exporting, text:st.exporting ? '导出中…' : st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : qs().length ? '导出筛选 Cookie' : '导出全部 Cookie'});
     view.button('extm-export-emails', {disabled:!!st.exportingEmails || !st.sel.size, loading:!!st.exportingEmails, text:st.exportingEmails ? '邮箱导出中…' : '导出选中邮箱' + (st.sel.size ? '（' + st.sel.size + '）' : '')});
     var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
-    view.button('extm-batch-login', {disabled:busy || saving || !!st.loginAllSubmitting || !st.sel.size,
+    view.button('extm-batch-login', {disabled:busy || saving || !!st.loginAllSubmitting || st.stoppingAll || !st.sel.size,
       loading:busy && st.rows.some(function (r) {return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}),
       text:saving ? '配置保存中…' : busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : '')});
-    view.button('extm-login-all', {disabled:!!st.loginAllSubmitting || st.pending.size > 0 || st.profileSaving.size > 0, loading:!!st.loginAllSubmitting,
+    view.button('extm-login-all', {disabled:!!st.loginAllSubmitting || st.stoppingAll || st.pending.size > 0 || st.profileSaving.size > 0, loading:!!st.loginAllSubmitting,
       text:st.loginAllSubmitting ? '提交重登中…' : qs().length ? '一键重登筛选结果' : '一键重登全部'});
     view.button('extm-batch-del', {disabled:busy || saving || !st.sel.size});
     var pushing = st.sub2Submitting || st.rows.some(function (r) {return st.sel.has(r.id) && ['pending','syncing'].includes(r.sub2_status);});
@@ -1033,7 +1050,7 @@
   }
 
   async function startLogin(ids, expandFirst) {
-    if (st.loginAllSubmitting) return;
+    if (st.loginAllSubmitting || st.stoppingAll) return;
     if (ids.some(function (id) { return st.profileSaving.has(id); })) { toast('warning', '请等待登录配置保存完成'); return; }
     if (ids.some(function (id) { var row = rowById(id); return row && running(row); })) { toast('warning', '所选账号正在登录，请等待任务完成'); return; }
     ids.forEach(function (id) { st.pending.add(id); });
@@ -1055,7 +1072,7 @@
   }
 
   async function loginAll() {
-    if (st.loginAllSubmitting || st.pending.size || st.profileSaving.size) return;
+    if (st.loginAllSubmitting || st.stoppingAll || st.pending.size || st.profileSaving.size) return;
     var filters = Object.assign({ login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q }, extraFilters());
     var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
     st.loginAllSubmitting = true;

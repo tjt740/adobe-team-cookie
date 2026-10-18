@@ -6,7 +6,7 @@ import {b as Select} from './assets/text-C52gYURp.js';
 import {N as Spin} from './assets/Spin-DXy_lfOs.js';
 
 const options = entries => entries.map(([value, label]) => ({value, label}));
-const defaults = () => ({status:'', sub:'', stock:'', sync:'', health:'', profile:'', company:'', creditsField:'available', creditsMin:null, creditsMax:null, from:'', to:'', keyword:''});
+const defaults = () => ({status:'', sub:'', stock:'', sync:'', health:'', states:[], profile:'', company:'', creditsField:'available', creditsMin:null, creditsMax:null, from:'', to:'', keyword:''});
 const filterOptions = {
   status: options([['','全部状态'],['ok','正常'],['never','未登录'],['login_failed','登录失败'],['account_disabled','已停用'],['rate_limited','频繁登录限流'],['internal','内部错误']]),
   sub: options([['','全部订阅'],['true','订阅正常'],['false','掉订阅']]),
@@ -17,6 +17,13 @@ const filterOptions = {
   company: options([['','全部类型'],['true','公司'],['false','非公司']]),
   creditsField: options([['available','可用积分'],['total','总积分']])
 };
+
+const stateChoices = [
+  {type:'group',label:'Sub2 账号状态',key:'sub2',children:choices.health.filter(o=>o.value).map(o=>({...o,value:'sub2_'+o.value,label:'Sub2 '+o.label}))},
+  {type:'group',label:'Cookie 与密码',key:'credentials',children:options([['has_cookie','有 Cookie'],['no_cookie','无 Cookie'],['has_password','有密码'],['no_password','无密码']])},
+  {type:'group',label:'本轮任务状态',key:'tasks',children:options([['task_pending','排队中'],['task_running','登录中'],['task_otp','等待验证码'],['task_done','本轮成功'],['task_failed','本轮失败'],['task_pausing','暂停中'],['task_paused','已暂停'],['task_cancelling','终止中'],['task_cancelled','已终止'],['task_interrupted','已中断']])},
+  {type:'group',label:'登录结果',key:'login',children:choices.status.filter(o=>o.value)}
+];
 
 export function mountExternalMembers(host, actions, tableHTML) {
   const form = ref({content:'', duplicate:'skip', otpMode:'', mailToken:''});
@@ -64,7 +71,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
       const f=filters.value, p=ui.value.pagination;
       const credit = (key, suffix, label) => h(InputNumber, {value:f[key], min:0, showButton:false, clearable:true, placeholder:label, status:errors.value.credits?'error':undefined, inputProps:{id:'extm-f-credits-'+suffix,'aria-label':'积分'+label,'aria-describedby':'extv-credit-error'}, 'onUpdate:value':v=>{f[key]=v;}, onBlur:apply, onClear:()=>{f[key]=null;apply();}, onKeyup:e=>{if(e.key==='Enter')apply();}});
       return [
-        h('header', {class:'extm-hd'}, [h('h2', {}, '外部子号管理'), h('span', {class:'cnt'}, ['共 ',h('b',{id:'extm-total'},String(ui.value.total)),' 个']), h('span',{class:'cnt'},'Sub2 库存自动更新'),button('extm-open-import','导入外部子号',openImport,{type:'primary','aria-haspopup':'dialog','aria-controls':'extm-import-drawer','aria-expanded':String(importOpen.value)})]),
+        h('header', {class:'extm-hd'}, [h('h2', {}, '外部子号管理'), h('span', {class:'cnt'}, ['共 ',h('b',{id:'extm-total'},String(ui.value.total)),' 个']), h('span',{class:'cnt'},'Sub2 库存自动更新'),button('extm-stop-all','终止所有任务',actions.stopAll,{type:'error',secondary:true}),button('extm-open-import','导入外部子号',openImport,{type:'primary','aria-haspopup':'dialog','aria-controls':'extm-import-drawer','aria-expanded':String(importOpen.value)})]),
         h('dialog',{id:'extm-import-drawer',class:'extv-import-drawer','aria-labelledby':'extm-import-title','aria-describedby':'extm-import-description',onClose:()=>{if(!importDrawer()?.open){openSelect.value=null;importOpen.value=false;}},onCancel:event=>{event.preventDefault();closeImport();},onKeydownCapture:event=>{
           if(event.key==='Escape' && openSelect.value){event.preventDefault();event.stopPropagation();openSelect.value=null;}
         },onClick:event=>{
@@ -112,6 +119,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
             h('div',{class:'extv-filter-grid'},[
               field('邮箱','extm-f-kw',input('extm-f-kw',f.keyword,v=>{f.keyword=v;clearTimeout(keywordTimer);keywordTimer=setTimeout(apply,300);},{clearable:true,placeholder:'搜索邮箱…',onKeyup:e=>{if(e.key==='Enter')apply();}}),'extv-span-2'),
               filterSelect('status','登录状态'),filterSelect('sub','订阅状态'),
+              field('账号状态','extm-f-states',select('extm-f-states',f.states,stateChoices,v=>{f.states=v;apply();},{multiple:true,clearable:true,placeholder:'选择一个或多个状态'}),'extv-span-2'),
               field('积分范围','extm-f-credits-field',h('div',{class:'extv-credit-range'},[
                 select('extm-f-credits-field',f.creditsField,filterOptions.creditsField,v=>{f.creditsField=v;apply();}),
                 h('div',{class:'extv-range'},[credit('creditsMin','min','最小值'),h('span',{},'至'),credit('creditsMax','max','最大值')])
