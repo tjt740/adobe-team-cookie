@@ -309,10 +309,23 @@
       st.total = d.total != null ? d.total : (d.items || []).length;
       view.update({total:st.total});
       if (st.page > pageCount()) { resetPage(pageCount()); return load(); }
-      st.rows = d.items || [];
+      var previousRows = new Map(st.rows.map(function (row) { return [row.id, row]; }));
+      var rows = d.items || [];
+      // A delivery receipt can be newer than the 30-second inventory cache.
+      // Recheck remotely once per changed receipt; never infer stock from it.
+      var deliveryChanged = rows.some(function (row) {
+        var previous = previousRows.get(row.id);
+        return previous && (
+          (row.sub2_synced_at && row.sub2_synced_at !== previous.sub2_synced_at) ||
+          (row.sub2_account_id && row.sub2_account_id !== previous.sub2_account_id) ||
+          (row.sub2_status === 'synced' && previous.sub2_status !== 'synced')
+        );
+      });
+      st.rows = rows;
       var visible = new Set(st.rows.map(function (r) { return r.id; }));
       st.sel.forEach(function (id) { if (!visible.has(id)) st.sel.delete(id); });
       renderRows();
+      if (deliveryChanged) refreshStock(true);
     }).catch(function (e) {
       if (seq !== st.loadSeq || e.name === 'AbortError') return;
       if (!st.rows.length) { st.loadError = e.message; renderRows(); }
@@ -330,8 +343,10 @@
     st.polling = true;
     try {
       await load(!force);
-      await Promise.all(Array.from(st.expanded).filter(function (id) { return rowById(id) && (force || detailState(id).auto); }).map(function (id) { return refreshDetail(id); }));
     } finally { st.polling = false; }
+    // Slow history/log requests must not hold the account list's polling lock.
+    // Each detail already coalesces its own requests in refreshDetail.
+    await Promise.all(Array.from(st.expanded).filter(function (id) { return rowById(id) && (force || detailState(id).auto); }).map(function (id) { return refreshDetail(id); }));
   }
 
   function refreshStock(force) {
@@ -1186,7 +1201,7 @@
   setInterval(function () {
     if (st.open && !document.hidden) { refreshAll(false); refreshStock(false); }
   }, 3000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshStock(true); });
+  document.addEventListener('visibilitychange', function () { if (st.open && !document.hidden) { refreshAll(false); refreshStock(true); } });
   window.addEventListener('okad:sub2-stock-changed', function () { refreshStock(true); });
 
 })();

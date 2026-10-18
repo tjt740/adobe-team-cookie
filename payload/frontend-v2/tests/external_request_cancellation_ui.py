@@ -67,7 +67,7 @@ async def main():
             await page.add_init_script("localStorage.setItem('okad_token','synthetic-cancellation-test')")
             await page.goto('http://request.test' + prefix + '/external-members')
             await expect(page.locator('tr[data-member]')).to_have_count(1)
-            results = page.locator('#extm-results')
+            results = page.locator('.extv-results')
 
             first = hold('personal', '', 2)
             await select_value(page, '#extm-f-profile', 'personal')
