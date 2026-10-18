@@ -25,7 +25,9 @@ def label(selector, value):
 async def select_value(page, selector, value):
     control = page.locator(selector)
     await control.locator('.n-base-selection').click()
-    await page.locator('.n-base-select-option:visible').filter(has=page.get_by_text(label(selector, value), exact=True)).click()
+    option = page.locator('.n-base-select-option:visible').filter(has=page.get_by_text(label(selector, value), exact=True))
+    await expect(option).to_have_count(1)
+    await option.click()
 
 
 async def expect_select(page, selector, value):

@@ -27,7 +27,7 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         for prefix in ('', '/okad'):
-            plans, errors = {}, []
+            plans, errors, saved = {}, [], {}
 
             def hold(profile='', company='', items=None, status=200, sync=''):
                 pending = Pending([row(1)] if items is None else items, status)
@@ -46,14 +46,16 @@ async def main():
                     data = dict(id=1, username='admin', is_active=True, is_superuser=True)
                 elif path == '/api/external/members':
                     query = {key: values[0] for key, values in parse_qs(url.query).items()}
-                    pending = plans.pop((query.get('current_profile',''), query.get('is_company',''), query.get('sub2_status','')), None)
+                    key = (query.get('current_profile',''), query.get('is_company',''), query.get('sub2_status',''))
+                    pending = plans.pop(key, None)
                     if pending:
                         pending.entered.set()
                         await pending.release.wait()
+                        saved[key] = dict(items=pending.items,total=len(pending.items)) if pending.status == 200 else dict(items=[],total=0)
                         await route.fulfill(status=pending.status, json={'items':pending.items,'total':len(pending.items)} if pending.status == 200 else {'detail':'模拟筛选失败'})
                         pending.finished.set()
                         return
-                    data = dict(items=[row(1)], total=1)
+                    data = saved.get(key, dict(items=[row(1)], total=1))
                 elif path == '/api/external/members/sub2-stock':
                     data = dict(ok=True, configured=True, items={})
                 else:

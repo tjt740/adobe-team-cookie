@@ -19,10 +19,10 @@ const filterOptions = {
 };
 
 const stateChoices = [
-  {type:'group',label:'Sub2 账号状态',key:'sub2',children:choices.health.filter(o=>o.value).map(o=>({...o,value:'sub2_'+o.value,label:'Sub2 '+o.label}))},
+  {type:'group',label:'Sub2 账号状态',key:'sub2',children:filterOptions.health.filter(o=>o.value).map(o=>({...o,value:'sub2_'+o.value,label:'Sub2 '+o.label}))},
   {type:'group',label:'Cookie 与密码',key:'credentials',children:options([['has_cookie','有 Cookie'],['no_cookie','无 Cookie'],['has_password','有密码'],['no_password','无密码']])},
   {type:'group',label:'本轮任务状态',key:'tasks',children:options([['task_pending','排队中'],['task_running','登录中'],['task_otp','等待验证码'],['task_done','本轮成功'],['task_failed','本轮失败'],['task_pausing','暂停中'],['task_paused','已暂停'],['task_cancelling','终止中'],['task_cancelled','已终止'],['task_interrupted','已中断']])},
-  {type:'group',label:'登录结果',key:'login',children:choices.status.filter(o=>o.value)}
+  {type:'group',label:'登录结果',key:'login',children:filterOptions.status.filter(o=>o.value)}
 ];
 
 export function mountExternalMembers(host, actions, tableHTML) {
@@ -62,7 +62,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
   };
   const field = (label, id, child, cls='') => h('div', {class:'extv-field '+cls}, [h('label', {id:id+'-label', for:id}, label), child]);
   const input = (id, value, update, props={}) => h(Input, {value, 'onUpdate:value':update, ...props, inputProps:{id, 'aria-labelledby':id+'-label', ...props.inputProps}});
-  const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':update, show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
+  const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':update, virtualScroll:!["extm-f-health","extm-f-states"].includes(id),show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
   const filterSelect = (key, label, suffix=key) => field(label, 'extm-f-'+suffix, select('extm-f-'+suffix, filters.value[key], filterOptions[key], value => {filters.value[key]=value; apply();}));
   const TableRegion = {name:'ExternalMemberTaskTable', render:() => h('div', {class:'extv-table-region', innerHTML:tableHTML})};
   const app = createApp({name:'ExternalMembersWorkspace', setup() {
