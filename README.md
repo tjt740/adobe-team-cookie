@@ -51,6 +51,8 @@ MOBILE_BROWSER=webkit payload/backend/.venv/bin/python payload/frontend-v2/tests
 
 ## 当前生产部署
 
+2026-10-20 自定义分组双端发布已完成。Okad 实际应用为 `879e9ded87256e678e41579f04755cabcf610728`，配套 Sub2 为 `9baadf2d1b525c318f9a7be0d6f2bf37381d2fb2`；接口与桌面／手机线上验收通过，测试记录已清理，原账号／设置／资源额度保留。完整发布、备份与回退信息见 [发布记录](deploy/primary/okad-custom-groups-20261020.md)。
+
 - 唯一生产服务器：`173.234.15.150`，地址：<https://creative.cheap/okad/>。旧服务器不再作为发布目标。
 - 迁移后的同机路由：`creative.cheap/` 保持 Sub2API 原平台，okad 管理平台位于 `creative.cheap/okad/`；两者共用服务器但使用各自的服务和数据。
 - 目录：`/opt/adobe-team-cookie`
