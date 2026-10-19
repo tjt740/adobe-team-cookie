@@ -6,7 +6,7 @@ import {b as Select} from './assets/text-C52gYURp.js';
 import {N as Spin} from './assets/Spin-DXy_lfOs.js';
 
 const options = entries => entries.map(([value, label]) => ({value, label}));
-const defaults = () => ({status:'', sub:'', stock:'', sync:'', health:'', states:[], profile:'', company:'', creditsField:'available', creditsMin:null, creditsMax:null, from:'', to:'', keyword:''});
+const defaults = () => ({status:'', sub:'', stock:'', sync:'', health:'', states:[], profile:'', company:'', group:'', creditsField:'available', creditsMin:null, creditsMax:null, from:'', to:'', keyword:''});
 const filterOptions = {
   status: options([['','全部状态'],['ok','正常'],['never','未登录'],['login_failed','登录失败'],['account_disabled','已停用'],['rate_limited','频繁登录限流'],['internal','内部错误']]),
   sub: options([['','全部订阅'],['true','订阅正常'],['false','掉订阅']]),
@@ -14,7 +14,7 @@ const filterOptions = {
   health: options([['','全部 Sub2 状态'],['error','全部异常'],['401','401 · 鉴权失败'],['408','408 · 请求超时'],['403','403'],['429','429 · 限流'],['500','500'],['502','502'],['503','503'],['504','504'],['529','529 · 过载'],['other','其他异常（非 401/408）'],['recovered','已有成功证据'],['unknown','待验证 / 无完整记录']]),
   sync: options([['','全部同步状态'],['pending','Sub2 待同步'],['syncing','Sub2 同步中'],['synced','Sub2 已同步'],['failed','Sub2 同步失败'],['not_pushed','Sub2 未推送']]),
   profile: options([['','全部配置'],['personal','个人配置'],['organization','组织配置'],['unknown','未获取']]),
-  company: options([['','全部类型'],['true','公司'],['false','非公司']]),
+  company: options([['','全部类型'],['true','公司'],['vietnam','越南账号'],['false','非公司']]),
   creditsField: options([['available','可用积分'],['total','总积分']])
 };
 
@@ -26,9 +26,10 @@ const stateChoices = [
 ];
 
 export function mountExternalMembers(host, actions, tableHTML) {
-  const form = ref({content:'', duplicate:'skip', otpMode:'', mailToken:''});
+  const form = ref({content:'', duplicate:'skip', otpMode:'', mailToken:'', group:'', groupName:''});
   const filters = ref(defaults());
-  const ui = ref({total:0, loading:false, selected:0, buttons:{}, message:'', messageTone:'mut', importMessage:'', importTone:'mut', mailState:'读取中…', mailResult:'', mailPlaceholder:'粘贴 supply.ink Token', profile:'__mixed__', profilePlaceholder:'请先勾选账号', profileDisabled:true, pagination:{page:1,pages:1,size:200,total:0,start:0,end:0,busy:false}});
+  const ui = ref({group:'__mixed__', groupSaving:false, groupCreating:false, groupError:'', groupsError:'', total:0, loading:false, selected:0, buttons:{}, message:'', messageTone:'mut', importMessage:'', importTone:'mut', mailState:'读取中…', mailResult:'', mailPlaceholder:'粘贴 supply.ink Token', profile:'__mixed__', profilePlaceholder:'请先勾选账号', profileDisabled:true, pagination:{page:1,pages:1,size:200,total:0,start:0,end:0,busy:false}});
+  const groups = ref([]);
   const errors = ref({credits:'', dates:''});
   const openSelect = ref(null);
   const mailOpen = ref(false);
@@ -75,6 +76,16 @@ export function mountExternalMembers(host, actions, tableHTML) {
   const input = (id, value, update, props={}) => h(Input, {value, 'onUpdate:value':update, ...props, inputProps:{id, 'aria-labelledby':id+'-label', ...props.inputProps}});
   const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':value=>{if(!props.multiple)openSelect.value=null;update(value);}, virtualScroll:!["extm-f-health","extm-f-states"].includes(id),show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
   const filterSelect = (key, label, suffix=key) => field(label, 'extm-f-'+suffix, select('extm-f-'+suffix, filters.value[key], filterOptions[key], value => {filters.value[key]=value; apply();}));
+  const groupOptions = () => groups.value.map(g=>({value:String(g.id),label:g.name}));
+  async function createGroup() {
+    const name=form.value.groupName.trim();
+    if(!name){ui.value.groupError='请输入分组名称';return;}
+    if(ui.value.groupCreating)return;
+    ui.value.groupCreating=true;ui.value.groupError='';
+    try { const group=await actions.createGroup(name);form.value.group=String(group.id);form.value.groupName=''; }
+    catch(error){ui.value.groupError=error.message;}
+    finally{ui.value.groupCreating=false;}
+  }
   const TableRegion = {name:'ExternalMemberTaskTable', render:() => h('div', {class:'extv-table-region', innerHTML:tableHTML})};
   const app = createApp({name:'ExternalMembersWorkspace', setup() {
     const {naiveTheme} = useTheme();
@@ -110,6 +121,13 @@ export function mountExternalMembers(host, actions, tableHTML) {
               field('重复邮箱','extm-dup',select('extm-dup',form.value.duplicate,options([['skip','跳过'],['overwrite','覆盖']]),v=>form.value.duplicate=v,{to:'#extm-import-drawer'})),
               field('取码方式','extm-otp-mode',select('extm-otp-mode',form.value.otpMode,options([['','保留设置（新账号自动取码）'],['auto','自动取码（supply.ink）'],['manual','手动输入验证码（普通账号）'],['vietnam','越南登录（密码 + 自动接码）']]),v=>{form.value.otpMode=v;if(v!=='auto')mailOpen.value=false;},{to:'#extm-import-drawer'}))
             ]),
+            field('自定义分组','extm-import-group',select('extm-import-group',form.value.group,[{value:'',label:'保留分组（新账号未分组）'},{value:'0',label:'未分组'},...groupOptions()],v=>form.value.group=v,{filterable:true,to:'#extm-import-drawer'})),
+            h('div',{class:'extv-group-create'},[
+              field('新分组名称','extm-group-name',input('extm-group-name',form.value.groupName,v=>form.value.groupName=v,{maxlength:64,placeholder:'例如：客户 A、10 月新号',onKeyup:e=>{if(e.key==='Enter')createGroup();}})),
+              h(Button,{id:'extm-create-group',loading:ui.value.groupCreating,disabled:ui.value.groupCreating,onClick:createGroup},()=> '添加分组')
+            ]),
+            ui.value.groupError?h('p',{class:'extv-filter-error',role:'alert'},ui.value.groupError):null,
+            h('p',{class:'extv-import-help'},'分组可与公司、越南、非公司账号类型组合筛选。覆盖导入时，未指定分组会保留原分组。'),
             h('p',{class:'extv-import-help'},'越南登录需填写邮箱和 Adobe 密码，出现邮箱验证时自动接码，无需 supply.ink Token；仅适用于越南取码站支持的账号。普通账号可手动填码，覆盖导入可更新已有账号的选择。'),
             h('details',{id:'extm-mail-config',class:'extm-card extm-import-card',hidden:form.value.otpMode!=='auto',open:mailOpen.value,onToggle:event=>mailOpen.value=event.target.open},[
               h('summary',{},['邮件配置 · supply.ink ',h('span',{id:'extm-mail-state',class:'extm-msg mut'},ui.value.mailState)]),
@@ -138,8 +156,10 @@ export function mountExternalMembers(host, actions, tableHTML) {
               field('导入时间','extm-f-import-from',h('div',{class:'extv-range'},[
                 input('extm-f-import-from',f.from,v=>{f.from=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':'导入开始日期'},status:errors.value.dates?'error':undefined}),h('span',{},'至'),
                 input('extm-f-import-to',f.to,v=>{f.to=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':'导入结束日期'},status:errors.value.dates?'error':undefined})
-              ]),'extv-span-2'),filterSelect('stock','Sub2 库存'),filterSelect('sync','Sub2 同步状态'),filterSelect('health','Sub2 状态')
+              ]),'extv-span-2'),filterSelect('stock','Sub2 库存'),filterSelect('sync','Sub2 同步状态'),filterSelect('health','Sub2 状态'),
+              field('自定义分组','extm-f-group',select('extm-f-group',f.group,[{value:'',label:'全部分组'},{value:'0',label:'未分组'},...groupOptions()],v=>{f.group=v;apply();},{filterable:true}))
             ]),
+            ui.value.groupsError?h('p',{class:'extv-filter-error',role:'alert'},[ui.value.groupsError,h(Button,{text:true,onClick:actions.loadGroups},()=> '重新加载分组')]):null,
             errors.value.credits?h('p',{id:'extv-credit-error',class:'extv-filter-error',role:'alert'},errors.value.credits):null,
             errors.value.dates?h('p',{class:'extv-filter-error',role:'alert'},errors.value.dates):null,
             h('div',{class:'extv-filter-actions'},[
@@ -151,6 +171,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
             h('div',{class:'extm-batch-controls'},[
               h('span',{class:'selc'},['已选 ',h('b',{id:'extm-selc'},String(ui.value.selected)),' 个']),
               field('批量登录配置','extm-batch-profile',select('extm-batch-profile',ui.value.profile,options([['__mixed__',ui.value.profilePlaceholder],['','不指定（原逻辑）'],['personal','个人配置'],['organization','组织配置优先']]).map(o=>({...o,disabled:o.value==='__mixed__'})),actions.profile,{disabled:ui.value.profileDisabled}),'extv-batch-profile'),
+              field('批量设置分组','extm-batch-group',select('extm-batch-group',ui.value.group,[{value:'__mixed__',label:ui.value.groupSaving?'保存分组中…':ui.value.selected?'选择分组':'请先勾选账号',disabled:true},{value:'0',label:'未分组'},...groupOptions()],actions.assignGroup,{filterable:true,disabled:!ui.value.selected||ui.value.groupSaving}),'extv-batch-profile'),
               button('extm-batch-login','选中批量重登',actions.batchLogin,{type:'primary',secondary:true}),
               button('extm-batch-del','删除选中',actions.delete,{type:'error',quaternary:true})
             ]),
@@ -193,6 +214,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
   host.addEventListener('keydown',closeMenus);
   return {
     form:form.value,
+    groups(value) {groups.value=value;ui.value.groupsError='';},
     update(value) {if(value.profileDisabled && openSelect.value==='extm-batch-profile')openSelect.value=null;Object.assign(ui.value,value);},
     importResult(message, tone) {Object.assign(ui.value,{importMessage:message,importTone:tone,message,messageTone:tone});},
     button(id, value) {ui.value.buttons[id]={...ui.value.buttons[id],...value};},

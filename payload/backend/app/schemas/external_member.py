@@ -12,6 +12,16 @@ OtpMode = Literal["auto", "manual", "vietnam"]
 CreditsField = Literal["available", "total"]
 Sub2SyncStatus = Literal["not_pushed", "pending", "syncing", "synced", "failed"]
 CurrentProfileKind = Literal["personal", "organization", "unknown"]
+AccountType = Literal["company", "vietnam", "non_company"]
+
+
+class ExternalGroupCreate(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+
+
+class ExternalGroupAssignment(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=10000)
+    group_id: int | None = Field(default=None, gt=0)
 
 
 class ManualOtpChallenge(BaseModel):
@@ -27,6 +37,8 @@ class ExternalMemberOut(BaseModel):
     id: int
     email: str
     note: str = ""
+    group_id: int | None = None
+    group_name: str = ""
     credits_available: float | None = None
     credits_total: float | None = None
     credits_error: str = ""
@@ -58,6 +70,8 @@ class ExternalImportRequest(BaseModel):
     on_duplicate: str = Field(default="skip", pattern="^(skip|overwrite)$")
     profile_preference: ProfilePreference | None = None
     otp_mode: OtpMode | None = None
+    # Omitted preserves existing groups; explicit null moves imports to ungrouped.
+    group_id: int | None = Field(default=None, gt=0)
 
 
 class ExternalOtpModeUpdate(BaseModel):
@@ -102,6 +116,8 @@ class ExternalLoginFilter(BaseModel):
     credits_max: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     current_profile: CurrentProfileKind | None = None
     is_company: bool | None = None
+    account_type: AccountType | None = None
+    group_id: int | None = Field(default=None, ge=0)
 
 
 class ExternalMemberExportItem(BaseModel):

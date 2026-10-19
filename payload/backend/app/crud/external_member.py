@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.crud.email import _parse_email_line
 from app.models.external_member import ExternalMember
 from app.schemas.account_profile import ProfilePreference
-from app.schemas.external_member import CreditsField, CurrentProfileKind, OtpMode, Sub2SyncStatus
+from app.schemas.external_member import AccountType, CreditsField, CurrentProfileKind, OtpMode, Sub2SyncStatus
 
 
 def get(db: Session, mid: int) -> ExternalMember | None:
@@ -32,7 +32,8 @@ def get_many(db: Session, ids: list[int]) -> list[ExternalMember]:
 
 def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, operator: str = "",
                  profile_preference: ProfilePreference | None = None,
-                 otp_mode: OtpMode | None = None) -> dict:
+                 otp_mode: OtpMode | None = None, group_id: int | None = None,
+                 assign_group: bool = False) -> dict:
     """导入邮箱、账号密码或完整邮箱凭据。
 
     同一次 ``content`` 内出现重复邮箱时(常见于粘贴的名单本身带重复行),
@@ -104,6 +105,8 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
         row.refresh_token = rt or row.refresh_token
         row.mail_url = mail_url or row.mail_url
         row.operator = operator
+        if assign_group:
+            row.group_id = group_id
         if profile_preference is not None:
             row.profile_preference = profile_preference
         row.updated_at = datetime.now(timezone.utc)
@@ -126,6 +129,8 @@ def _filtered_members(
     credits_max: float | None = None,
     current_profile: CurrentProfileKind | None = None,
     is_company: bool | None = None,
+    account_type: AccountType | None = None,
+    group_id: int | None = None,
     sub2_status: Sub2SyncStatus | None = None,
     sub2_target: str = "",
 ):
@@ -153,13 +158,22 @@ def _filtered_members(
         # Use the last actual login result, not the preference for the next login.
         kind = func.coalesce(ExternalMember.account_profile["current_kind"].as_string(), "unknown")
         stmt = stmt.where(kind == current_profile)
-    if is_company is not None:
+    if group_id is not None:
+        stmt = stmt.where(ExternalMember.group_id.is_(None) if group_id == 0 else ExternalMember.group_id == group_id)
+    if account_type == "vietnam":
+        stmt = stmt.where(ExternalMember.otp_mode == "vietnam")
+    if account_type == "non_company":
+        stmt = stmt.where(func.coalesce(ExternalMember.otp_mode, "auto") != "vietnam")
+    if is_company is not None or account_type in {"company", "non_company"}:
         # Match the uses_supply_mail label returned by the API, including partial credentials.
         company = and_(func.coalesce(ExternalMember.otp_mode, "auto") == "auto",
                        func.coalesce(ExternalMember.mail_url, "") == "",
                        or_(func.coalesce(ExternalMember.refresh_token, "") == "",
                            func.coalesce(ExternalMember.client_id, "") == ""))
-        stmt = stmt.where(company if is_company else ~company)
+        if is_company is not None:
+            stmt = stmt.where(company if is_company else ~company)
+        if account_type in {"company", "non_company"}:
+            stmt = stmt.where(company if account_type == "company" else ~company)
     if keyword:
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
@@ -182,6 +196,8 @@ def list_members(
     credits_max: float | None = None,
     current_profile: CurrentProfileKind | None = None,
     is_company: bool | None = None,
+    account_type: AccountType | None = None,
+    group_id: int | None = None,
     sub2_status: Sub2SyncStatus | None = None,
     sub2_target: str = "",
 ) -> tuple[list[ExternalMember], int]:
@@ -190,6 +206,7 @@ def list_members(
                              imported_before=imported_before, credits_field=credits_field,
                              credits_min=credits_min, credits_max=credits_max,
                              current_profile=current_profile, is_company=is_company,
+                             account_type=account_type, group_id=group_id,
                              sub2_status=sub2_status, sub2_target=sub2_target)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
@@ -214,6 +231,8 @@ def export_cookies(
     credits_max: float | None = None,
     current_profile: CurrentProfileKind | None = None,
     is_company: bool | None = None,
+    account_type: AccountType | None = None,
+    group_id: int | None = None,
     sub2_status: Sub2SyncStatus | None = None,
     sub2_target: str = "",
 ) -> list[dict]:
@@ -222,6 +241,7 @@ def export_cookies(
                              imported_before=imported_before, credits_field=credits_field,
                              credits_min=credits_min, credits_max=credits_max,
                              current_profile=current_profile, is_company=is_company,
+                             account_type=account_type, group_id=group_id,
                              sub2_status=sub2_status, sub2_target=sub2_target).where(ExternalMember.cookie != "")
     rows = db.scalars(stmt.order_by(ExternalMember.id.desc())).all()
     return [{"cookie": r.cookie} for r in rows if (r.cookie or "").strip()]
