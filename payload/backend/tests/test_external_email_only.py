@@ -161,7 +161,7 @@ def test_email_import_runs_code_mail_login_and_preserves_mode_after_password_gen
         auth.susi_token = "verified-code"
 
     monkeypatch.setattr(firefly._adm, "_passwordless_login", code_login)
-    monkeypatch.setattr(firefly._adm, "complete_sub_account", lambda *a, **kw: "Generated8!")
+    monkeypatch.setattr(firefly._adm, "complete_sub_account", lambda *a, **kw: pytest.fail("usable OTP session must not set a password"))
 
     def acquire(auth, *a, **kw):
         assert auth.susi_token == "verified-code" and kw["force_code_login"] is True
@@ -174,9 +174,9 @@ def test_email_import_runs_code_mail_login_and_preserves_mode_after_password_gen
     external_login.batch_login_worker(job)
     assert job.success == 1 and job.fail == 0
     db.refresh(member)
-    assert member.adobe_password == "Generated8!" and member.force_code_login
+    assert not member.adobe_password and member.force_code_login
     assert member.cookie == "ims_sid=fresh" and member.login_status == "ok"
-    assert external_login.login_and_store(member.id)["ok"]  # 保存生成密码后仍直接用验证码。
+    assert external_login.login_and_store(member.id)["ok"]  # 重登仍直接使用验证码，不设置密码。
     assert codes == ["654321", "654321"] and synced == [member.id, member.id]
     monkeypatch.setattr(external_sub2, "config", lambda db: {
         "base_url": "http://localhost:8080", "admin_token": "secret", "platform": "adobe", "group_ids": [1],

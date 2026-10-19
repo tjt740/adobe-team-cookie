@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional
 
 from sqlalchemy import text
 
+from app.core.timezone import beijing_time
 from app.db.session import engine
 from app.services.job_provenance import capture_meta, describe
 
@@ -74,7 +75,7 @@ class Job:
     def log(self, msg: str) -> None:
         self.check_cancelled()
         with self._lock:
-            self.logs.append(f"{time.strftime('%H:%M:%S')} {msg}")
+            self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} {msg}")
             if len(self.logs) > 1000:
                 self.logs = self.logs[-1000:]
         self.persist()
@@ -124,7 +125,7 @@ class Job:
             self._active_items -= 1
             if self._pause_requested and not self._active_items and not self.cancelled:
                 self.status = "paused"
-                self.logs.append(f"{time.strftime('%H:%M:%S')} 已暂停，等待继续或终止")
+                self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 已暂停，等待继续或终止")
         self.persist()
 
     def pause(self) -> bool:
@@ -133,7 +134,7 @@ class Job:
                 return False
             self._pause_requested = True
             self.status = "pausing" if self._active_items else "paused"
-            self.logs.append(f"{time.strftime('%H:%M:%S')} 已请求暂停，当前账号完成后暂停后续账号")
+            self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 已请求暂停，当前账号完成后暂停后续账号")
         self.persist()
         return True
 
@@ -143,7 +144,7 @@ class Job:
                 return False
             self._pause_requested = False
             self.status = "running"
-            self.logs.append(f"{time.strftime('%H:%M:%S')} 已继续任务")
+            self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 已继续任务")
             self._condition.notify_all()
         self.persist()
         return True
@@ -154,7 +155,7 @@ class Job:
                 return False
             self._cancel.set()
             self.status = "cancelling"
-            self.logs.append(f"{time.strftime('%H:%M:%S')} 已请求终止，等待当前请求退出")
+            self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 已请求终止，等待当前请求退出")
             self._condition.notify_all()
         self.persist()
         return True
@@ -349,12 +350,12 @@ class JobManager:
                     if not job.cancelled:
                         job.status = "error"
                         job.error = str(e)[:500]
-                        job.logs.append(f"{time.strftime('%H:%M:%S')} 任务异常:{e}")
+                        job.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 任务异常:{e}")
             finally:
                 with job._condition:
                     if job.cancelled:
                         job.status = "cancelled"
-                        job.logs.append(f"{time.strftime('%H:%M:%S')} 任务已终止，已完成的结果和日志已保留")
+                        job.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 任务已终止，已完成的结果和日志已保留")
                         for item in job.extra.get('items', []):
                             if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
                                 item.update(status='cancelled', message='本次任务已终止，已保存的数据保留')
@@ -391,7 +392,7 @@ class JobManager:
                         item.update(status='interrupted', message='服务重启，本次登录中断；可重新勾选重试')
                 message = '服务已重启，任务中断；已保存的数据保留，请重新勾选重试'
                 logs = _json_loads(row['logs_json'], [])
-                logs.append(f"{time.strftime('%H:%M:%S')} {message}")
+                logs.append(f"{beijing_time(fmt='%H:%M:%S')} {message}")
                 conn.execute(text("""
                     UPDATE job_records SET status='error', finished_at=:now, error=:error,
                         extra_json=:extra, logs_json=:logs WHERE id=:id
@@ -430,15 +431,9 @@ class JobManager:
             return {}
         self._ensure_storage()
         with engine.begin() as conn:
-            rows = conn.execute(text("""
+            matches = conn.execute(text("""
                 WITH ranked AS (
-                    SELECT j.id, j.type, j.status, j.target, j.success, j.fail,
-                           j.error, j.created_at, j.finished_at,
-                           json_extract(j.meta_json, '$.operator') AS operator,
-                           json_array_length(j.logs_json) AS log_total,
-                           (SELECT i.value FROM json_each(j.extra_json, '$.items') AS i
-                            WHERE json_extract(i.value, '$.id')=e.id LIMIT 1) AS item_json,
-                           json_extract(j.extra_json, '$.batch') AS batch_json,
+                    SELECT j.id,
                            CAST(m.value AS INTEGER) AS member_id,
                            ROW_NUMBER() OVER (
                                PARTITION BY m.value ORDER BY j.id DESC
@@ -453,20 +448,45 @@ class JobManager:
                 )
                 SELECT * FROM ranked WHERE position <= :limit ORDER BY id DESC
             """), {"member_ids": _json_dumps(list(set(member_ids))), "limit": max(1, min(10000, limit))}).mappings().all()
-        out: dict[int, list[dict]] = {}
+            if not matches:
+                return {}
+            # Rank identities first, then read each selected job's JSON once.
+            # Parsing logs and scanning all batch items inside the window query
+            # repeats that work for every account in every historical job.
+            rows = conn.execute(text("""
+                SELECT id, type, status, target, success, fail, error,
+                       created_at, finished_at,
+                       json_extract(meta_json, '$.operator') AS operator,
+                       json_array_length(logs_json) AS log_total,
+                       json_extract(extra_json, '$.items') AS items_json,
+                       json_extract(extra_json, '$.batch') AS batch_json
+                FROM job_records
+                WHERE id IN (SELECT value FROM json_each(:job_ids))
+            """), {"job_ids": _json_dumps(list({row['id'] for row in matches}))}).mappings().all()
+        summaries, items_by_job = {}, {}
         for row in rows:
             data = Job.from_record(dict(row)).to_dict()
             data["operator"] = row["operator"] or ""
             data["log_total"] = int(row["log_total"] or 0)
-            item = _json_loads(row['item_json'], {})
-            data['item_status'] = item.get('status')
-            data['item_message'] = item.get('message', '')
+            items = {}
+            for item in _json_loads(row['items_json'], []):
+                if isinstance(item, dict):
+                    items.setdefault(item.get('id'), item)
+            items_by_job[row['id']] = items
             batch = _json_loads(row['batch_json'], None)
             if batch:
                 data['extra']['batch'] = batch
             # Summary responses have no credentials, metadata or log bodies.
             data.pop("meta", None)
-            out.setdefault(int(row["member_id"]), []).append(data)
+            summaries[row['id']] = data
+        out: dict[int, list[dict]] = {}
+        for row in matches:
+            mid, jid = int(row['member_id']), row['id']
+            data = dict(summaries[jid])
+            item = items_by_job[jid].get(mid, {})
+            data['item_status'] = item.get('status')
+            data['item_message'] = item.get('message', '')
+            out.setdefault(mid, []).append(data)
         return out
 
     def find_active(self, job_type: str, admin_id: int) -> Optional[Job]:
@@ -492,6 +512,41 @@ class JobManager:
             )
         return bool(res.rowcount)
 
+    def cancel_all(self, job_type: str) -> dict:
+        """Snapshot every active task, including paused and durable orphan tasks."""
+        self._ensure_storage()
+        with engine.begin() as conn:
+            ids = {int(row[0]) for row in conn.execute(text(
+                "SELECT id FROM job_records WHERE deleted=0 AND type=:type "
+                "AND status IN ('running','pausing','paused','cancelling')"
+            ), {"type": job_type})}
+        with self._lock:
+            jobs = {jid: job for jid, job in self._jobs.items() if job.type == job_type}
+            ids.update(jid for jid, job in jobs.items() if job.status in ACTIVE_STATUSES)
+        requested = stopping = skipped = 0
+        failed = []
+        for jid in sorted(ids):
+            if jid in jobs and jobs[jid].cancelled:
+                stopping += 1
+                continue
+            try:
+                ok, _ = self.cancel(jid)
+            except Exception:
+                # Continue signalling other tasks even if one storage write fails.
+                failed.append(jid)
+                continue
+            if ok:
+                requested += 1
+            else:
+                skipped += 1  # It may have completed after the snapshot.
+        message = (f"已请求终止 {requested} 个外部子号登录任务，取消后续排队账号；"
+                   "当前请求退出后结束，已完成结果和日志保留") if requested else (
+                   f"{stopping} 个任务正在终止，请等待当前请求退出" if stopping else "当前没有需要终止的外部子号登录任务")
+        if failed:
+            message = (message if requested or stopping else "终止请求未全部完成") + f"；{len(failed)} 个任务未确认终止，请重试"
+        return {"requested": requested, "already_stopping": stopping, "skipped": skipped,
+                "failed": len(failed), "message": message}
+
     def cancel(self, job_id: int) -> tuple[bool, str]:
         job = self._jobs.get(job_id)
         if not job:
@@ -501,7 +556,7 @@ class JobManager:
             if rec.status in ACTIVE_STATUSES:
                 rec.status = "cancelled"
                 rec.finished_at = int(time.time())
-                rec.logs.append(f"{time.strftime('%H:%M:%S')} 服务重启后标记为已停止")
+                rec.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 服务重启后标记为已停止")
                 rec._persist_cb = self._persist_job
                 rec.persist()
                 return True, "任务已标记为停止"

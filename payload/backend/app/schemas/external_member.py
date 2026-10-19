@@ -1,14 +1,27 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.account_profile import AccountProfile, ProfilePreference
 
-OtpMode = Literal["auto", "manual"]
+AccountState = Annotated[str, StringConstraints(pattern=r"^(ok|never|login_failed|account_disabled|rate_limited|internal|has_cookie|no_cookie|has_password|no_password|task_(pending|running|otp|done|failed|interrupted|cancelled|paused|pausing|cancelling)|sub2_(error|other|recovered|unknown|[45][0-9]{2}))$")]
+
+OtpMode = Literal["auto", "manual", "vietnam"]
 CreditsField = Literal["available", "total"]
+Sub2SyncStatus = Literal["not_pushed", "pending", "syncing", "synced", "failed"]
 CurrentProfileKind = Literal["personal", "organization", "unknown"]
+AccountType = Literal["company", "vietnam", "non_company"]
+
+
+class ExternalGroupCreate(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+
+
+class ExternalGroupAssignment(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=10000)
+    group_id: int | None = Field(default=None, gt=0)
 
 
 class ManualOtpChallenge(BaseModel):
@@ -24,6 +37,8 @@ class ExternalMemberOut(BaseModel):
     id: int
     email: str
     note: str = ""
+    group_id: int | None = None
+    group_name: str = ""
     credits_available: float | None = None
     credits_total: float | None = None
     credits_error: str = ""
@@ -55,6 +70,8 @@ class ExternalImportRequest(BaseModel):
     on_duplicate: str = Field(default="skip", pattern="^(skip|overwrite)$")
     profile_preference: ProfilePreference | None = None
     otp_mode: OtpMode | None = None
+    # Omitted preserves existing groups; explicit null moves imports to ungrouped.
+    group_id: int | None = Field(default=None, gt=0)
 
 
 class ExternalOtpModeUpdate(BaseModel):
@@ -85,10 +102,12 @@ class ExternalBatchProfilePreferenceUpdate(ExternalProfilePreferenceUpdate):
 
 
 class ExternalLoginFilter(BaseModel):
+    account_states: list[AccountState] = Field(default_factory=list, max_length=32)
     login_status: str | None = None
     subscription_ok: bool | None = None
     keyword: str = ""
     in_stock: bool | None = None
+    sub2_status: Sub2SyncStatus | None = None
     sub2_health: str | None = Field(default=None, pattern=r"^(error|other|recovered|unknown|[45][0-9]{2})$")
     imported_from: datetime | None = None
     imported_before: datetime | None = None
@@ -97,6 +116,8 @@ class ExternalLoginFilter(BaseModel):
     credits_max: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     current_profile: CurrentProfileKind | None = None
     is_company: bool | None = None
+    account_type: AccountType | None = None
+    group_id: int | None = Field(default=None, ge=0)
 
 
 class ExternalMemberExportItem(BaseModel):

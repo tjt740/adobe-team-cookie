@@ -1,18 +1,22 @@
 """External-member pagination against synthetic, server-paginated API responses.
 
-Run with payload/backend/.venv/bin/python and ADOBE_TEST_URL pointing to the UI.
+Run with payload/backend/.venv/bin/python; local assets and synthetic APIs are served by the test.
 Every API request is intercepted; no account, login or production data is used.
 """
 import asyncio
+import mimetypes
 import os
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 from external_controls import select_value, expect_select
 
 ROOT = Path(__file__).resolve().parents[3]
-BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
+BASE = os.environ.get('ADOBE_TEST_URL', 'http://pagination.test')
+FRONT = Path(__file__).resolve().parents[1]
 
 
 async def main():
@@ -26,6 +30,10 @@ async def main():
     async def api(route):
         req, url = route.request, urlparse(route.request.url)
         path = url.path.removeprefix('/okad')
+        if not path.startswith('/api/'):
+            file=FRONT/path.lstrip('/')
+            if not file.is_file():file=FRONT/'index.html'
+            return await route.fulfill(path=str(file),content_type=mimetypes.guess_type(file)[0])
         query = {key: values[0] for key, values in parse_qs(url.query).items()}
         data = {}
         if path == '/api/auth/me':
@@ -33,7 +41,7 @@ async def main():
         elif path == '/api/external/members':
             calls.append(query)
             page, size = int(query['page']), int(query['size'])
-            assert size in (50, 100, 200)
+            assert size in (50, 100, 200, 500)
             matches = [row for row in rows if
                        (not query.get('keyword') or query['keyword'] in row['email']) and
                        (not query.get('login_status') or query['login_status'] == row['login_status']) and
@@ -67,7 +75,7 @@ async def main():
         page = await browser.new_page(viewport={'width': 1440, 'height': 1000})
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('dialog', lambda dialog: dialog.accept())
-        await page.route('**/api/**', api)
+        await page.route('**/*', api)
         await page.add_init_script("localStorage.setItem('okad_token', 'synthetic-ui-test')")
         await page.goto(BASE + '/external-members')
         table = page.locator('tr[data-member]')
@@ -83,23 +91,25 @@ async def main():
             await expect(size).to_be_enabled()
 
         await check(200, 1, '第 1 / 3 页')
-        await expect(size).to_have_value('200')
-        assert await size.locator('option').all_text_contents() == ['50 条', '100 条', '200 条', '300 条', '400 条', '500 条', '1000 条']
+        await expect_select(page, '#extm-page-size', '200')
+        await size.locator('.n-base-selection').click()
+        assert await page.locator('.n-base-select-option:visible').all_text_contents() == ['50 条', '100 条', '200 条', '300 条', '400 条', '500 条', '1000 条']
+        await page.keyboard.press('Escape')
         await expect(page.locator('#extm-prev')).to_be_disabled()
         await page.locator('#extm-ckall').check()
-        await expect(page.locator('#extm-selc')).to_have_text('200')
+        await expect(page.locator('#extm-selc')).to_have_text('500')
         await next_page.click()
-        await check(200, 201, '第 2 / 3 页')
+        await check(21, 501, '第 2 / 2 页')
         await expect(page.locator('#extm-selc')).to_have_text('0')
 
         # Every size starts at page one; the former 500-row cap is gone.
-        await size.select_option('50')
+        await select_value(page, '#extm-page-size', '50')
         await check(50, 1, '第 1 / 11 页')
         await page.locator('#extm-last').click()
         await check(21, 501, '第 11 / 11 页')
         await expect(next_page).to_be_disabled()
         await expect(page.locator('#extm-page-summary')).to_have_text('共 521 条 · 当前 501–521 条')
-        await size.select_option('100')
+        await select_value(page, '#extm-page-size', '100')
         await check(100, 1, '第 1 / 6 页')
         await page.locator('#extm-page-number').fill('6')
         await page.locator('#extm-page-number').press('Enter')
@@ -139,7 +149,7 @@ async def main():
         state['hold'] = True
         await next_page.click()
         await asyncio.wait_for(held.wait(), 5)
-        await expect(size).to_be_disabled()
+        await expect(size.locator('.n-base-selection')).to_have_class(re.compile('n-base-selection--disabled'))
         await select_value(page, '#extm-f-status', 'ok')
         await check(100, 1, '第 1 / 3 页')
         release.set()
@@ -155,19 +165,19 @@ async def main():
         await check(0, None, '第 2 / 5 页')
         state['fail'] = False
         await page.locator('#extm-refresh').click()
-        await check(100, 101, '第 2 / 5 页')
+        await check(100, 1, '第 1 / 5 页')
 
         # Automatic refresh keeps the page, page size, selection and expanded details.
         await table.first.locator('.extm-rowck').check()
         await table.first.locator('.extm-toggle').click()
         async with page.expect_response(lambda r: '/api/external/members?' in r.url, timeout=8000):
             pass
-        await check(100, 101, '第 2 / 5 页')
+        await check(100, 1, '第 1 / 5 页')
         await expect(page.locator('#extm-selc')).to_have_text('1')
-        await expect(page.locator('[data-detail="101"]')).to_have_count(1)
-        assert calls[-1]['page'] == '2' and calls[-1]['size'] == '100'
+        await expect(page.locator('[data-detail="1"]')).to_have_count(1)
+        assert calls[-1]['page'] == '1' and calls[-1]['size'] == '100'
         await next_page.click()
-        await check(100, 201, '第 3 / 5 页')
+        await check(100, 101, '第 2 / 5 页')
         await expect(page.locator('[data-detail]')).to_have_count(0)
         await expect(page.locator('#extm-selc')).to_have_text('0')
 

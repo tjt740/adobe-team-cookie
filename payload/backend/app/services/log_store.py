@@ -12,6 +12,8 @@ import traceback as _tb
 from collections import deque
 from typing import Any
 
+from app.core.timezone import beijing_time
+
 _MAXLEN = 3000
 
 
@@ -24,10 +26,11 @@ class LogStore:
     def add(self, level: str, source: str, message: str, tb: str = "") -> None:
         with self._lock:
             self._counter += 1
+            timestamp = time.time()
             self._dq.append({
                 "id": self._counter,
-                "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "ts": time.time(),
+                "time": beijing_time(timestamp),
+                "ts": timestamp,
                 "level": (level or "INFO").upper(),
                 "source": source or "",
                 "message": message or "",

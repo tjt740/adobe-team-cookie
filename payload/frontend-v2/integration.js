@@ -105,7 +105,7 @@
       button.disabled = acting || !connected || button.dataset.unavailable === 'true';
     });
     text(el('activity'), acting ? '正在提交…' : refreshing && !loaded ? '正在读取状态…' :
-      lastChecked ? '更新于 ' + new Date(lastChecked * 1000).toLocaleTimeString() + ' · 自动更新' : '等待读取状态');
+      lastChecked ? '更新于 ' + window.OKAD_TIME.clock(lastChecked) + ' · 自动更新' : '等待读取状态');
   }
   function render(status, sources) {
     total = sources.total;
@@ -127,7 +127,7 @@
         (delivery && delivery.account_id ? ' · Sub2 #' + esc(delivery.account_id) : '') + '</small></td><td>' +
         '<span class="integration-badge ' + (row.auto_recovery ? 'good' : 'warn') + '">' + (row.auto_recovery ? '可自动恢复' : row.recovery_code === 'configuration' ? '等待连接配置' : '需要处理') + '</span><small>' + esc(row.recovery_message) + '</small></td><td>' +
         (row.has_cookie ? (row.version ? 'v' + esc(row.version) : '待编号') : '尚无 Cookie') + '</td><td>' +
-        (delivery ? badge(delivery.state) + '<small>' + esc(delivery.message) + (delivery.next_at ? ' · 下次 ' + new Date(delivery.next_at * 1000).toLocaleTimeString() : '') + (delivery.updated_at ? '<br>更新于 ' + new Date(delivery.updated_at * 1000).toLocaleString() : '') + '</small>' : '<span class="integration-muted">尚未登记可靠同步</span>') +
+        (delivery ? badge(delivery.state) + '<small>' + esc(delivery.message) + (delivery.next_at ? ' · 下次 ' + window.OKAD_TIME.clock(delivery.next_at) : '') + (delivery.updated_at ? '<br>更新于 ' + window.OKAD_TIME.format(delivery.updated_at) : '') + '</small>' : '<span class="integration-muted">尚未登记可靠同步</span>') +
         '</td><td><div class="integration-actions"><button data-action="' + (delivery ? 'retry-sync' : 'push') + '" data-source="' + esc(row.source_key) + '" data-unavailable="' + !row.has_cookie + '">' +
         (delivery ? '同步与验证' : '推送入库') + '</button>' + (row.recovery_code === 'needs_manual' ?
           '<a data-route href="' + window.OKAD_ROUTE.href('/external-members') + '">手动验证码登录</a>' :
@@ -136,7 +136,7 @@
     text(el('page'), page + ' / ' + Math.max(1, Math.ceil(total / size)) + ' · ' + total + ' 个账号');
     jobsTotal = status.jobs_total == null ? status.jobs.length : status.jobs_total;
     reconcile(el('jobs'), status.jobs, function (job) {
-      return '<div class="integration-job">' + badge(job.state) + '<span>' + esc(job.email) + '<small>' + esc(job.message) + '</small></span><small>' + new Date(job.created_at * 1000).toLocaleString() + '</small></div>';
+      return '<div class="integration-job">' + badge(job.state) + '<span>' + esc(job.email) + '<small>' + esc(job.message) + '</small></span><small>' + window.OKAD_TIME.format(job.created_at) + '</small></div>';
     }, '<div class="integration-empty">暂无恢复任务</div>');
     if (trackedJob) {
       var job = status.jobs.find(function (item) { return item.job_id === trackedJob; });

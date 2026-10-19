@@ -65,7 +65,7 @@
     if (value < 86400) return Math.floor(value / 3600) + ' 小时 ' + Math.floor(value % 3600 / 60) + ' 分钟';
     return Math.floor(value / 86400) + ' 天 ' + Math.floor(value % 86400 / 3600) + ' 小时';
   }
-  function time(ts) { return new Date(ts * 1000).toLocaleTimeString('zh-CN', {hour12:false}); }
+  function time(ts) { return window.OKAD_TIME.clock(ts); }
   function badge(state, label) { return '<span class="monitor-badge" data-tone="' + state + '">' + esc(label || toneLabels[state]) + '</span>'; }
   function card(id, value, detail, warn, bad) {
     el(id + '-value').textContent = percent(value);

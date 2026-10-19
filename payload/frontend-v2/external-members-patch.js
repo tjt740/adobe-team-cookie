@@ -5,11 +5,9 @@
   "use strict";
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
-  var filtersView = null, filterValues = null;
-  var importView = null;
-  var importModule = new URL('external-members-import.js?v=20261015-compact-drawer', document.currentScript.src).href;
-  var filtersModule = new URL('external-members-filters.js?v=20261015-mobile', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", healthF: "", importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var view = null, mounting = null;
+  var viewURL = new URL('./external-members-view.js?v=20261020-custom-groups', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -39,15 +37,8 @@
     '.extm-btn.dft{background:#fff;color:#606266;border-color:#e0e0e6}.extm-btn.dft:hover:not(:disabled){color:#18a058;border-color:#18a058}',
     '.extm-btn.del{background:#fff;color:#d03050;border-color:#f0b3bf}.extm-btn.del:hover:not(:disabled){background:#fef0f2;border-color:#d03050}',
     '.extm-btn.sm{height:28px;padding:0 10px;font-size:12px}',
-    '.extm-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid #efeff5;background:#fcfcfd}',
-    '.extm-tools .sp{flex:1}',
-    '.extm-filter-primary{grid-column:1/-1;order:-2;flex-basis:100%;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.extm-filter-primary label{display:inline-flex;align-items:center;gap:8px;font-size:13px;white-space:nowrap}.extm-filter-primary .extm-in{min-width:0}#extm-embed .extm-filter-primary select.extm-in{width:140px!important}#extm-embed .extm-filter-primary input.extm-in{width:150px!important}.extm-date-range{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.extm-date-range>span{color:#909399;font-size:13px}',
-    '@media(max-width:760px){.extm-date-range{display:grid;width:100%;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}.extm-date-range>span:first-child{grid-column:1/-1}#extm-embed .extm-date-range input.extm-in{width:100%!important}}',
-    '.extm-credits-range{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.extm-credits-bounds{display:flex;align-items:center;gap:8px;min-width:0}.extm-credits-bounds>span{color:#909399}#extm-embed .extm-credits-bounds input.extm-in{width:110px!important}@media(max-width:760px){.extm-credits-range{width:100%}.extm-credits-bounds{width:100%}#extm-embed .extm-credits-bounds input.extm-in{width:0!important;flex:1}}',
-    '.extm-tools .selc{font-size:13px;color:#909399}.extm-tools .selc b{color:#18a058}',
     '.extm-batch-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.extm-detail:not(.extm-manage-history) .extm-history-select,.extm-detail:not(.extm-manage-history) [data-action=delete]{display:none}.extm-pill.info{background:#eaf2ff;color:#3b82f6}',
     '#extm-more-actions:not([open])>div{display:none}#extm-more-actions>summary::-webkit-details-marker{display:none}#extm-more-actions>summary:focus-visible{outline:2px solid #2080f0;outline-offset:3px}#extm-more-actions>div button{color:var(--ws-text,#333639)!important}',
-    '.extm-batch-profile{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#606266;white-space:nowrap}.extm-batch-profile select.extm-in{height:34px;width:156px;padding:0 6px;font-size:12px}.extm-batch-profile select:disabled{opacity:.55;cursor:not-allowed}',
     '.extm-tw{overflow:auto;max-height:60vh}.extm-t>thead>tr>th{position:sticky;top:0;z-index:2}.extm-t>thead>tr>th:last-child{z-index:3}',
     '.extm-pagination{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:14px 18px;background:var(--ws-card,#fff);border-top:1px solid var(--ws-line,#efeff5);border-radius:0 0 12px 12px;color:var(--ws-muted,#909399);font-size:13px}.extm-pagination label,.extm-page-jump{display:inline-flex;align-items:center;gap:6px}.extm-pagination .extm-page-summary{margin-right:auto}.extm-pagination .extm-page-number{width:70px}.extm-pagination .extm-in:disabled{opacity:.55;cursor:not-allowed}html.dark .extm-pagination{background:var(--bg-card);border-color:var(--border)}',
     '.extm-t{border-collapse:collapse;table-layout:fixed;width:100%;font-size:13px;min-width:1816px}',
@@ -100,8 +91,9 @@
   function api(path, opts) {
     opts = opts || {};
     var token = localStorage.getItem(TK) || "";
-    var ctrl = new AbortController();
-    var to = setTimeout(function () { ctrl.abort(); }, opts.timeout || 30000);
+    var ctrl = opts.controller || new AbortController();
+    var timedOut = false;
+    var to = setTimeout(function () { timedOut = true; ctrl.abort(); }, opts.timeout || 30000);
     return fetch((opts.base || "/api/external") + path, {
       method: opts.method || "GET", signal: ctrl.signal,
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
@@ -115,7 +107,7 @@
         return d;
       });
     }).catch(function (e) {
-      if (e.name === "AbortError") throw new Error("请求超时(" + Math.round((opts.timeout || 30000) / 1000) + "s)");
+      if (e.name === "AbortError" && timedOut) throw new Error("请求超时(" + Math.round((opts.timeout || 30000) / 1000) + "s)");
       throw e;
     }).finally(function () { clearTimeout(to); });
   }
@@ -123,8 +115,8 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function el(id) { return document.getElementById(id); }
   function toast(type, m) { opMsg(m, type === "error" ? "err" : (type === "success" ? "ok" : "mut")); var a = window.$message; if (a && typeof a[type] === "function") a[type](m); }
-  function opMsg(t, c) { var e = el("extm-op"); if (e) { e.className = "extm-msg" + (c ? " " + c : ""); e.textContent = t || ""; } }
-  function fmtTime(s, seconds) { if (!s) return "—"; var d = new Date(typeof s === "number" ? s * 1000 : (/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?$/.test(s) ? s + "Z" : s)); if (isNaN(d)) return "—"; function p(n){return (n<10?"0":"")+n;} return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + (seconds ? ":" + p(d.getSeconds()) : ""); }
+  function opMsg(t, c) { if (view) view.update({message:t || '', messageTone:c || ''}); }
+  function fmtTime(s, seconds) { return window.OKAD_TIME.datetime(s, !!seconds); }
 
   var STATUS_MAP = {
     ok: ["ok", "正常"], never: ["mut", "未登录"], login_failed: ["bad", "登录失败"],
@@ -161,122 +153,70 @@
   function showCreditError(id) {
     var row = rowById(id); if (!row || el('extm-credit-dialog')) return;
     var dialog = document.createElement('dialog'); dialog.id = 'extm-credit-dialog'; dialog.className = 'extm-note-dialog extm-credit-dialog'; dialog.setAttribute('aria-labelledby', 'extm-credit-title');
-    dialog.innerHTML = '<h3 id="extm-credit-title">' + (row.credits_error ? '积分查询失败' : '积分未查到') + '</h3><p>' + esc(row.email) + '</p><p class="extm-credit-error">' + esc(row.credits_error || '这条历史记录未保存具体失败原因。') + '</p><p>积分未查到，暂时无法判断订阅状态，不代表积分为 0 或已掉订阅。「登录成功」仅表示登录及 Cookie 获取成功。</p><p>可关闭此窗口，点击账号行的「重登」重新查询积分；页面「刷新」只更新已保存的结果。</p><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
+    dialog.innerHTML = '<h3 id="extm-credit-title">' + (row.credits_error ? '积分查询失败' : '积分未查到') + '</h3><p>' + esc(row.email) + '</p><p class="extm-credit-error">' + esc(row.credits_error || '这条历史记录未保存具体失败原因。') + '</p><p>积分未查到，暂时无法判断订阅状态，不代表积分为 0 或已掉订阅。「登录成功」仅表示登录及 Cookie 获取成功。</p><p>可关闭此窗口，点击账号行的「重登」重新查询积分；页面「搜索」只更新已保存的结果。</p><footer><button type="button" class="extm-btn dft">知道了</button></footer>';
     dialog.querySelector('button').onclick = function () { dialog.close(); };
     dialog.onclose = function () { dialog.remove(); var button = document.querySelector('[data-credit-error="' + id + '"]'); if (button) button.focus({preventScroll:true}); };
     document.body.appendChild(dialog); dialog.showModal();
   }
   function creditCell(row) {
-    var a = row.credits_available == null ? "—" : Math.round(row.credits_available);
-    var t = row.credits_total == null ? "—" : Math.round(row.credits_total);
+    function amount(value) { return value == null || !Number.isFinite(Number(value)) ? "—" : String(Number(value)); }
+    var a = amount(row.credits_available);
+    var t = amount(row.credits_total);
     return '<span class="cr"><b>' + a + "</b> / " + t + "</span>";
   }
 
   // ---------- 页面主体(route 与 overlay 共用) ----------
-  function buildBody(host) {
-    host.innerHTML =
-      '<div class="extm-hd"><h2>外部子号管理</h2><span class="cnt">共 <b id="extm-total">0</b> 个</span><span class="cnt" title="页面可见时每 3 秒核对 Sub2 当前库存，也可点击刷新立即核对">Sub2 库存自动更新</span><button type="button" id="extm-open-import" class="extm-btn" aria-haspopup="dialog" aria-controls="extm-import-drawer" aria-expanded="false" disabled>导入外部子号</button></div>' +
-      '<div id="extm-import-host"></div><p id="extm-op" class="extm-msg extv-operation-message" role="status"></p>' +
-      '<div class="extm-card">' +
-        '<div id="extm-filters" aria-label="筛选外部子号"></div><div class="extm-batch-row">' +
-          '<div class="extm-batch-controls"><span class="selc">已选 <b id="extm-selc">0</b></span>' +
-          '<button class="extm-btn o sm" id="extm-batch-login" disabled>选中批量重登</button>' +
-          '<label class="extm-batch-profile">批量登录配置<select id="extm-batch-profile" class="extm-in" aria-label="批量登录配置" title="仅设置勾选的账号，选择后自动保存，下次登录生效。不指定时沿用原逻辑；组织配置优先会跳过疑似已删除的组织，无可用组织或授权过期时回退个人配置。" disabled><option value="__mixed__" disabled selected>请先勾选账号</option><option value="">不指定（原逻辑）</option><option value="personal">个人配置</option><option value="organization">组织配置优先</option></select></label>' +
-          '<button class="extm-btn del sm" id="extm-batch-del">删除选中</button></div>' +
-          '<span class="ws-spacer"></span><button class="extm-btn o sm" id="extm-export">导出全部 Cookie</button>' +
-          '<button class="extm-btn o sm" id="extm-export-emails" title="将勾选账号的邮箱导出为 Excel 表格" disabled>导出选中邮箱</button>' +
-          '<button class="extm-btn o sm" id="extm-sub2-push" disabled>推送 Sub2</button>' +
-          '<details class="ws-maintenance-menu" id="extm-more-actions"><summary>更多操作 ▾</summary><div>' +
-            '<button class="extm-btn dft sm" id="extm-login-all" title="重登全部外部子号，自动跳过任务未结束的账号">一键重登全部</button>' +
-            '<button class="extm-btn dft sm" id="extm-sub2-relink" disabled title="旧关联账号被删除后，按邮箱重新查找或创建 Sub2 账号">重新关联 / 推送</button>' +
-          '</div></details>' +
-        '</div>' +
-        '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:270px"></colgroup><thead><tr>' +
+  function buildBody(host, mount) {
+    var tableHTML =
+      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:270px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>账号状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' +
-        '<nav class="extm-pagination" aria-label="外部子号分页">' +
-          '<span id="extm-page-summary" class="extm-page-summary" role="status"></span>' +
-          window.OKAD_PAGINATION.sizeHTML('extm-page-size', st.size) +
-          '<button type="button" class="extm-btn dft sm" id="extm-first">首页</button><button type="button" class="extm-btn dft sm" id="extm-prev">上一页</button>' +
-          '<span id="extm-page-info"></span>' +
-          '<button type="button" class="extm-btn dft sm" id="extm-next">下一页</button><button type="button" class="extm-btn dft sm" id="extm-last">末页</button>' +
-          '<form id="extm-page-jump" class="extm-page-jump"><label for="extm-page-number">跳至<input type="number" id="extm-page-number" class="extm-in extm-page-number" min="1" step="1" value="1" required>页</label><button type="submit" class="extm-btn dft sm" id="extm-page-go">跳转</button></form>' +
-        '</nav>' +
-      '</div>';
-
-    if (importView) { importView.destroy(); importView = null; }
-    var importHost = el('extm-import-host'), importTrigger = el('extm-open-import');
-    import(importModule).then(function (module) {
-      if (!host.isConnected) return;
-      importView = module.mountImport(importHost, {import:doImport, mail:mailAction}, importTrigger);
-      importTrigger.disabled = false;
-      importTrigger.onclick = function () { if (filtersView) filtersView.close(); importView.open(); };
-      loadMailConfig();
-    }).catch(function () { opMsg('导入组件加载失败，请刷新页面重试。', 'err'); });
-    el("extm-batch-login").onclick = batchLogin;
-    el("extm-batch-profile").onchange = function () { saveSelectedProfilePreference(this.value); };
-    var moreActions = el("extm-more-actions");
-    el("extm-login-all").onclick = function () { moreActions.open = false; loginAll(); };
-    el("extm-export").onclick = exportCookies;
-    el("extm-export-emails").onclick = exportEmails;
-    el("extm-sub2-push").onclick = function () { pushSub2(false); };
-    el("extm-sub2-relink").onclick = function () { moreActions.open = false; pushSub2(true); };
-    document.addEventListener("click", function (event) {
-      if (!moreActions.contains(event.target)) moreActions.open = false;
-    });
-    moreActions.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        moreActions.open = false; moreActions.querySelector("summary").focus();
+          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>操作</th>' +
+        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
+    view = mount(host, {
+      filter: function (filters) {
+        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health; st.statesF = filters.states || [];
+        st.profileF = filters.profile; st.companyF = filters.company; st.groupF = filters.group;
+        st.creditsField = filters.creditsField;
+        st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
+        st.creditsMax = filters.creditsMax == null ? '' : String(filters.creditsMax);
+        st.importedFrom = dateBoundary(filters.from, false); st.importedBefore = dateBoundary(filters.to, true);
+        st.q = filters.keyword; resetPage(1); load();
+      },
+      refresh: function () {
+        view.button('extm-refresh', {loading:true, disabled:true});
+        return Promise.all([refreshStock(true), loadGroups()]).then(function () { return refreshAll(true); }).finally(function () {
+          view.button('extm-refresh', {loading:false, disabled:false});
+        });
+      },
+      createGroup: createGroup, loadGroups: loadGroups, assignGroup: assignGroup,
+      import: doImport, mail: mailAction, stopAll: stopAllTasks, batchLogin: batchLogin, profile: saveSelectedProfilePreference,
+      delete: batchDelete, export: exportCookies, exportEmails: exportEmails, push: pushSub2, loginAll: loginAll,
+      page: goPage,
+      size: function (size) {
+        if (st.profileSaving.size || st.noteSaving || !window.OKAD_PAGINATION.valid(size)) return;
+        st.size = size; resetPage(1); load();
       }
-    });
-    el("extm-batch-del").onclick = batchDelete;
-    var filterHost = el("extm-filters");
-    import(filtersModule).then(function (module) {
-      if (!filterHost.isConnected) return;
-      if (filtersView) filtersView.destroy();
-      filtersView = module.mountFilters(filterHost, {
-        filter: function (f) {
-          filterValues = f;
-          st.statusF = f.status; st.subF = f.sub; st.stockF = f.stock; st.healthF = f.health;
-          st.profileF = f.profile; st.companyF = f.company; st.q = f.keyword;
-          st.creditsField = f.creditsField;
-          st.creditsMin = f.creditsMin == null ? "" : String(f.creditsMin);
-          st.creditsMax = f.creditsMax == null ? "" : String(f.creditsMax);
-          st.importedFrom = dateBoundary(f.from, false); st.importedBefore = dateBoundary(f.to, true);
-          resetPage(1); load();
-        },
-        refresh: function () { return refreshStock(true).then(function () { return refreshAll(true); }); }
-      }, filterValues);
-      filtersView.loading(!!st.loadingSeq);
-    }).catch(function () { filterHost.textContent = "筛选组件加载失败，请刷新页面重试。"; });
-    window.OKAD_PAGINATION.bindSize('extm-page-size', function (size) {
-      if (st.profileSaving.size || st.noteSaving || !window.OKAD_PAGINATION.valid(size)) { renderPagination(); return; }
-      st.size = size; resetPage(1); load();
-    });
-    el("extm-first").onclick = function () { goPage(1); };
-    el("extm-prev").onclick = function () { goPage(st.page - 1); };
-    el("extm-next").onclick = function () { goPage(st.page + 1); };
-    el("extm-last").onclick = function () { goPage(pageCount()); };
-    el("extm-page-jump").onsubmit = function (event) { event.preventDefault(); goPage(Number(el("extm-page-number").value)); };
+    }, tableHTML);
     el("extm-ckall").onchange = function () {
       var on = this.checked; st.sel.clear();
       if (on) st.rows.forEach(function (r) { st.sel.add(r.id); });
       Array.prototype.forEach.call(document.querySelectorAll(".extm-rowck"), function (c) { c.checked = on; });
       updSel();
     };
-    load();
+    loadMailConfig(); loadGroups(); load();
   }
 
   function dateBoundary(value, nextDay) {
     if (!value) return "";
-    var date = new Date(value + 'T00:00:00');
-    if (nextDay) date.setDate(date.getDate() + 1);
+    var date = new Date(value + 'T00:00:00+08:00');
+    if (nextDay) date.setUTCDate(date.getUTCDate() + 1);
     return date.toISOString();
   }
   function extraFilters() {
     var filters = {};
     if (st.stockF !== "") filters.in_stock = st.stockF === "true";
+    if (st.syncF) filters.sub2_status = st.syncF;
+    if (st.statesF.length) filters.account_states = st.statesF;
     if (st.healthF) filters.sub2_health = st.healthF;
     if (st.importedFrom) filters.imported_from = st.importedFrom;
     if (st.importedBefore) filters.imported_before = st.importedBefore;
@@ -286,7 +226,9 @@
       if (st.creditsMax !== "") filters.credits_max = Number(st.creditsMax);
     }
     if (st.profileF) filters.current_profile = st.profileF;
-    if (st.companyF !== "") filters.is_company = st.companyF === "true";
+    if (st.companyF === "true" || st.companyF === "false") filters.is_company = st.companyF === "true";
+    if (st.companyF) filters.account_type = {true:'company',false:'non_company',vietnam:'vietnam'}[st.companyF];
+    if (st.groupF !== "" && st.groupF != null) filters.group_id = Number(st.groupF);
     return filters;
   }
   function qs() {
@@ -295,13 +237,13 @@
     if (st.subF !== "") a.push("subscription_ok=" + st.subF);
     if (st.q) a.push("keyword=" + encodeURIComponent(st.q));
     var filters = extraFilters();
-    Object.keys(filters).forEach(function (key) { a.push(key + "=" + encodeURIComponent(filters[key])); });
+    Object.keys(filters).forEach(function (key) { (Array.isArray(filters[key]) ? filters[key] : [filters[key]]).forEach(function (value) { a.push(key + "=" + encodeURIComponent(value)); }); });
     return a;
   }
 
   function jobApi(path, opts) { opts = opts || {}; opts.base = "/api/adobe-accounts/jobs"; return api(path, opts); }
   function spinner() { return '<span class="extm-spin" aria-hidden="true"></span>'; }
-  function setLoading(btn, busy, text, spinning) { if (!btn) return; if (importView && importView.ownsButton(btn.id)) { importView.button(btn.id, {disabled:busy, loading:spinning === undefined ? busy : spinning, text:text}); return; } btn.disabled = busy; btn.setAttribute("aria-busy", String(busy)); btn.innerHTML = ((spinning === undefined ? busy : spinning) ? spinner() : "") + esc(text); }
+  function setLoading(btn, busy, text, spinning) { if (!btn) return; if (view && view.ownsButton(btn.id)) { view.button(btn.id, {disabled:busy, loading:spinning === undefined ? busy : spinning, text:text}); return; } btn.disabled = busy; btn.setAttribute("aria-busy", String(busy)); btn.innerHTML = ((spinning === undefined ? busy : spinning) ? spinner() : "") + esc(text); }
   function rowById(id) { return st.rows.find(function (r) { return r.id === id; }); }
   function activeJob(j) { return !!j && ["running", "pausing", "paused", "cancelling"].includes(j.status); }
   function running(r) { return st.pending.has(r.id) || activeJob(r.latest_job) || !!r.otp_challenge; }
@@ -333,19 +275,14 @@
 
   function pageCount() { return Math.max(1, Math.ceil(st.total / st.size)); }
   function renderPagination() {
-    if (filtersView) filtersView.loading(!!st.loadingSeq);
-    if (!el("extm-page-size")) return;
+    if (!view) return;
     var pages = pageCount(), busy = !!st.loadingSeq || st.profileSaving.size > 0 || st.noteSaving;
     var start = st.rows.length ? (st.page - 1) * st.size + 1 : 0;
-    var end = st.rows.length ? start + st.rows.length - 1 : 0;
-    setText(el("extm-page-summary"), '共 ' + st.total + ' 条 · 当前 ' + start + '–' + end + ' 条');
-    setText(el("extm-page-info"), '第 ' + st.page + ' / ' + pages + ' 页');
-    window.OKAD_PAGINATION.syncSize('extm-page-size', st.size, busy);
-    el("extm-first").disabled = el("extm-prev").disabled = busy || st.page <= 1;
-    el("extm-last").disabled = el("extm-next").disabled = busy || st.page >= pages;
-    var input = el("extm-page-number"); input.max = String(pages); input.disabled = busy;
-    if (document.activeElement !== input) input.value = String(st.page);
-    el("extm-page-go").disabled = busy;
+    view.update({total:st.total, loading:!!st.loadingSeq});
+    view.pagination({page:st.page, pages:pages, size:st.size, total:st.total, start:start, end:st.rows.length ? start + st.rows.length - 1 : 0, busy:busy});
+    ['extm-first','extm-prev'].forEach(function (id) { view.button(id, {disabled:busy || st.page <= 1}); });
+    ['extm-last','extm-next'].forEach(function (id) { view.button(id, {disabled:busy || st.page >= pages}); });
+    view.button('extm-page-go', {disabled:busy});
   }
   function resetPage(page) {
     ++st.loadSeq; st.page = page; st.rows = []; st.loadError = ""; st.sel.clear(); st.expanded.clear();
@@ -364,26 +301,43 @@
     var body = el("extm-tbody"); if (!body) return Promise.resolve();
     if (st.profileSaving.size || st.noteSaving || (silent && st.loadingSeq)) return Promise.resolve();
     var seq = ++st.loadSeq;
+    if (st.loadController) st.loadController.abort();
+    var controller = st.loadController = new AbortController();
     if (!silent) st.loadingSeq = seq;
     renderPagination();
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty">加载中…</td></tr>';
-    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&")).then(function (d) {
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty" aria-hidden="true"></td></tr>';
+    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&"), {controller:controller}).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.loadError = "";
       st.total = d.total != null ? d.total : (d.items || []).length;
-      setText(el("extm-total"), st.total);
+      view.update({total:st.total});
       if (st.page > pageCount()) { resetPage(pageCount()); return load(); }
-      st.rows = d.items || [];
+      var previousRows = new Map(st.rows.map(function (row) { return [row.id, row]; }));
+      var rows = d.items || [];
+      // A delivery receipt can be newer than the 30-second inventory cache.
+      // Recheck remotely once per changed receipt; never infer stock from it.
+      var deliveryChanged = rows.some(function (row) {
+        var previous = previousRows.get(row.id);
+        return previous && (
+          (row.sub2_synced_at && row.sub2_synced_at !== previous.sub2_synced_at) ||
+          (row.sub2_account_id && row.sub2_account_id !== previous.sub2_account_id) ||
+          (row.sub2_status === 'synced' && previous.sub2_status !== 'synced')
+        );
+      });
+      st.rows = rows;
       var visible = new Set(st.rows.map(function (r) { return r.id; }));
       st.sel.forEach(function (id) { if (!visible.has(id)) st.sel.delete(id); });
       renderRows();
+      if (deliveryChanged) refreshStock(true);
     }).catch(function (e) {
-      if (seq !== st.loadSeq) return;
+      if (seq !== st.loadSeq || e.name === 'AbortError') return;
       if (!st.rows.length) { st.loadError = e.message; renderRows(); }
-      else opMsg("刷新失败: " + e.message + "，当前显示上次结果", "err");
+      else opMsg("搜索失败: " + e.message + "，当前显示上次结果", "err");
     }).finally(function () {
+      if (st.loadController === controller) st.loadController = null;
       if (st.loadingSeq === seq) st.loadingSeq = 0;
-      renderPagination();
+      if (seq === st.loadSeq && !st.rows.length) renderRows();
+      else renderPagination();
     });
   }
 
@@ -391,9 +345,11 @@
     if (st.polling) return;
     st.polling = true;
     try {
-      await load(true);
-      await Promise.all(Array.from(st.expanded).filter(function (id) { return rowById(id) && (force || detailState(id).auto); }).map(function (id) { return refreshDetail(id); }));
+      await load(!force);
     } finally { st.polling = false; }
+    // Slow history/log requests must not hold the account list's polling lock.
+    // Each detail already coalesces its own requests in refreshDetail.
+    await Promise.all(Array.from(st.expanded).filter(function (id) { return rowById(id) && (force || detailState(id).auto); }).map(function (id) { return refreshDetail(id); }));
   }
 
   function refreshStock(force) {
@@ -417,7 +373,7 @@
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || '暂无匹配的外部子号') + '</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || (st.loadingSeq ? '' : '暂无匹配的外部子号')) + '</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -434,7 +390,7 @@
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
-        '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
+        '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.group_name ? '<span class="extm-group-tag" title="自定义分组：' + esc(r.group_name) + '">' + esc(r.group_name) + '</span>' : '') + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'vietnam' ? '越南登录' : r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
@@ -489,7 +445,7 @@
   function editOtpMode(id) {
     var row = rowById(id); if (!row || running(row) || st.profileSaving.has(id) || el('extm-mode-dialog')) return;
     var dialog = document.createElement('dialog'); dialog.id = 'extm-mode-dialog'; dialog.className = 'extm-note-dialog extm-mode-dialog'; dialog.setAttribute('aria-labelledby', 'extm-mode-title');
-    dialog.innerHTML = '<form><h3 id="extm-mode-title">验证码获取方式</h3><p>' + esc(row.email) + '</p><label for="extm-member-mode">取码方式</label><select id="extm-member-mode" class="extm-in" data-otp-mode="' + id + '"><option value="auto">自动取码</option><option value="manual">手动填写验证码</option></select><p class="extm-mode-help">自动取码使用已有邮箱配置或 supply.ink。普通邮箱请选择手动填写，登录时从邮件复制验证码。</p><div class="extm-note-error" role="alert"></div><footer><button type="button" class="extm-btn dft" data-close>取消</button><button type="submit" class="extm-btn">保存设置</button></footer></form>';
+    dialog.innerHTML = '<form><h3 id="extm-mode-title">验证码获取方式</h3><p>' + esc(row.email) + '</p><label for="extm-member-mode">取码方式</label><select id="extm-member-mode" class="extm-in" data-otp-mode="' + id + '"><option value="auto">自动取码</option><option value="manual">手动填写验证码</option><option value="vietnam">越南登录（密码 + 自动接码）</option></select><p class="extm-mode-help">自动取码使用已有邮箱配置或 supply.ink；普通邮箱可手动填写。越南登录需要已保存的 Adobe 密码，出现邮箱验证时自动接码，仅适用于越南取码站支持的账号。</p><div class="extm-note-error" role="alert"></div><footer><button type="button" class="extm-btn dft" data-close>取消</button><button type="submit" class="extm-btn">保存设置</button></footer></form>';
     var select = dialog.querySelector('select'), save = dialog.querySelector('[type=submit]'), cancel = dialog.querySelector('[data-close]'), error = dialog.querySelector('[role=alert]'), busy = false;
     select.value = row.otp_mode || 'auto';
     cancel.onclick = function () { dialog.close(); };
@@ -565,30 +521,30 @@
   }
 
   function mailState(config) {
-    importView.update({mailState:config.configured ? '已配置' : '未配置', mailPlaceholder:config.configured ? '已保存；粘贴新 Token 可替换' : '粘贴 supply.ink Token'});
+    view.update({mailState:config.configured ? '已配置' : '未配置', mailPlaceholder:config.configured ? '已保存；粘贴新 Token 可替换' : '粘贴 supply.ink Token'});
   }
   function loadMailConfig() {
-    return api('/mail/config').then(mailState).catch(function () { importView.update({mailState:'配置读取失败'}); });
+    return api('/mail/config').then(mailState).catch(function () { view.update({mailState:'配置读取失败'}); });
   }
   async function mailAction(action) {
     if (st.mailSaving) return;
-    if (action === 'save' && !importView.form.mailToken.trim()) { importView.update({mailResult:'请先粘贴 supply.ink Token'}); return; }
+    if (action === 'save' && !view.form.mailToken.trim()) { view.update({mailResult:'请先粘贴 supply.ink Token'}); return; }
     st.mailSaving = true;
-    ['save', 'test', 'clear'].forEach(function (key) { importView.button('extm-mail-' + key, {disabled:true, loading:key === action}); });
-    importView.update({mailResult:action === 'test' ? '正在测试已保存的邮件连接…' : '正在保存…'});
+    ['save', 'test', 'clear'].forEach(function (key) { view.button('extm-mail-' + key, {disabled:true, loading:key === action}); });
+    view.update({mailResult:action === 'test' ? '正在测试已保存的邮件连接…' : '正在保存…'});
     try {
       if (action === 'test') {
         var data = await api('/mail/test', {method:'POST'});
-        importView.update({mailResult:data.message + ' · 可查询 ' + data.total + ' 个账号'});
+        view.update({mailResult:data.message + ' · 可查询 ' + data.total + ' 个账号'});
       } else {
-        var config = await api('/mail/config', {method:'PUT', body:action === 'clear' ? {clear_token:true} : {token:importView.form.mailToken.trim()}});
-        mailState(config); importView.form.mailToken = '';
-        importView.update({mailResult:action === 'clear' ? '邮件 Token 已清除' : '邮件 Token 已保存'});
+        var config = await api('/mail/config', {method:'PUT', body:action === 'clear' ? {clear_token:true} : {token:view.form.mailToken.trim()}});
+        mailState(config); view.form.mailToken = '';
+        view.update({mailResult:action === 'clear' ? '邮件 Token 已清除' : '邮件 Token 已保存'});
       }
-    } catch (e) { importView.update({mailResult:e.message}); }
+    } catch (e) { view.update({mailResult:e.message}); }
     finally {
       st.mailSaving = false;
-      ['save', 'test', 'clear'].forEach(function (key) { importView.button('extm-mail-' + key, {disabled:false, loading:false}); });
+      ['save', 'test', 'clear'].forEach(function (key) { view.button('extm-mail-' + key, {disabled:false, loading:false}); });
     }
   }
   function showMail(id) {
@@ -833,6 +789,20 @@
     return d.promise;
   }
 
+  async function stopAllTasks() {
+    if (st.stoppingAll) return;
+    st.stoppingAll = true;
+    setLoading(el('extm-stop-all'), true, '正在终止…');
+    updSel();
+    try {
+      var result = await api('/members/cancel-all-jobs', {method:'POST'});
+      toast(result.failed ? 'warning' : 'success', result.message);
+      await load(true);
+      await Promise.all(Array.from(st.expanded).filter(rowById).map(function (mid) { return refreshDetail(mid, true); }));
+    } catch (e) { toast('error', '终止失败：' + e.message); }
+    finally { st.stoppingAll = false; setLoading(el('extm-stop-all'), false, '终止所有任务'); updSel(); }
+  }
+
   async function taskAction(id, action) {
     var d = detailState(id);
     if (d.action) return;
@@ -856,37 +826,32 @@
   }
 
   function updSel() {
+    if (!view) return;
     renderPagination();
-    setText(el('extm-selc'), st.sel.size);
-    setLoading(el('extm-export'), !!st.exporting, st.exporting ? '导出中…' : (st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : (qs().length ? '导出筛选 Cookie' : '导出全部 Cookie')));
-    var emailExport = el('extm-export-emails');
-    setLoading(emailExport, !!st.exportingEmails, st.exportingEmails ? '邮箱导出中…' : '导出选中邮箱' + (st.sel.size ? '（' + st.sel.size + '）' : ''));
-    if (emailExport) emailExport.disabled = !!st.exportingEmails || !st.sel.size;
-    var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
     var busy = st.rows.some(function (r) { return st.sel.has(r.id) && running(r); });
     var saving = Array.from(st.sel).some(function (id) { return st.profileSaving.has(id); });
-    var profileSelect = el('extm-batch-profile');
-    if (profileSelect) {
-      var selectedRows = st.rows.filter(function (row) { return st.sel.has(row.id); });
-      var preferences = new Set(selectedRows.map(function (row) { return row.profile_preference || ''; }));
-      setText(profileSelect.options[0], st.profileSaving.size ? '保存中…' : !st.sel.size ? '请先勾选账号' : '所选配置不一致');
-      profileSelect.value = !st.profileSaving.size && preferences.size === 1 ? selectedRows[0].profile_preference || '' : '__mixed__';
-      profileSelect.disabled = !st.sel.size || busy || st.profileSaving.size > 0 || !!st.loginAllSubmitting;
-    }
-    setLoading(el('extm-batch-login'), busy || saving || !!st.loginAllSubmitting, saving ? '配置保存中…' : busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : ''), busy && st.rows.some(function(r){return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}));
-    if (el('extm-batch-login')) el('extm-batch-login').disabled = busy || saving || !!st.loginAllSubmitting || !st.sel.size;
-    var loginAllButton = el('extm-login-all');
-    setLoading(loginAllButton, !!st.loginAllSubmitting, st.loginAllSubmitting ? '提交重登中…' : (qs().length ? '一键重登筛选结果' : '一键重登全部'));
-    if (loginAllButton) {
-      loginAllButton.disabled = !!st.loginAllSubmitting || st.pending.size > 0 || st.profileSaving.size > 0;
-      loginAllButton.title = (qs().length ? '重登符合当前筛选的全部外部子号' : '重登全部外部子号') + '，自动跳过任务未结束的账号';
-    }
-    if (el('extm-batch-del')) el('extm-batch-del').disabled = busy || saving;
-    var pushing = st.sub2Submitting || st.rows.some(function (r) { return st.sel.has(r.id) && ['pending', 'syncing'].includes(r.sub2_status); });
-    setLoading(el('extm-sub2-push'), !!pushing, pushing ? 'Sub2 同步中…' : '推送 Sub2');
-    if (el('extm-sub2-push')) el('extm-sub2-push').disabled = !!pushing || !!st.sub2Confirming || !st.sel.size || busy;
-    setLoading(el('extm-sub2-relink'), !!pushing, pushing ? 'Sub2 同步中…' : '重新关联 / 推送');
-    if (el('extm-sub2-relink')) el('extm-sub2-relink').disabled = !!pushing || !!st.sub2Confirming || !st.sel.size || busy;
+    var selectedRows = st.rows.filter(function (row) { return st.sel.has(row.id); });
+    var preferences = new Set(selectedRows.map(function (row) { return row.profile_preference || ''; }));
+    view.button("extm-stop-all", {disabled:st.stoppingAll, loading:st.stoppingAll, text:st.stoppingAll ? "正在终止…" : "终止所有任务"});
+    view.update({selected:st.sel.size,
+      group:'__mixed__', groupSaving:!!st.groupSaving,
+      profilePlaceholder:st.profileSaving.size ? '保存中…' : !st.sel.size ? '请先勾选账号' : '所选配置不一致',
+      profile:!st.profileSaving.size && preferences.size === 1 ? selectedRows[0].profile_preference || '' : '__mixed__',
+      profileDisabled:!st.sel.size || busy || st.profileSaving.size > 0 || !!st.loginAllSubmitting});
+    view.button('extm-export', {disabled:!!st.exporting, loading:!!st.exporting, text:st.exporting ? '导出中…' : st.sel.size ? '导出选中 Cookie（' + st.sel.size + '）' : qs().length ? '导出筛选 Cookie' : '导出全部 Cookie'});
+    view.button('extm-export-emails', {disabled:!!st.exportingEmails || !st.sel.size, loading:!!st.exportingEmails, text:st.exportingEmails ? '邮箱导出中…' : '导出选中邮箱' + (st.sel.size ? '（' + st.sel.size + '）' : '')});
+    var all = el('extm-ckall'); if (all) { all.checked = !!st.rows.length && st.sel.size === st.rows.length; all.indeterminate = st.sel.size > 0 && st.sel.size < st.rows.length; }
+    view.button('extm-batch-login', {disabled:busy || saving || !!st.loginAllSubmitting || st.stoppingAll || !st.sel.size,
+      loading:busy && st.rows.some(function (r) {return st.sel.has(r.id) && running(r) && (!r.latest_job || r.latest_job.status !== 'paused');}),
+      text:saving ? '配置保存中…' : busy ? '任务未结束' : '选中批量重登' + (st.sel.size ? '（' + st.sel.size + '）' : '')});
+    view.button('extm-login-all', {disabled:!!st.loginAllSubmitting || st.stoppingAll || st.pending.size > 0 || st.profileSaving.size > 0, loading:!!st.loginAllSubmitting,
+      text:st.loginAllSubmitting ? '提交重登中…' : qs().length ? '一键重登筛选结果' : '一键重登全部'});
+    view.button('extm-batch-del', {disabled:busy || saving || !st.sel.size});
+    var pushing = st.sub2Submitting || st.rows.some(function (r) {return st.sel.has(r.id) && ['pending','syncing'].includes(r.sub2_status);});
+    ['extm-sub2-push','extm-sub2-relink'].forEach(function (id) {
+      view.button(id, {disabled:!!pushing || !!st.sub2Confirming || !st.sel.size || busy, loading:!!pushing,
+        text:pushing ? 'Sub2 同步中…' : id === 'extm-sub2-push' ? '推送 Sub2' : '重新关联 / 推送'});
+    });
   }
   function selIds() { return Array.from(st.sel); }
 
@@ -1085,31 +1050,45 @@
     finally { st.sub2Confirming = false; st.sub2Submitting = false; updSel(); }
   }
 
-  function importMsg(message, tone) {
-    opMsg(message, tone);
-    if (importView) importView.update({importMessage:message, importTone:tone});
+  async function loadGroups() {
+    try { var groups = await api('/groups'); if (!Array.isArray(groups)) throw new Error('分组列表格式无效'); st.groups = groups; view.groups(st.groups); }
+    catch (error) { view.update({groupsError:'分组加载失败：' + error.message}); }
+  }
+  async function createGroup(name) {
+    var group = await api('/groups', {method:'POST', body:{name:name}});
+    st.groups = st.groups.concat([group]); view.groups(st.groups); return group;
+  }
+  async function assignGroup(value) {
+    var ids = selIds(); if (!ids.length || st.groupSaving || value === '__mixed__') return;
+    st.groupSaving = true; updSel();
+    try {
+      var data = await api('/members/group', {method:'PATCH', body:{ids:ids, group_id:value === '0' ? null : Number(value)}});
+      toast('success', data.message); st.sel.clear(); await load();
+    } catch (error) { toast('error', error.message); }
+    finally { st.groupSaving = false; updSel(); }
   }
 
   async function doImport() {
     if (st.importing) return;
-    var btn = el('extm-do-import'), content = importView.form.content.trim();
-    if (!content) { importMsg('请粘贴要导入的子号', 'err'); return; }
-    st.importing = true; setLoading(btn, true, '导入中'); importMsg('导入中…', 'mut');
+    var btn = el('extm-do-import'), content = view.form.content.trim();
+    if (!content) { view.importResult('请粘贴要导入的子号', 'err'); return; }
+    st.importing = true; setLoading(btn, true, '导入中'); view.importResult('导入中…', 'mut');
     try {
-      var payload = {content:content, on_duplicate:importView.form.duplicate};
-      if (importView.form.otpMode) payload.otp_mode = importView.form.otpMode;
+      var payload = {content:content, on_duplicate:view.form.duplicate};
+      if (view.form.otpMode) payload.otp_mode = view.form.otpMode;
+      if (view.form.group) payload.group_id = view.form.group === '0' ? null : Number(view.form.group);
       var r = await api('/members/import', { method: 'POST', body: payload });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
       if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 50 个，成功后自动推送 Sub2';
       if (r.sequential_login) msg += ' · 按导入顺序逐个自动取码登录';
       if (r.errors && r.errors.length) msg += ' · ' + r.errors.join('；');
-      importMsg(msg, r.failed ? 'err' : 'ok'); if (!r.failed) importView.form.content = ''; await load(true);
-    } catch (e) { importMsg(e.message, 'err'); }
+      view.importResult(msg, r.failed ? 'err' : 'ok'); if (!r.failed) view.form.content = ''; await load(true);
+    } catch (e) { view.importResult(e.message, 'err'); }
     finally { st.importing = false; setLoading(btn, false, '批量导入'); }
   }
 
   async function startLogin(ids, expandFirst) {
-    if (st.loginAllSubmitting) return;
+    if (st.loginAllSubmitting || st.stoppingAll) return;
     if (ids.some(function (id) { return st.profileSaving.has(id); })) { toast('warning', '请等待登录配置保存完成'); return; }
     if (ids.some(function (id) { var row = rowById(id); return row && running(row); })) { toast('warning', '所选账号正在登录，请等待任务完成'); return; }
     ids.forEach(function (id) { st.pending.add(id); });
@@ -1131,7 +1110,7 @@
   }
 
   async function loginAll() {
-    if (st.loginAllSubmitting || st.pending.size || st.profileSaving.size) return;
+    if (st.loginAllSubmitting || st.stoppingAll || st.pending.size || st.profileSaving.size) return;
     var filters = Object.assign({ login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q }, extraFilters());
     var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
     st.loginAllSubmitting = true;
@@ -1212,23 +1191,40 @@
     var r = window.OKAD_NAV.rect(); w.style.left = r.left + "px"; w.style.top = r.top + "px";
     w.style.setProperty("--extm-detail-width", Math.max(320, window.innerWidth - r.left - 86) + "px");
   }
-  function show() {
-    injectStyle();
+  async function show() {
+    injectStyle(); st.open = true;
     var w = el(HOST_ID);
-    if (!w) { w = document.createElement("div"); w.id = HOST_ID; document.body.appendChild(w); buildBody(w); }
-    positionPanel(w); w.classList.add("on"); st.open = true; refreshAll(false); refreshStock(true);
+    if (!w) {
+      // Logging out removes the shell (and its panel); remount against the new shell on login.
+      if (view) { view.destroy(); view = null; mounting = null; st.total = 0; resetPage(1); }
+      w = document.createElement('div'); w.id = HOST_ID; document.body.appendChild(w);
+    }
+    positionPanel(w); w.classList.add('on');
+    if (!view) {
+      if (!mounting) mounting = import(viewURL).then(function (module) { buildBody(w, module.mountExternalMembers); }).catch(function (error) {
+        console.error('外部子号组件加载失败', error);
+        w.textContent = '页面组件加载失败，请刷新后重试'; mounting = null;
+      });
+      await mounting;
+    }
+    if (!st.open || !view) return;
+    refreshAll(false); refreshStock(true);
   }
-  function hide() { if (importView) importView.close(); if (filtersView) filtersView.close(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { if (st.loadController) st.loadController.abort(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; if (view) view.close(); var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,
     layout: function () { var w = el(HOST_ID); if (w) positionPanel(w); }
   });
+  // A mobile-to-desktop sidebar transform can finish after ResizeObserver's last measurement.
+  document.addEventListener('transitionend', function (event) {
+    if (st.open && event.target.matches('.n-layout-sider')) positionPanel(el(HOST_ID));
+  });
 
   setInterval(function () {
     if (st.open && !document.hidden) { refreshAll(false); refreshStock(false); }
   }, 3000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshStock(true); });
+  document.addEventListener('visibilitychange', function () { if (st.open && !document.hidden) { refreshAll(false); refreshStock(true); } });
   window.addEventListener('okad:sub2-stock-changed', function () { refreshStock(true); });
 
 })();

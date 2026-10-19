@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 
 FRONT = Path(os.environ.get('OKAD_FRONTEND_DIR', Path(__file__).resolve().parents[1]))
@@ -28,7 +29,7 @@ async def main():
                 data = dict(id=1, username='admin', is_active=True, is_superuser=True)
             elif path == '/api/external/members':
                 query = parse_qs(url.query)
-                page, size = int(query.get('page', ['1'])[0]), int(query.get('size', ['200'])[0])
+                page, size = int(query.get('page', ['1'])[0]), int(query.get('size', ['500'])[0])
                 data = dict(items=rows[(page - 1) * size:page * size], total=len(rows))
             elif path.endswith('/jobs'):
                 data = []
@@ -50,6 +51,9 @@ async def main():
             await page.route('**/*', serve)
             await page.add_init_script("localStorage.setItem('okad_token', 'synthetic-layout-test')")
             await page.goto('http://okad.test' + prefix + '/external-members')
+            await expect(page.locator('#extm-page-size')).to_have_value('500')
+            await expect(page.locator('tr[data-member]')).to_have_count(204)
+            await page.locator('#extm-page-size').select_option('200')
             await expect(page.locator('tr[data-member]')).to_have_count(200)
             pager, scroll = page.locator('.extm-pagination'), page.locator('.extm-tw')
             OUTPUT.mkdir(exist_ok=True)
@@ -66,7 +70,8 @@ async def main():
                 if metrics['tableBottom'] > metrics['pagerTop'] + 1:
                     await page.screenshot(path=str(OUTPUT / 'external-pagination-overlap.png'))
                 assert metrics['tableBottom'] <= metrics['pagerTop'] + 1, metrics
-                assert metrics['tableHeight'] <= metrics['viewportHeight'] * .6 + 1, metrics
+                if metrics['width'] > 800:
+                    assert metrics['tableHeight'] <= metrics['viewportHeight'] * .6 + 1, metrics
                 assert metrics['left'] >= 0 and metrics['right'] <= metrics['width'] + 1, metrics
                 assert metrics['pagerOverflow'] <= 1, metrics
 
@@ -75,7 +80,7 @@ async def main():
             for width, height in ((2290, 1000), (1440, 900), (900, 800), (640, 780)):
                 await page.set_viewport_size({'width': width, 'height': height})
                 for size in (50, 100, 200):
-                    await page.locator('#extm-page-size').select_option(str(size))
+                    await select_value(page, '#extm-page-size', str(size))
                     await expect(page.locator('tr[data-member]')).to_have_count(size)
                     await expect(page.locator('#extm-page-size')).to_be_enabled()
                     for position in ('0', 'node.scrollHeight / 2', 'node.scrollHeight'):

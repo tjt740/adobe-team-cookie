@@ -10,7 +10,7 @@
   --tag-organization: #8963b9;
 }
 
-#extm-embed :is(.extm-pill, .extm-cap, .extm-credit-warning),
+#extm-embed :is(.extm-pill, .extm-cap, .extm-company-tag, .extm-credit-warning),
 body[data-workspace=dashboard] .dash .pill {
   --tag-fill: var(--tag-neutral);
   display: inline-flex;
@@ -53,7 +53,8 @@ body[data-workspace=dashboard] .dash .pill.amber {
 #extm-embed .extm-pill.personal {
   --tag-fill: var(--tag-personal);
 }
-#extm-embed .extm-pill.organization {
+#extm-embed .extm-pill.organization,
+#extm-embed .extm-company-tag {
   --tag-fill: var(--tag-organization);
 }
 

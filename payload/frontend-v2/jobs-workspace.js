@@ -35,7 +35,7 @@ function state(job) {
   }
   return [job.status || '未知','muted'];
 }
-const time = (value, full=false) => value ? new Date(value*1000).toLocaleString('zh-CN',
+const time = (value, full=false) => value ? window.OKAD_TIME.format(value,
   {year:full?'numeric':undefined,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:full?'2-digit':undefined,hour12:false}) : '尚未结束';
 function duration(job) {
   if(!job.created_at) return '—';
@@ -117,7 +117,7 @@ export default defineComponent({name:'JobsWorkspace',setup(){
       if(disposed) return;
       jobs.value=Array.isArray(data)?data:[];
       selected.value=selected.value.filter(i=>jobs.value.some(j=>j.id===i&&!active(j)));
-      updated.value=new Date().toLocaleTimeString('zh-CN',{hour12:false});error.value='';
+      updated.value=window.OKAD_TIME.clock(Date.now()/1000);error.value='';
     } catch(e){if(!disposed)error.value=e.name==='AbortError'?'读取任务超时，请重试':e.message;}
     finally {loading.value=false;listPending=false;}
   }

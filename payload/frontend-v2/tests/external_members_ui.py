@@ -138,7 +138,8 @@ async def main():
         assert await page.locator('[data-s2stock]').count() == 0
         widths = await page.locator('[data-member="1"]').evaluate("tr => Array.from(tr.cells).map(td => ({w:td.getBoundingClientRect().width,h:td.getBoundingClientRect().height,wrap:getComputedStyle(td).whiteSpace}))")
         assert widths[2]['w'] == 280 and widths[5]['w'] >= 296, widths
-        assert all(c['wrap'] == 'nowrap' and c['h'] <= 70 for c in widths), widths
+        # Email metadata has two lines; the existing stock-details button makes rows 73px high.
+        assert all(c['wrap'] == 'nowrap' and c['h'] <= 76 for c in widths), widths
         assert '2026-09-19 13:44' in await page.locator('[data-member="1"]').inner_text()
         output = ROOT / '.local'
         output.mkdir(exist_ok=True)

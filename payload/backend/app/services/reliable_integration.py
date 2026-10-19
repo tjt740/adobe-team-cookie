@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
 import requests
-from sqlalchemy import select, update, func, text
+from sqlalchemy import and_, or_, select, update, func, text
 from app.db.session import SessionLocal
 from app.models.integration import CredentialState, CredentialDelivery, RecoveryJob, LoginLease
 from app.models.external_member import ExternalMember
@@ -243,7 +243,7 @@ def inventory(cfg, since=None):
         after = cursor
 
 
-def _locate(cfg, delivery, email):
+def _locate(cfg, delivery, email, *, observed=None):
     rows = inventory(cfg)
     if delivery.account_id:
         matches = [r for r in rows if r['id']==delivery.account_id]
@@ -257,6 +257,8 @@ def _locate(cfg, delivery, email):
         row = matches[0]
         if row['email'].lower()!=email.lower():
             raise IntegrationError('identity_mismatch', '远端身份不一致，未覆盖')
+        if observed is not None:
+            observed.update(row)
         return row['id']
     if not delivery.allow_create:
         raise IntegrationError('not_found', 'Sub2 没有该账号，请先手动推送入库')
@@ -314,7 +316,8 @@ def deliver(key):
         capabilities=request(cfg,'GET','/capabilities')
         if capabilities.get('site_id')!=delivery.site_id:
             raise IntegrationError('destination_changed','远端站点身份不一致，未发送凭据')
-        aid=_locate(cfg,delivery,email)
+        observed={}
+        aid=_locate(cfg,delivery,email,observed=observed)
         try:
             receipt=request(cfg,'POST',f'/accounts/{aid}/credentials',{
                 'email':email,'issuer':cfg['issuer'],'source_key':source_key,'version':version,'cookie':cookie})
@@ -330,6 +333,8 @@ def deliver(key):
             raise
         try:
             receipt=request(cfg,'POST',f'/accounts/{aid}/verify')
+            if 'proxy_id' in observed:
+                receipt={**receipt,'proxy_id':observed['proxy_id']}
         except IntegrationError as exc:
             # Verification may race a manual pause or proxy change. Re-reading
             # and re-verifying is safe; replacing a conflicting source is not.
@@ -380,15 +385,22 @@ def deliver(key):
         db.commit()
 
 
+def _inventory_candidates():
+    return or_(CredentialDelivery.state.in_(['ready','paused','attention']),
+               and_(CredentialDelivery.state=='retry',
+                    CredentialDelivery.receipt['integration']['verification'].as_string()=='proxy_pending'))
+
+
 def reconcile_inventory():
-    """Read Sub2 state and sync classification without credentials or login."""
+    """Observe Sub2 changes and wake proxy-waiting deliveries; never start login."""
     with SessionLocal() as db:
         cfg=settings(db)
         if not cfg['enabled']:return
         rows=list(db.scalars(select(CredentialDelivery).where(
             CredentialDelivery.site_id==cfg['site_id'],CredentialDelivery.target==target(cfg),
-            CredentialDelivery.state.in_(['ready','paused','attention']))))
-        snapshots=[(d.key,d.source_key,d.version,d.account_id,d.state,d.message) for d in rows if d.account_id]
+            _inventory_candidates(),CredentialDelivery.lease_until<time.time())))
+        snapshots=[(d.key,d.source_key,d.version,d.account_id,d.state,d.message,d.updated_at,d.receipt)
+                   for d in rows if d.account_id]
     capabilities=request(cfg,'GET','/capabilities')
     if capabilities.get('site_id')!=cfg['site_id']:return
     if not snapshots and not capabilities.get('account_metadata'):return
@@ -396,8 +408,9 @@ def reconcile_inventory():
     if capabilities.get('account_metadata'):
         from app.services.okad_account_metadata import sync_inventory_metadata
         try:sync_inventory_metadata(cfg,list(remote.values()))
-        except IntegrationError:pass  # Retry metadata next interval; do not block receipt refresh.
-    for key,source_key,version,aid,old_state,old_message in snapshots:
+        except IntegrationError:pass  # Retry metadata next interval without blocking receipts.
+    for key,source_key,version,aid,old_state,old_message,updated_at,old_receipt in snapshots:
+        wake=False
         item=remote.get(aid)
         if not item:
             state,message,receipt='blocked','关联账号已删除，自动同步不会重建',None
@@ -409,23 +422,32 @@ def reconcile_inventory():
             elif integration.get('verification')=='verified':
                 state='ready' if item.get('schedulable') and item.get('status')=='active' else 'paused'
                 message='凭据已验证，可调度；模型尚未验证' if state=='ready' else '凭据已验证，保持暂停或等待代理分配'
+            elif old_state=='retry' and integration.get('verification') in ('proxy_pending','pending','verification_retry'):
+                proxy=item.get('proxy_id')
+                if type(proxy) is not int or proxy<=0 or proxy==(old_receipt or {}).get('proxy_id'):
+                    continue  # No new binding: retain backoff for unavailable/unhealthy nodes.
+                state,message,wake='retry','Sub2 已分配节点，等待自动同步与验证',True
             else:
                 state,message='attention',integration.get('message') or 'Sub2 状态已变化，请核对验证结果'
-            receipt={k:item[k] for k in ('id','status','schedulable','integration') if k in item}
-        if state==old_state and message==old_message:continue
+            receipt={k:item[k] for k in ('id','status','schedulable','proxy_id','integration') if k in item}
+        if state==old_state and message==old_message and not wake:continue
         with SessionLocal() as db:
-            # A late inventory response cannot finish or overwrite queued work.
+            # Recheck config and snapshot after HTTP. A late read cannot wake a
+            # new Cookie, an active worker, a newer retry, or a different site.
+            current_cfg=settings(db)
+            if (not current_cfg['enabled'] or current_cfg['site_id']!=cfg['site_id']
+                    or target(current_cfg)!=target(cfg)):return
             changed=db.execute(update(CredentialDelivery).where(CredentialDelivery.key==key,
                 CredentialDelivery.version==version,CredentialDelivery.account_id==aid,
-                CredentialDelivery.target==target(cfg),CredentialDelivery.state.in_(['ready','paused','attention']),
-                (CredentialDelivery.state!=state)|(CredentialDelivery.message!=message))
-                .values(state=state,message=message,receipt=receipt,updated_at=time.time())).rowcount
+                CredentialDelivery.target==target(cfg),CredentialDelivery.state==old_state,
+                CredentialDelivery.updated_at==updated_at,CredentialDelivery.lease_until<time.time())
+                .values(state=state,message=message,receipt=receipt,updated_at=time.time(),next_at=0)).rowcount
             if changed and source_key.startswith('external:'):
                 from app.services.external_sub2 import destination
                 member=db.get(ExternalMember,int(source_key.split(':')[1]))
                 if member:
                     dest=destination(cfg);old=(member.sub2_links or {}).get(dest,{})
-                    member.sub2_links={**(member.sub2_links or {}),dest:{**old,'status':'synced' if state in ('ready','paused') else 'failed','message':message}}
+                    member.sub2_links={**(member.sub2_links or {}),dest:{**old,'status':'synced' if state in ('ready','paused') else 'pending' if wake else 'failed','message':message}}
             db.commit()
 
 
@@ -540,6 +562,7 @@ _delivery_executor=ThreadPoolExecutor(max_workers=3,thread_name_prefix='credenti
 _pending=set()
 _guard=threading.Lock()
 _last_inventory={}
+INVENTORY_INTERVAL=30
 
 
 def tick():
@@ -571,7 +594,7 @@ def tick():
             executor.submit(work)
     tag=('inventory',cfg['site_id'],target(cfg))
     with _guard:
-        if tag in _pending or now-_last_inventory.get(tag,0)<30:return
+        if tag in _pending or now-_last_inventory.get(tag,0)<INVENTORY_INTERVAL:return
         _last_inventory[tag]=now
         _pending.add(tag)
     def refresh_inventory():

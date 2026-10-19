@@ -53,15 +53,15 @@ export function mountImport(host, actions, trigger) {
                 ['邮箱 + Adobe 密码','user@example.com----Adobe密码'],
                 ['完整邮箱凭据','邮箱----邮箱密码----ClientID----RefreshToken[----Adobe密码]']
               ].map(([label,example])=>h('div',{class:'extv-import-example'},[h('span',{},label),h('code',{},example)])),
-              h('p',{},'每行一个账号；兼容 | 分隔。方括号内为可选项，填写时无需保留方括号。')
+              h('p',{},'每行一个账号；兼容 | 或制表符分隔，可直接粘贴表格的邮箱、密码两列。方括号内为可选项。')
             ]),
             field('账号内容识别','extm-import',input('extm-import',form.value.content,v=>form.value.content=v,{type:'textarea',autosize:{minRows:10,maxRows:16},placeholder:'粘贴邮箱或账号凭据，每行一个账号',inputProps:{'aria-describedby':'extm-import-help'}}),'extv-import-content'),
-            h('p',{id:'extm-import-help',class:'extv-import-help'},'每批最多 50 个。仅邮箱导入固定走验证码；自动取码时按粘贴顺序逐个获取验证码登录。带密码的账号优先使用密码登录。'),
+            h('p',{id:'extm-import-help',class:'extv-import-help'},'可一次粘贴超过 50 个账号，任务自动分批。仅邮箱导入固定走验证码；自动取码时按粘贴顺序逐个获取验证码登录。带密码的账号优先使用密码登录。'),
             h('div',{class:'extv-import-controls'},[
               field('重复邮箱','extm-dup',select('extm-dup',form.value.duplicate,options([['skip','跳过'],['overwrite','覆盖']]),v=>form.value.duplicate=v,{to:'#extm-import-drawer'})),
-              field('取码方式','extm-otp-mode',select('extm-otp-mode',form.value.otpMode,options([['','保留设置（新账号自动取码）'],['auto','自动取码（supply.ink）'],['manual','手动输入验证码（普通账号）']]),v=>{form.value.otpMode=v;if(v!=='auto')mailOpen.value=false;},{to:'#extm-import-drawer'}))
+              field('取码方式','extm-otp-mode',select('extm-otp-mode',form.value.otpMode,options([['','保留设置（新账号自动取码）'],['auto','自动取码（supply.ink）'],['manual','手动输入验证码（普通账号）'],['vietnam','越南登录（密码 + 自动接码）']]),v=>{form.value.otpMode=v;if(v!=='auto')mailOpen.value=false;},{to:'#extm-import-drawer'}))
             ]),
-            h('p',{class:'extv-import-help'},'普通账号可选择手动输入，收到邮件后在账号行填验证码。自动取码使用已有邮箱配置或 supply.ink Token；覆盖导入可更新已有账号设置。'),
+            h('p',{class:'extv-import-help'},'越南登录需填写邮箱和 Adobe 密码，出现邮箱验证时自动接码，无需 supply.ink Token；仅适用于越南取码站支持的账号。普通账号可手动填码，覆盖导入可更新已有账号的选择。'),
             h('details',{id:'extm-mail-config',class:'extm-card extm-import-card',hidden:form.value.otpMode!=='auto',open:mailOpen.value,onToggle:event=>mailOpen.value=event.target.open},[
               h('summary',{},['邮件配置 · supply.ink ',h('span',{id:'extm-mail-state',class:'extm-msg mut'},ui.value.mailState)]),
               h('div',{class:'bd'},[h('p',{class:'tip'},'Token 保存在本项目，所有管理员共享；留空保留已保存配置。'),h('div',{class:'extv-mail-controls'},[

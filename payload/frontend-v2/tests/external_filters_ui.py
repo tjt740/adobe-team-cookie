@@ -5,8 +5,8 @@ import mimetypes
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from playwright.async_api import async_playwright, expect
 from external_controls import select_value, expect_select
+from playwright.async_api import async_playwright, expect
 
 FRONT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(__file__).resolve().parents[3] / '.local'
@@ -18,6 +18,7 @@ async def main():
                  credits_available=None if i % 5 == 0 else (i - 1) * 25,
                  account_profile={'current_kind': 'unknown' if i % 7 == 0 else 'personal' if i % 2 else 'organization'},
                  uses_supply_mail=i % 2 == 0,
+                 sub2_status=('not_pushed', 'pending', 'syncing', 'synced', 'failed')[i % 5],
                  created_at='2026-10-12T00:00:00Z' if i <= 130 else '2026-10-13T00:00:00Z')
             for i in range(1, 262)]
     inventory = {row['id'] for row in rows if row['id'] % 3 == 0}
@@ -31,6 +32,7 @@ async def main():
                 (not query.get('imported_before') or datetime.fromisoformat(row['created_at']) < datetime.fromisoformat(query['imported_before'])) and
                 (not query.get('keyword') or query['keyword'] in row['email']) and
                 (not query.get('current_profile') or row['account_profile']['current_kind'] == query['current_profile']) and
+                (not query.get('sub2_status') or row['sub2_status'] == query['sub2_status']) and
                 ('is_company' not in query or row['uses_supply_mail'] == (query['is_company'] == 'true')) and
                 all(key not in query or (row['credits_' + query.get('credits_field', 'available')] is not None and
                     (row['credits_' + query.get('credits_field', 'available')] >= float(query[key]) if key == 'credits_min' else
@@ -90,7 +92,7 @@ async def main():
             await expect(page.locator('#extm-total')).to_have_text('87')
             expected = dict(in_stock='false', imported_from='2026-10-11T16:00:00.000Z', imported_before='2026-10-12T16:00:00.000Z')
             assert all(calls[-1][key] == value for key, value in expected.items()), calls[-1]
-            await page.locator('#extm-page-size').select_option('50')
+            await select_value(page, '#extm-page-size', '50')
             await expect(page.locator('tr[data-member]')).to_have_count(50)
             await page.locator('#extm-next').click()
             await expect(page.locator('tr[data-member]')).to_have_count(37)
@@ -104,7 +106,7 @@ async def main():
 
             # Reject backwards ranges before sending them to the API.
             await page.locator('#extm-f-import-to').fill('2026-10-11')
-            await expect(page.locator('#extf-date-error')).to_have_text('结束日期不能早于开始日期')
+            await expect(page.get_by_role('alert')).to_have_text('结束日期不能早于开始日期')
             assert all(calls[-1][key] == value for key, value in expected.items())
             await page.locator('#extm-f-import-to').fill('2026-10-12')
             await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 2 页')
@@ -115,7 +117,7 @@ async def main():
                 await page.locator('#extm-f-stock').scroll_into_view_if_needed()
                 for selector in ('#extm-f-stock', '#extm-f-import-from', '#extm-f-import-to', '#extm-reset-filters',
                                  '#extm-f-credits-field', '#extm-f-credits-min', '#extm-f-credits-max',
-                                 '#extm-f-profile', '#extm-f-company'):
+                                 '#extm-f-profile', '#extm-f-company', '#extm-f-sync'):
                     box = await page.locator(selector).bounding_box()
                     assert box['x'] >= 0 and box['x'] + box['width'] <= width + 1, (width, selector, box)
                 if not prefix:
@@ -160,7 +162,7 @@ async def main():
 
             # Invalid ranges never replace the applied filter; correcting restores it.
             await set_bound('max', '999')
-            await expect(page.locator('#extf-credit-error')).to_have_text('积分最大值不能小于最小值')
+            await expect(page.get_by_role('alert')).to_have_text('积分最大值不能小于最小值')
             assert calls[-1]['credits_max'] == '4000'
             await set_bound('max', '4000')
             await select_value(page, '#extm-f-credits-field', 'total')
@@ -170,8 +172,8 @@ async def main():
             await expect(page.locator('#extm-total')).to_have_text('261')
             for selector in ('credits-min', 'credits-max'):
                 await expect(page.locator('#extm-f-' + selector)).to_have_value('')
-            for selector in ('profile', 'company'):
-                await expect_select(page, '#extm-f-' + selector, '')
+            await expect_select(page, '#extm-f-profile', '')
+            await expect_select(page, '#extm-f-company', '')
             await expect_select(page, '#extm-f-credits-field', 'available')
             await select_value(page, '#extm-f-company', 'false')
             await expect(page.locator('#extm-total')).to_have_text('131')
@@ -180,6 +182,38 @@ async def main():
             await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(is_company='false', current_profile='unknown')))))
             await page.locator('#extm-reset-filters').click()
             await expect(page.locator('#extm-total')).to_have_text('261')
+
+            # The new sync status applies before pagination and shares the action scope.
+            await page.locator('#extm-next').click()
+            await page.locator('tr[data-member] .extm-rowck').first.check()
+            await select_value(page, '#extm-f-sync', 'pending')
+            await expect(page.locator('#extm-total')).to_have_text('53')
+            await expect(page.locator('#extm-page-info')).to_have_text('第 1 / 2 页')
+            await expect(page.locator('#extm-selc')).to_have_text('0')
+            await expect(page.locator('tr[data-member]')).to_have_count(50)
+            await expect(page.locator('#extm-tbody')).not_to_contain_text('Sub2 同步中')
+            await page.locator('#extm-next').click()
+            await expect(page.locator('tr[data-member]')).to_have_count(3)
+            await expect(page.locator('#extm-export')).to_have_text('导出筛选 Cookie')
+            await page.locator('#extm-export').click()
+            await page.locator('#extm-more-actions > summary').click()
+            await expect(page.locator('#extm-login-all')).to_have_text('一键重登筛选结果')
+            await page.locator('#extm-login-all').click()
+            await expect(page.locator('#extm-login-all')).to_be_enabled()
+            assert actions[-2][1] == {'sub2_status': 'pending'}, actions[-2]
+            assert actions[-1][1] == dict(sub2_status='pending', login_status=None, subscription_ok=None, keyword=''), actions[-1]
+            await select_value(page, '#extm-f-stock', 'true')
+            await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(sub2_status='pending', in_stock='true')))))
+            assert calls[-1]['sub2_status'] == 'pending' and calls[-1]['in_stock'] == 'true', calls[-1]
+            await select_value(page, '#extm-f-stock', '')
+            for sync_status in ('syncing', 'synced', 'failed', 'not_pushed'):
+                await select_value(page, '#extm-f-sync', sync_status)
+                await expect(page.locator('#extm-total')).to_have_text(str(len(matches(dict(sub2_status=sync_status)))))
+                await expect(page.locator('tr[data-member]').first).to_have_attribute('data-member', str(matches(dict(sub2_status=sync_status))[0]['id']))
+            await page.locator('#extm-reset-filters').click()
+            await expect_select(page, '#extm-f-sync', '')
+            await expect(page.locator('#extm-total')).to_have_text('261')
+            assert 'sub2_status' not in calls[-1], calls[-1]
 
             state['fail'] = True
             await select_value(page, '#extm-f-stock', 'false')

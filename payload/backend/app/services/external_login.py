@@ -78,6 +78,7 @@ def _login_with_proxy_retry(
     supply_token: str = "",
     force_code_login: bool = False,
     otp_poller=None,
+    password_only: bool = False,
     profile_preference: ProfilePreference = "",
     on_credentials=None,
     network_retries: int = MAX_NETWORK_RETRIES,
@@ -113,10 +114,11 @@ def _login_with_proxy_retry(
                 adobe_password=adobe_password,
                 supply_token=supply_token,
                 profile_preference=profile_preference,
-                force_code_login=force_code_login or FORCE_CODE_LOGIN,
+                force_code_login=(force_code_login or FORCE_CODE_LOGIN) and not password_only,
                 log=lambda mm: lf(f"[{email}] {mm}"),
                 on_credentials=update_credentials,
                 **({"otp_poller": otp_poller} if otp_poller is not None else {}),
+                **({"password_only": True} if password_only else {}),
             )
         except Exception as e:  # noqa: BLE001
             last_exc = e
@@ -182,7 +184,7 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
         profile_preference = m.profile_preference if profile_preference is None else profile_preference
         settings = setting_crud.get_settings(db)
         from app.services.supply_mail import get_token
-        supply_token = get_token(db) if otp_mode != "manual" else ""
+        supply_token = get_token(db) if otp_mode == "auto" else ""
     finally:
         db.close()
 
@@ -191,7 +193,7 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
     proxy_raw = (settings.proxy_url or "") if settings.proxy_enabled else ""
     label = {'personal': '个人配置', 'organization': '组织配置（无可用组织时回退个人）'}.get(profile_preference, '未指定，沿用原逻辑')
     lf(f"[{email}] 本次登录配置：{label}")
-    if force_code_login or FORCE_CODE_LOGIN:
+    if otp_mode != "vietnam" and (force_code_login or FORCE_CODE_LOGIN):
         lf(f"[{email}] 本次使用邮箱验证码登录")
     otp_poller = None
     if otp_mode == "manual":
@@ -200,12 +202,18 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
             return manual_otp.BROKER.request(member_id, email, timeout=timeout,
                 check_cancelled=check_cancelled, log=lambda msg: lf(f"[{email}] {msg}"))
         otp_poller.manual_input = True
+    elif otp_mode == "vietnam":
+        from app.services.vietnam_otp import make_vietnam_otp_poller
+        lf(f"[{email}] 本次采用越南登录：Adobe 密码登录，需要邮箱验证时自动接码")
+        otp_poller = make_vietnam_otp_poller(log=lambda msg: lf(f"[{email}] {msg}"),
+                                            check_cancelled=check_cancelled)
     rec, exc = _login_with_proxy_retry(
         email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
         adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
         supply_token=supply_token,
         force_code_login=force_code_login,
         otp_poller=otp_poller,
+        password_only=otp_mode == "vietnam",
         profile_preference=profile_preference,
         on_credentials=lambda **values: _save_credentials(member_id, **values),
         network_retries=network_retries,

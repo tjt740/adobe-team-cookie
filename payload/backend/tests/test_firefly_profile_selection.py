@@ -258,3 +258,45 @@ def test_register_and_store_keep_cookie_token_profile_and_zero_credits_together(
     assert member.credits_available == 0
     assert member.credits_total == 4000
     assert client.switches == ([PERSON] if preference == "personal" else [ORG, PERSON] if reason == 2000 else [ORG])
+
+
+def test_verified_otp_can_login_despite_enforced_incomplete_profile(monkeypatch):
+    """Production OTP accounts expose ENFORCED yet exchange valid tokens/credits."""
+    client = ProfileClient([])
+    original_get = client.get
+
+    def get(url, **kwargs):
+        if "/accounts/me" in url:
+            return response({"firstName": "Existing", "profileData": {
+                "actions": [{"code": "IncompleteProfile", "status": "ENFORCED"}],
+                "links": [],
+            }})
+        return original_get(url, **kwargs)
+
+    client.get = get
+    auth = auth_for(client)
+    auth.susi_token = ""
+    monkeypatch.setattr(firefly._p, "HttpClient", lambda **kwargs: client)
+    monkeypatch.setattr(firefly, "AdminAuth", lambda *a, **kw: auth)
+    monkeypatch.setattr(firefly, "make_otp_poller", lambda **kwargs: (
+        lambda *a, **kw: "123456", SimpleNamespace(rotated=False)))
+    monkeypatch.setattr(firefly._adm, "_probe_auth_methods", lambda *a: ["otp"])
+
+    def otp_login(auth, *args, **kwargs):
+        auth.susi_token = "verified.otp.session"
+
+    monkeypatch.setattr(firefly._adm, "_passwordless_login", otp_login)
+    monkeypatch.setattr(firefly._adm, "_session_cookie_str", lambda c: "profile=" + c.cookies["profile"])
+    monkeypatch.setattr(firefly, "fetch_account_info", lambda *a, **kw: {})
+    monkeypatch.setattr(firefly, "fetch_credits_detail", lambda *a, **kw: {"available": 4000, "total": 4000})
+    saved = []
+    record = firefly.register_account(
+        email="otp@example.com", refresh_token="mail", client_id="mail-client",
+        force_code_login=True, on_credentials=lambda **values: saved.append(values),
+    )
+    assert record["cookie"] == "profile=" + PERSON
+    assert record["access_token"] == "token:" + PERSON
+    assert record["credits"] == 4000 and record["set_password"] == ""
+    assert saved == []
+    # ProfileClient rejects any unexpected password validation or account PUT.
+    assert client.switches == [PERSON]

@@ -2,19 +2,23 @@ from datetime import datetime, timezone
 from threading import Lock
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import capture_job_request, get_current_user
 from app.crud import external_member as crud
 from app.db.session import get_db
 from app.models.user import User
+from app.models.external_member import ExternalMember, ExternalMemberGroup
+from app.schemas.external_member import AccountType, ExternalGroupCreate, ExternalGroupAssignment
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
 from app.services import external_login, external_sub2, external_sub2_stock, sub2_account_health
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
-from app.schemas.external_member import CreditsField, CurrentProfileKind, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
+from app.schemas.external_member import AccountState, CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
 from app.services import supply_mail, manual_otp
 from app.crud.setting import _set
 
@@ -24,6 +28,45 @@ router = APIRouter(
     dependencies=[Depends(capture_job_request)],
 )
 _login_lock = Lock()
+
+
+def _require_group(db, group_id):
+    if group_id is not None and not db.get(ExternalMemberGroup, group_id):
+        raise HTTPException(status_code=404, detail="分组不存在，请刷新后重试")
+
+
+@router.get("/groups", summary="自定义分组列表")
+def list_groups(db: Session = Depends(get_db)) -> list[dict]:
+    counts = dict(db.execute(select(ExternalMember.group_id, func.count()).group_by(ExternalMember.group_id)).all())
+    return [{"id": g.id, "name": g.name, "count": counts.get(g.id, 0)}
+            for g in db.scalars(select(ExternalMemberGroup).order_by(ExternalMemberGroup.id))]
+
+
+@router.post("/groups", status_code=201, summary="创建自定义分组")
+def create_group(payload: ExternalGroupCreate, db: Session = Depends(get_db)) -> dict:
+    group = ExternalMemberGroup(name=payload.name, name_key=payload.name.casefold())
+    db.add(group)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="分组名称已存在") from None
+    return {"id": group.id, "name": group.name, "count": 0}
+
+
+@router.patch("/members/group", summary="设置选中账号的自定义分组")
+def assign_group(payload: ExternalGroupAssignment, background: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
+    _require_group(db, payload.group_id)
+    ids = list(dict.fromkeys(payload.ids))
+    members = crud.get_many(db, ids)
+    if len(members) != len(ids):
+        raise HTTPException(status_code=404, detail="所选账号已不存在，请刷新后重试")
+    for member in members:
+        member.group_id = payload.group_id
+    db.commit()
+    from app.services.okad_account_metadata import sync_current_metadata
+    background.add_task(sync_current_metadata)
+    return {"updated": len(members), "message": f"已更新 {len(members)} 个账号的分组"}
 
 
 @router.get("/mail/config", summary="获取 supply.ink 取信配置状态")
@@ -71,7 +114,8 @@ def member_mail(member_id: int, db: Session = Depends(get_db)) -> dict:
 def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
     from app.services.okad_account_metadata import uses_supply_mail
     return ExternalMemberOut(
-        id=m.id, email=m.email, note=m.note,
+        id=m.id, email=m.email, note=m.note, group_id=m.group_id,
+        group_name=m.group.name if m.group else "",
         credits_available=m.credits_available, credits_total=m.credits_total,
         credits_error=m.credits_error or "",
         account_profile=m.account_profile,
@@ -90,7 +134,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
 
 
 def _sequential_login(members):
-    return any(m.force_code_login and m.otp_mode == "auto" for m in members)
+    return any(m.otp_mode == "vietnam" or (m.force_code_login and m.otp_mode == "auto") for m in members)
 
 
 def _start_login(members, db, operator):
@@ -116,7 +160,7 @@ def _active_jobs(ids):
 
 
 @router.patch("/members/{member_id}/otp-mode", summary="设置验证码自动获取或手动输入")
-def update_otp_mode(member_id: int, payload: ExternalOtpModeUpdate,
+def update_otp_mode(member_id: int, payload: ExternalOtpModeUpdate, background: BackgroundTasks,
                     db: Session = Depends(get_db)) -> dict:
     with _login_lock:
         member = crud.get(db, member_id)
@@ -124,8 +168,14 @@ def update_otp_mode(member_id: int, payload: ExternalOtpModeUpdate,
             raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
         if _active_jobs([member_id]) or manual_otp.BROKER.status(member_id):
             raise HTTPException(status_code=409, detail="账号正在登录，请结束本次任务后切换取码方式")
+        if payload.otp_mode == "vietnam":
+            if not (member.adobe_password or "").strip():
+                raise HTTPException(status_code=400, detail="越南登录需要 Adobe 密码，请用邮箱和密码覆盖导入")
+            member.force_code_login = False
         member.otp_mode = payload.otp_mode
         db.commit()
+    from app.services.okad_account_metadata import sync_current_metadata
+    background.add_task(sync_current_metadata)
     return {"otp_mode": member.otp_mode, "message": "取码方式已保存，下次登录生效"}
 
 
@@ -149,7 +199,7 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
     return {"message": "验证码已提交，正在继续登录"}
 
 
-def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
+def _member_filters(db, *, account_states=None, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
                     credits_min=None, credits_max=None):
     # created_at is stored as UTC without a timezone; accept browser-local
     # date boundaries with their offset and compare them in UTC.
@@ -164,6 +214,7 @@ def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, 
     if credits_min is not None and credits_max is not None and credits_min > credits_max:
         raise HTTPException(status_code=422, detail="积分最大值不能小于最小值")
     ids = None
+    stock = None
     if in_stock is not None or sub2_health is not None:
         stock = external_sub2_stock.membership(db)
         if not stock.get("ok"):
@@ -172,6 +223,14 @@ def _member_filters(db, *, in_stock=None, sub2_health=None, imported_from=None, 
                if (in_stock is None or item.get("in_stock") is in_stock)
                and (sub2_health is None or (item.get("in_stock") is True
                     and sub2_account_health.matches(item.get("account_health"), sub2_health)))]
+    if account_states:
+        from app.services import account_state_filter
+        if any(value.startswith('sub2_') for value in account_states) and stock is None:
+            stock = external_sub2_stock.membership(db)
+            if not stock.get("ok"):
+                raise HTTPException(status_code=503, detail=stock.get("message") or "Sub2 库存暂不可用，请稍后重试")
+        matched = account_state_filter.match_ids(db, account_states, stock)
+        ids = sorted(matched if ids is None else matched.intersection(ids))
     return dict(ids=ids, imported_from=imported_from, imported_before=imported_before,
                 credits_min=credits_min, credits_max=credits_max)
 
@@ -184,20 +243,24 @@ def list_members(
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
     sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
+    sub2_status: Sub2SyncStatus | None = None,
+    account_states: list[AccountState] | None = Query(None, max_length=32),
     credits_field: CreditsField = "available",
     credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
+    account_type: AccountType | None = None, group_id: int | None = Query(None, ge=0),
 ) -> Page[ExternalMemberOut]:
+    target = external_sub2.destination(external_sub2.config(db))
     items, total = crud.list_members(
         db, page=page, size=size, login_status=login_status,
         subscription_ok=subscription_ok, keyword=keyword,
-        credits_field=credits_field, current_profile=current_profile, is_company=is_company,
-        **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
+        credits_field=credits_field, current_profile=current_profile, is_company=is_company, account_type=account_type, group_id=group_id,
+        sub2_status=sub2_status, sub2_target=target,
+        **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
                           credits_min=credits_min, credits_max=credits_max),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
-    target = external_sub2.destination(external_sub2.config(db))
     return Page(items=[_to_out(m, (jobs.get(m.id) or [None])[0], target) for m in items], total=total, page=page, size=size)
 
 
@@ -283,9 +346,11 @@ def relink_sub2(payload: BatchIds, background: BackgroundTasks, db: Session = De
 @router.post("/members/import", summary="批量导入外部子号(并自动开批量登录任务)")
 def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)) -> dict:
+    _require_group(db, payload.group_id)
     result = crud.import_lines(db, payload.content, on_duplicate=payload.on_duplicate,
                                operator=user.username, profile_preference=payload.profile_preference,
-                               otp_mode=payload.otp_mode)
+                               otp_mode=payload.otp_mode, group_id=payload.group_id,
+                               assign_group="group_id" in payload.model_fields_set)
     ids = result.pop("ids", [])
     # 导入成功后自动开一个批量登录任务(任务列表可见、可看日志)
     if ids:
@@ -301,6 +366,12 @@ def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db)
             result["job_id"] = job_ids[0]
             result["job_ids"] = job_ids
     return result
+
+
+@router.post("/members/cancel-all-jobs", summary="终止所有外部子号登录任务")
+def cancel_all_jobs() -> dict:
+    with _login_lock:
+        return JOBS.cancel_all("external_login")
 
 
 @router.post("/members/batch-login", response_model=JobStatusOut, summary="批量登录刷新cookie")
@@ -324,7 +395,9 @@ def batch_login(payload: BatchIds, db: Session = Depends(get_db),
 def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)) -> dict:
     filters = payload.model_dump()
-    filters.update(_member_filters(db, in_stock=filters.pop("in_stock"),
+    if payload.sub2_status is not None:
+        filters["sub2_target"] = external_sub2.destination(external_sub2.config(db))
+    filters.update(_member_filters(db, account_states=filters.pop("account_states"), in_stock=filters.pop("in_stock"),
                                    sub2_health=filters.pop("sub2_health"),
                                    imported_from=filters.pop("imported_from"),
                                    imported_before=filters.pop("imported_before"),
@@ -370,14 +443,19 @@ def export_members(
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
     sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
+    sub2_status: Sub2SyncStatus | None = None,
+    account_states: list[AccountState] | None = Query(None, max_length=32),
     credits_field: CreditsField = "available",
     credits_min: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
+    account_type: AccountType | None = None, group_id: int | None = Query(None, ge=0),
 ) -> list[dict]:
+    target = external_sub2.destination(external_sub2.config(db)) if sub2_status is not None else ""
     return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
-                               credits_field=credits_field, current_profile=current_profile, is_company=is_company,
-                               **_member_filters(db, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
+                               credits_field=credits_field, current_profile=current_profile, is_company=is_company, account_type=account_type, group_id=group_id,
+                               sub2_status=sub2_status, sub2_target=target,
+                               **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
                                                  imported_before=imported_before,
                                                  credits_min=credits_min, credits_max=credits_max))
 

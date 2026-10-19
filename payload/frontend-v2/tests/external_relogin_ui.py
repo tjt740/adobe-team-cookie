@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from external_controls import select_value, expect_select
 from playwright.async_api import async_playwright, expect
 from external_controls import select_value, expect_select
 

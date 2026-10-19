@@ -36,7 +36,7 @@ class FakeClient:
                     "userId": "U1@AdobeID",
                     "firstName": "",
                     "profileData": {
-                        "actions": [{"code": "IncompleteProfile"}],
+                        "actions": [{"code": "IncompleteProfile", "status": "ENFORCED"}],
                         "links": [],
                     },
                 })
@@ -285,3 +285,39 @@ def test_rejected_password_is_not_submitted():
         complete_sub_account(StubAuth(client), "new@ex.com", lambda _: None,
                              password="Rejected", country="SG", locale="en_US")
     assert not client.puts
+
+
+@pytest.mark.parametrize("actions", [
+    [],
+    [{"code": "IncompleteProfile", "status": "SKIPPABLE"}],
+    [{"code": "IncompleteProfile", "status": "SKIPPED"}],
+    [{"code": "IncompleteProfile"}],
+])
+def test_missing_name_does_not_require_password_or_profile_update(actions):
+    client = FakeClient()
+    client.get = lambda *a, **kw: FakeResp(200, {
+        "userId": "OTP@AdobeID", "firstName": "",
+        "profileData": {"actions": actions, "links": []},
+    })
+    result = complete_sub_account(StubAuth(client), "otp@example.com", lambda _: None)
+    assert result == ""
+    assert not client.puts and not client.posts
+
+
+@pytest.mark.parametrize("first_name,actions", [
+    ("", []),
+    ("Existing", [{"code": "IncompleteProfile"}]),
+    ("Existing", [{"code": "IncompleteProfile", "status": "SKIPPABLE"}]),
+])
+def test_original_route_preserves_legacy_completion_rules(first_name, actions):
+    client = FakeClient()
+    client.get = lambda *a, **kw: FakeResp(200, {
+        "userId": "OTP@AdobeID", "firstName": first_name,
+        "profileData": {"actions": actions, "links": []},
+    })
+    password = complete_sub_account(
+        StubAuth(client), "otp@example.com", lambda _: None,
+        legacy_completion=True, country="SG", locale="en_US",
+    )
+    assert password and len(client.puts) == 1
+    assert client.puts[0]["json"]["account"]["password"] == password

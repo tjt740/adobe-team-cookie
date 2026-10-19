@@ -59,6 +59,24 @@ class PaginationFixtures(Fixtures):
 
 
 async def exercise(page, scope, row_selector):
+    await expect(scope.locator('.okad-page-size, .extv-page-size').first).to_be_visible()
+    if await scope.locator('.extv-page-size').count():
+        from external_controls import select_value, expect_select
+        form = scope.locator('.extv-page-size')
+        custom = form.locator('input[name=pageSize]')
+        await select_value(page, '#extm-page-size', '1000')
+        await expect(scope.locator(row_selector)).to_have_count(1000, timeout=20000)
+        await custom.fill('137')
+        await form.locator('button[type=submit]').click()
+        await expect(scope.locator(row_selector)).to_have_count(137, timeout=15000)
+        await expect_select(page, '#extm-page-size', '137')
+        for invalid in ['0', '-1', '1.5', '10001']:
+            await custom.fill(invalid)
+            await form.locator('button[type=submit]').click()
+            assert not await custom.evaluate('(el) => el.checkValidity()')
+            await expect_select(page, '#extm-page-size', '137')
+        await custom.fill('137')
+        return
     form = scope.locator('.okad-page-size').first
     select, custom = form.locator('select'), form.locator('input[name=pageSize]')
     await expect(select).to_be_enabled()

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.crud.email import _parse_email_line
 from app.models.external_member import ExternalMember
 from app.schemas.account_profile import ProfilePreference
-from app.schemas.external_member import CreditsField, CurrentProfileKind, OtpMode
+from app.schemas.external_member import AccountType, CreditsField, CurrentProfileKind, OtpMode, Sub2SyncStatus
 
 
 def get(db: Session, mid: int) -> ExternalMember | None:
@@ -32,7 +32,8 @@ def get_many(db: Session, ids: list[int]) -> list[ExternalMember]:
 
 def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, operator: str = "",
                  profile_preference: ProfilePreference | None = None,
-                 otp_mode: OtpMode | None = None) -> dict:
+                 otp_mode: OtpMode | None = None, group_id: int | None = None,
+                 assign_group: bool = False) -> dict:
     """导入邮箱、账号密码或完整邮箱凭据。
 
     同一次 ``content`` 内出现重复邮箱时(常见于粘贴的名单本身带重复行),
@@ -73,37 +74,39 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
             continue
         key = email.lower()
         row = seen.get(key)
-        if row is not None:
-            # 本次调用内的重复行:不再走 DB 查重/二次 INSERT,直接复用同一行对象。
-            if on_duplicate == "skip":
-                skipped += 1
-                continue
-            updated += 1
-            login_keys[key] = None
-        else:
+        if row is None:
             row = get_by_email(db, email)
-            if row is not None:
-                if on_duplicate == "skip":
-                    skipped += 1
-                    seen[key] = row
-                    continue
-                updated += 1
-            else:
-                row = ExternalMember(email=email)
-                db.add(row)
-                created += 1
+        if row is not None and on_duplicate == "skip":
+            skipped += 1
             seen[key] = row
-            login_keys[key] = None
+            continue
+        # 越南取码站只支持密码登录后的验证。覆盖时允许沿用已保存的密码。
+        mode = otp_mode or (row.otp_mode if row is not None else None) or "auto"
+        password = fields.get("adobe_password") or (row.adobe_password if row is not None else "") or ""
+        if mode == "vietnam" and not password.strip():
+            failed += 1
+            errors.append(f"第 {line_no} 行:越南登录需要 Adobe 密码，请填写邮箱和密码")
+            continue
+        if row is not None:
+            updated += 1
+        else:
+            row = ExternalMember(email=email)
+            db.add(row)
+            created += 1
+        seen[key] = row
+        login_keys[key] = None
         row.mail_password = fields.get("password") or row.mail_password
         # 导入行带了第 5 段就以它为准(覆盖此前自动写入的默认密码)
         row.adobe_password = fields.get("adobe_password") or row.adobe_password
-        row.force_code_login = email_only
+        row.force_code_login = email_only and mode != "vietnam"
         if otp_mode is not None:
             row.otp_mode = otp_mode
         row.client_id = cid or row.client_id
         row.refresh_token = rt or row.refresh_token
         row.mail_url = mail_url or row.mail_url
         row.operator = operator
+        if assign_group:
+            row.group_id = group_id
         if profile_preference is not None:
             row.profile_preference = profile_preference
         row.updated_at = datetime.now(timezone.utc)
@@ -126,6 +129,10 @@ def _filtered_members(
     credits_max: float | None = None,
     current_profile: CurrentProfileKind | None = None,
     is_company: bool | None = None,
+    account_type: AccountType | None = None,
+    group_id: int | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
+    sub2_target: str = "",
 ):
     stmt = select(ExternalMember)
     if ids is not None:
@@ -138,6 +145,10 @@ def _filtered_members(
         stmt = stmt.where(ExternalMember.login_status == login_status)
     if subscription_ok is not None:
         stmt = stmt.where(ExternalMember.subscription_ok == subscription_ok)
+    if sub2_status is not None:
+        # Match the status displayed for the current destination, before pagination.
+        sync_status = func.coalesce(ExternalMember.sub2_links[sub2_target]["status"].as_string(), "not_pushed")
+        stmt = stmt.where(sync_status == sub2_status)
     credits = ExternalMember.credits_total if credits_field == "total" else ExternalMember.credits_available
     if credits_min is not None:
         stmt = stmt.where(credits >= credits_min)
@@ -147,13 +158,22 @@ def _filtered_members(
         # Use the last actual login result, not the preference for the next login.
         kind = func.coalesce(ExternalMember.account_profile["current_kind"].as_string(), "unknown")
         stmt = stmt.where(kind == current_profile)
-    if is_company is not None:
+    if group_id is not None:
+        stmt = stmt.where(ExternalMember.group_id.is_(None) if group_id == 0 else ExternalMember.group_id == group_id)
+    if account_type == "vietnam":
+        stmt = stmt.where(ExternalMember.otp_mode == "vietnam")
+    if account_type == "non_company":
+        stmt = stmt.where(func.coalesce(ExternalMember.otp_mode, "auto") != "vietnam")
+    if is_company is not None or account_type in {"company", "non_company"}:
         # Match the uses_supply_mail label returned by the API, including partial credentials.
-        company = and_(func.coalesce(ExternalMember.otp_mode, "auto") != "manual",
+        company = and_(func.coalesce(ExternalMember.otp_mode, "auto") == "auto",
                        func.coalesce(ExternalMember.mail_url, "") == "",
                        or_(func.coalesce(ExternalMember.refresh_token, "") == "",
                            func.coalesce(ExternalMember.client_id, "") == ""))
-        stmt = stmt.where(company if is_company else ~company)
+        if is_company is not None:
+            stmt = stmt.where(company if is_company else ~company)
+        if account_type in {"company", "non_company"}:
+            stmt = stmt.where(company if account_type == "company" else ~company)
     if keyword:
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(ExternalMember.email.like(like), ExternalMember.message.like(like)))
@@ -176,12 +196,18 @@ def list_members(
     credits_max: float | None = None,
     current_profile: CurrentProfileKind | None = None,
     is_company: bool | None = None,
+    account_type: AccountType | None = None,
+    group_id: int | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
+    sub2_target: str = "",
 ) -> tuple[list[ExternalMember], int]:
     stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
                              keyword=keyword, ids=ids, imported_from=imported_from,
                              imported_before=imported_before, credits_field=credits_field,
                              credits_min=credits_min, credits_max=credits_max,
-                             current_profile=current_profile, is_company=is_company)
+                             current_profile=current_profile, is_company=is_company,
+                             account_type=account_type, group_id=group_id,
+                             sub2_status=sub2_status, sub2_target=sub2_target)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
         db.scalars(
@@ -205,12 +231,18 @@ def export_cookies(
     credits_max: float | None = None,
     current_profile: CurrentProfileKind | None = None,
     is_company: bool | None = None,
+    account_type: AccountType | None = None,
+    group_id: int | None = None,
+    sub2_status: Sub2SyncStatus | None = None,
+    sub2_target: str = "",
 ) -> list[dict]:
     stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
                              keyword=keyword, ids=ids, imported_from=imported_from,
                              imported_before=imported_before, credits_field=credits_field,
                              credits_min=credits_min, credits_max=credits_max,
-                             current_profile=current_profile, is_company=is_company).where(ExternalMember.cookie != "")
+                             current_profile=current_profile, is_company=is_company,
+                             account_type=account_type, group_id=group_id,
+                             sub2_status=sub2_status, sub2_target=sub2_target).where(ExternalMember.cookie != "")
     rows = db.scalars(stmt.order_by(ExternalMember.id.desc())).all()
     return [{"cookie": r.cookie} for r in rows if (r.cookie or "").strip()]
 
