@@ -555,19 +555,29 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
     poll = poll or _p.poll_otp
 
     def finish(current, capture):
-        try:
-            return _finish_firefly_token(auth, current, email, lf, capture,
-                                         profile_preference=profile_preference)
-        except _OrganizationProfileActivated:
-            # Do not enter account completion or set a password just because
-            # accepting an invitation invalidated the verified session.
-            lf("firefly:组织邀请激活已提交，重新认证后核对组织状态")
-            auth.susi_token = ""
-            return _acquire_firefly_token(
-                auth, email, lf, poll=poll, password=password, otp_timeout=otp_timeout,
-                force_code_login=force_code_login, password_only=password_only,
-                profile_preference=profile_preference,
-            )
+        activated = False
+        while True:
+            try:
+                return _finish_firefly_token(auth, current, email, lf, capture,
+                                             profile_preference=profile_preference)
+            except _OrganizationProfileActivated:
+                # Some Adobe sessions survive activation. Recheck that session
+                # first: immediately sending another OTP can be rejected with
+                # factor_unavailable even though the organization is usable.
+                activated = True
+                lf("firefly:组织邀请激活已提交，先沿用当前会话核对组织状态")
+            except _adm.AdminError as exc:
+                expired = getattr(exc, "status_code", None) in (401, 403)
+                stale_identity = str(exc) == "firefly 配置切换后身份不一致,停止保存 Cookie 和积分"
+                if not activated or not (expired or stale_identity):
+                    raise
+                lf("firefly:激活后会话已失效或身份未更新，重新认证后核对组织状态")
+                auth.susi_token = ""
+                return _acquire_firefly_token(
+                    auth, email, lf, poll=poll, password=password, otp_timeout=otp_timeout,
+                    force_code_login=force_code_login, password_only=password_only,
+                    profile_preference=profile_preference,
+                )
 
     if auth.susi_token:
         def capture_existing(r):
@@ -685,6 +695,7 @@ def _pick_enterprise_profile(
     a2._profiles_complete = False
     a2._organization_links = []
     a2._organization_lookup_error = ""
+    a2._organization_lookup_status = 0
     disabled_ids = {p.get("userId") for p in (fps or [])
                     if isinstance(p, dict) and p.get("disabled")}
     try:
@@ -703,6 +714,7 @@ def _pick_enterprise_profile(
         a2._profiles_complete = r.status_code == 200
         if r.status_code != 200:
             a2._organization_lookup_error = f"读取组织配置失败（HTTP {r.status_code}）"
+            a2._organization_lookup_status = r.status_code
         a2._organization_links = [lk for lk in links if isinstance(lk, dict)]
         a2._available_profiles.extend(
             {"profile_id": lk.get("entitlementAccountUserId") or "",
@@ -756,7 +768,7 @@ def _prefer_organization_profile(auth, a2, personal_guid, lf, cap):
     """Try every eligible organization before publishing a personal fallback."""
     if a2._organization_lookup_error:
         # Missing evidence is not proof that the account has no usable team.
-        raise _adm.AdminError(a2._organization_lookup_error)
+        raise _ProfileSwitchRejected(a2._organization_lookup_error, a2._organization_lookup_status)
     attempts = getattr(auth, "_organization_activation_attempts", None)
     if attempts is None:
         attempts = auth._organization_activation_attempts = {}
@@ -847,7 +859,7 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
         headers=a2.headers(), timeout=15)
     cap(r)
     if profile_preference == "organization" and r.status_code != 200:
-        raise _adm.AdminError(f"读取账号配置失败（HTTP {r.status_code}），无法确认组织配置")
+        raise _ProfileSwitchRejected(f"读取账号配置失败（HTTP {r.status_code}），无法确认组织配置", r.status_code)
     fps = ((r.json() or {}).get("filteredProfiles") or []) if r.status_code == 200 else []
     personal_guid = next((p.get("userId") for p in fps if isinstance(p, dict)
                           and not p.get("disabled")

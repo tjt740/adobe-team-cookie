@@ -13,11 +13,12 @@ def invitation(name="NOvA LIMA", guid=ORG, **values):
 
 class InvitationClient(ProfileClient):
     def __init__(self, links, *, activation_status=200, becomes_active=True,
-                 activation_error=None, personal=True, reason=1000):
+                 activation_error=None, personal=True, reason=1000, invalidates_session=True):
         super().__init__(links, personal=personal, reason=reason)
         self.activation_status = activation_status
         self.becomes_active = becomes_active
         self.activation_error = activation_error
+        self.invalidates_session = invalidates_session
         self.activations = []
         self.needs_login = False
         self.reauthentications = []
@@ -45,7 +46,7 @@ class InvitationClient(ProfileClient):
                     if url.endswith(item.get("ident", "__missing__")) and self.becomes_active:
                         item["status"] = "active"
                 # Adobe may revoke the old session as soon as activation commits.
-                self.needs_login = True
+                self.needs_login = self.invalidates_session
             if self.activation_error is not None:
                 raise self.activation_error
             return response(status=self.activation_status)
@@ -114,6 +115,16 @@ def test_invitation_activates_reauthenticates_and_preserves_org_identity(monkeyp
     assert record["credits"] == 0 and not any("回退到个人" in line for line in logs)
 
 
+@pytest.mark.parametrize("personal", [False, True])
+def test_valid_session_after_activation_does_not_request_another_code(monkeypatch, personal):
+    remote = InvitationClient([invitation()], personal=personal, invalidates_session=False)
+    record, _, sessions = register(monkeypatch, remote)
+    assert len(remote.activations) == 1 and len(sessions) == 1
+    assert remote.reauthentications == [] and remote.switches == [ORG]
+    assert record["account_profile"]["current_kind"] == "organization"
+    assert record["account_profile"]["fallback_reason"] == ""
+
+
 @pytest.mark.parametrize("mode,expected", [("rejected", "HTTP 403"),
                                             ("unchanged", "提交激活后仍为 invited"),
                                             ("missing_ident", "缺少激活编号"),
@@ -158,6 +169,24 @@ def test_deleted_disabled_and_inactive_orgs_are_explained_without_activation(mon
     reason = record["account_profile"]["fallback_reason"]
     assert all(text in reason for text in ("疑似已删除", "已停用", "inactive"))
     assert remote.activations == [] and remote.switches == [PERSON]
+
+
+@pytest.mark.parametrize("name", ["del-xxx", "DEL-xxx", "  Del-xxx  "])
+@pytest.mark.parametrize("status", ["active", "invited"])
+@pytest.mark.parametrize("has_other_org", [False, True])
+def test_del_prefix_skips_activation_and_profile_login(monkeypatch, name, status, has_other_org):
+    remote = InvitationClient([invitation(name, "deleted.e", status=status)])
+    if has_other_org:
+        remote.links.append(link("Healthy Team"))
+    record, _, _ = register(monkeypatch, remote)
+    assert remote.activations == []
+    assert remote.switches == [ORG if has_other_org else PERSON]
+    profile = record["account_profile"]
+    assert next(p for p in profile["profiles"] if p["profile_id"] == "deleted.e")["status"] == "suspected_deleted"
+    if has_other_org:
+        assert profile["current_kind"] == "organization" and profile["fallback_reason"] == ""
+    else:
+        assert profile["current_kind"] == "personal" and "疑似已删除" in profile["fallback_reason"]
 
 
 def test_rejected_active_org_does_not_hide_another_invited_org(monkeypatch):
