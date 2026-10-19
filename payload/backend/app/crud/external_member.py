@@ -73,31 +73,31 @@ def import_lines(db: Session, content: str, on_duplicate: str = "skip", *, opera
             continue
         key = email.lower()
         row = seen.get(key)
-        if row is not None:
-            # 本次调用内的重复行:不再走 DB 查重/二次 INSERT,直接复用同一行对象。
-            if on_duplicate == "skip":
-                skipped += 1
-                continue
-            updated += 1
-            login_keys[key] = None
-        else:
+        if row is None:
             row = get_by_email(db, email)
-            if row is not None:
-                if on_duplicate == "skip":
-                    skipped += 1
-                    seen[key] = row
-                    continue
-                updated += 1
-            else:
-                row = ExternalMember(email=email)
-                db.add(row)
-                created += 1
+        if row is not None and on_duplicate == "skip":
+            skipped += 1
             seen[key] = row
-            login_keys[key] = None
+            continue
+        # 越南取码站只支持密码登录后的验证。覆盖时允许沿用已保存的密码。
+        mode = otp_mode or (row.otp_mode if row is not None else None) or "auto"
+        password = fields.get("adobe_password") or (row.adobe_password if row is not None else "") or ""
+        if mode == "vietnam" and not password.strip():
+            failed += 1
+            errors.append(f"第 {line_no} 行:越南登录需要 Adobe 密码，请填写邮箱和密码")
+            continue
+        if row is not None:
+            updated += 1
+        else:
+            row = ExternalMember(email=email)
+            db.add(row)
+            created += 1
+        seen[key] = row
+        login_keys[key] = None
         row.mail_password = fields.get("password") or row.mail_password
         # 导入行带了第 5 段就以它为准(覆盖此前自动写入的默认密码)
         row.adobe_password = fields.get("adobe_password") or row.adobe_password
-        row.force_code_login = email_only
+        row.force_code_login = email_only and mode != "vietnam"
         if otp_mode is not None:
             row.otp_mode = otp_mode
         row.client_id = cid or row.client_id
@@ -155,7 +155,7 @@ def _filtered_members(
         stmt = stmt.where(kind == current_profile)
     if is_company is not None:
         # Match the uses_supply_mail label returned by the API, including partial credentials.
-        company = and_(func.coalesce(ExternalMember.otp_mode, "auto") != "manual",
+        company = and_(func.coalesce(ExternalMember.otp_mode, "auto") == "auto",
                        func.coalesce(ExternalMember.mail_url, "") == "",
                        or_(func.coalesce(ExternalMember.refresh_token, "") == "",
                            func.coalesce(ExternalMember.client_id, "") == ""))

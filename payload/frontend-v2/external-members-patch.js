@@ -6,7 +6,7 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261018-nowrap', document.currentScript.src).href;
+  var viewURL = new URL('./external-members-view.js?v=20261019-vietnam-login', document.currentScript.src).href;
   var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
@@ -387,7 +387,7 @@
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
-        '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
+        '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'vietnam' ? '越南登录' : r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
@@ -442,7 +442,7 @@
   function editOtpMode(id) {
     var row = rowById(id); if (!row || running(row) || st.profileSaving.has(id) || el('extm-mode-dialog')) return;
     var dialog = document.createElement('dialog'); dialog.id = 'extm-mode-dialog'; dialog.className = 'extm-note-dialog extm-mode-dialog'; dialog.setAttribute('aria-labelledby', 'extm-mode-title');
-    dialog.innerHTML = '<form><h3 id="extm-mode-title">验证码获取方式</h3><p>' + esc(row.email) + '</p><label for="extm-member-mode">取码方式</label><select id="extm-member-mode" class="extm-in" data-otp-mode="' + id + '"><option value="auto">自动取码</option><option value="manual">手动填写验证码</option></select><p class="extm-mode-help">自动取码使用已有邮箱配置或 supply.ink。普通邮箱请选择手动填写，登录时从邮件复制验证码。</p><div class="extm-note-error" role="alert"></div><footer><button type="button" class="extm-btn dft" data-close>取消</button><button type="submit" class="extm-btn">保存设置</button></footer></form>';
+    dialog.innerHTML = '<form><h3 id="extm-mode-title">验证码获取方式</h3><p>' + esc(row.email) + '</p><label for="extm-member-mode">取码方式</label><select id="extm-member-mode" class="extm-in" data-otp-mode="' + id + '"><option value="auto">自动取码</option><option value="manual">手动填写验证码</option><option value="vietnam">越南登录（密码 + 自动接码）</option></select><p class="extm-mode-help">自动取码使用已有邮箱配置或 supply.ink；普通邮箱可手动填写。越南登录需要已保存的 Adobe 密码，出现邮箱验证时自动接码，仅适用于越南取码站支持的账号。</p><div class="extm-note-error" role="alert"></div><footer><button type="button" class="extm-btn dft" data-close>取消</button><button type="submit" class="extm-btn">保存设置</button></footer></form>';
     var select = dialog.querySelector('select'), save = dialog.querySelector('[type=submit]'), cancel = dialog.querySelector('[data-close]'), error = dialog.querySelector('[role=alert]'), busy = false;
     select.value = row.otp_mode || 'auto';
     cancel.onclick = function () { dialog.close(); };

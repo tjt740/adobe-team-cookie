@@ -444,6 +444,10 @@ def _poll_email_code_with_retry(
         # 手动填码需要切到邮箱查看，保留完整等待时间；到期由用户重登。
         lf(f"等待手动输入验证码(最多 {otp_timeout}s)…")
         return poll(email, timeout=otp_timeout)
+    if getattr(poll, "single_wait", False):
+        # 异步取码站的一次任务可能超过 30 秒，不能中途重发使已在取的码失效。
+        lf(f"等待自动取码任务完成(最多 {otp_timeout}s)…")
+        return poll(email, timeout=otp_timeout)
     per_try = _otp_per_try_seconds(otp_timeout)
     last_err: Exception | None = None
     for attempt in range(1, _OTP_RETRY_ATTEMPTS + 1):

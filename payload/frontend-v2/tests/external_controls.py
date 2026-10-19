@@ -11,7 +11,7 @@ LABELS = {
     'status': {'': '全部状态', 'ok': '正常', 'never': '未登录', 'login_failed': '登录失败'},
     'sub': {'': '全部订阅', 'true': '订阅正常', 'false': '掉订阅'},
     'credits-field': {'available': '可用积分', 'total': '总积分'},
-    'otp-mode': {'': '保留设置（新账号自动取码）', 'auto': '自动取码（supply.ink）', 'manual': '手动输入验证码（普通账号）'},
+    'otp-mode': {'': '保留设置（新账号自动取码）', 'auto': '自动取码（supply.ink）', 'manual': '手动输入验证码（普通账号）', 'vietnam': '越南登录（密码 + 自动接码）'},
     'dup': {'skip': '跳过', 'overwrite': '覆盖'},
 }
 

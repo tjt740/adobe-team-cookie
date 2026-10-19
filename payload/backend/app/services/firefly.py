@@ -529,6 +529,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
                            poll=None, password: str = "",
                            otp_timeout: int = 180,
                            force_code_login: bool = False,
+                           password_only: bool = False,
                            profile_preference: ProfilePreference = "",
                            reuse_only: bool = False) -> str:
     """优先沿用已验证的登录会话;会话失效时才重新认证。
@@ -575,6 +576,8 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         不要预先建 authState。它还处理了「刚用 incompleteAccount 收过码,
         codeLogin 因子短暂 factor_unavailable」的冷却重试。
         """
+        if password_only:
+            raise _adm.AdminError("越南登录的 Adobe 密码认证失败，请检查密码后重试")
         lf(f"firefly type2e:改用验证码登录({why})")
         _adm._browser_code_login(a2, email, lf, poll=poll, otp_timeout=otp_timeout)
         lf("firefly type2e:验证码会话已建立")
@@ -625,6 +628,8 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         # 密码被拒(常见:这个号本来就已补全,密码不是我们设的)。以前到这里直接抛
         # "type2e 密码登录失败 401 invalid_authentication",整个号就废了;现在退回
         # 验证码登录再试一次 —— 验证码不需要知道密码。
+        if password_only:
+            raise _adm.AdminError("越南登录的 Adobe 密码认证失败，请检查密码后重试")
         lf(f"firefly type2e:密码登录被拒 {r.status_code} "
            f"{jd.get('errorCode','')},退回验证码")
         code_login("密码登录被拒")
@@ -861,7 +866,7 @@ def _try_password_session(auth, email: str, password: str, lf, *, poll, otp_time
         return True
     if response.status_code == 429:
         raise _adm.AdminError("Adobe 密码登录被限流（429），请稍后重试")
-    lf("密码登录未建立会话，改用邮箱验证码登录…")
+    lf("密码登录未建立会话")
     return False
 
 
@@ -872,6 +877,7 @@ def register_account(
     otp_poller: Optional[Callable[..., str]] = None,
     account_id: str = "", adobe_password: str = "",
     force_code_login: bool = False,
+    password_only: bool = False,
     profile_preference: ProfilePreference = "",
     log: Optional[LogFn] = None,
     on_credentials: Optional[Callable[..., None]] = None,
@@ -883,6 +889,8 @@ def register_account(
     lf = _mklog(log)
     if profile_preference not in ("", "personal", "organization"):
         raise ValueError("无效的登录配置")
+    if password_only and (not (adobe_password or "").strip() or force_code_login):
+        raise _adm.AdminError("越南登录需要 Adobe 密码，并使用密码登录")
     if otp_poller is None and (force_code_login or not adobe_password) and not ((refresh_token and client_id) or mail_url or supply_token):
         raise _adm.AdminError("验证码登录需要取信配置，请先保存 supply.ink Token，或提供完整邮箱凭据 / 取信接口")
 
@@ -905,6 +913,7 @@ def register_account(
                 on_credentials(refresh_token=holder.refresh_token)
 
     poller.manual_input = bool(getattr(poll_codes, "manual_input", False))
+    poller.single_wait = bool(getattr(poll_codes, "single_wait", False))
 
     client = _p.HttpClient(proxy=proxy_url)
     try:
@@ -919,6 +928,9 @@ def register_account(
             auth, email, adobe_password, lf, poll=poller, otp_timeout=otp_timeout,
         )
         if not password_logged_in:
+            if password_only:
+                raise _adm.AdminError("越南登录的 Adobe 密码认证失败，请检查密码后重试")
+            lf("改用邮箱验证码登录…")
             _adm._passwordless_login(auth, email, lf, poll=poller, otp_timeout=otp_timeout)
         # Adobe 的 OTP 账号可能仍带 IncompleteProfile=ENFORCED，但当前会话
         # 已能取得有效 Firefly token。先验证现有会话，避免无谓设置密码/改资料。
@@ -928,6 +940,7 @@ def register_account(
             token = _acquire_firefly_token(
                 auth, email, lf, poll=poller, password=adobe_password,
                 otp_timeout=otp_timeout, force_code_login=force_code_login,
+                password_only=password_only,
                 profile_preference=profile_preference, reuse_only=True,
             )
             cookie = _adm._session_cookie_str(client)
@@ -952,6 +965,7 @@ def register_account(
                 token = _acquire_firefly_token(
                     auth, email, lf, poll=poller, password=pwd,
                     otp_timeout=otp_timeout, force_code_login=force_code_login,
+                    password_only=password_only,
                     profile_preference=profile_preference,
                 )
                 cookie = _adm._session_cookie_str(client)

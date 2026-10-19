@@ -12,7 +12,7 @@ from app.models.adobe_member import AdobeMember
 
 
 def uses_supply_mail(member):
-    return bool(member.otp_mode != "manual" and not member.mail_url
+    return bool(member.otp_mode == "auto" and not member.mail_url
                 and not (member.refresh_token and member.client_id))
 
 

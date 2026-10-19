@@ -8,7 +8,7 @@ from app.schemas.account_profile import AccountProfile, ProfilePreference
 
 AccountState = Annotated[str, StringConstraints(pattern=r"^(ok|never|login_failed|account_disabled|rate_limited|internal|has_cookie|no_cookie|has_password|no_password|task_(pending|running|otp|done|failed|interrupted|cancelled|paused|pausing|cancelling)|sub2_(error|other|recovered|unknown|[45][0-9]{2}))$")]
 
-OtpMode = Literal["auto", "manual"]
+OtpMode = Literal["auto", "manual", "vietnam"]
 CreditsField = Literal["available", "total"]
 Sub2SyncStatus = Literal["not_pushed", "pending", "syncing", "synced", "failed"]
 CurrentProfileKind = Literal["personal", "organization", "unknown"]

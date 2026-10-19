@@ -90,7 +90,7 @@ def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
 
 
 def _sequential_login(members):
-    return any(m.force_code_login and m.otp_mode == "auto" for m in members)
+    return any(m.otp_mode == "vietnam" or (m.force_code_login and m.otp_mode == "auto") for m in members)
 
 
 def _start_login(members, db, operator):
@@ -124,6 +124,10 @@ def update_otp_mode(member_id: int, payload: ExternalOtpModeUpdate,
             raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
         if _active_jobs([member_id]) or manual_otp.BROKER.status(member_id):
             raise HTTPException(status_code=409, detail="账号正在登录，请结束本次任务后切换取码方式")
+        if payload.otp_mode == "vietnam":
+            if not (member.adobe_password or "").strip():
+                raise HTTPException(status_code=400, detail="越南登录需要 Adobe 密码，请用邮箱和密码覆盖导入")
+            member.force_code_login = False
         member.otp_mode = payload.otp_mode
         db.commit()
     return {"otp_mode": member.otp_mode, "message": "取码方式已保存，下次登录生效"}
