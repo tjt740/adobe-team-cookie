@@ -304,6 +304,18 @@ def test_missing_name_does_not_require_password_or_profile_update(actions):
     assert not client.puts and not client.posts
 
 
+def test_organization_preference_owns_activation_across_login_routes():
+    client = FakeClient()
+    client.get = lambda *a, **kw: FakeResp(200, {
+        "userId": "OTP@AdobeID", "firstName": "Existing",
+        "profileData": {"actions": [], "links": [
+            {"ident": "invitation", "status": "invited", "description": "NOvA LIMA"}]},
+    })
+    complete_sub_account(StubAuth(client), "otp@example.com", lambda _: None,
+                         legacy_completion=True, activate_profiles=False)
+    assert not client.puts and not client.posts
+
+
 @pytest.mark.parametrize("first_name,actions", [
     ("", []),
     ("Existing", [{"code": "IncompleteProfile"}]),

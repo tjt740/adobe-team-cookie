@@ -42,6 +42,18 @@ class LoginRoutesExhausted(_adm.AdminError):
         )
 
 
+class _OrganizationProfileActivated(Exception):
+    """Activation can invalidate the session; authenticate again before verification."""
+
+
+class _ProfileSwitchRejected(_adm.AdminError):
+    """An explicit Adobe response rejected the requested profile."""
+
+    def __init__(self, message, status_code):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 CLIO_CLIENT_ID = "clio-playground-web"
 FIREFLY_REDIRECT = "https://firefly.adobe.com/"
 
@@ -541,6 +553,22 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
     企业 account_id 记到 auth._enterprise_account_id 供 fetch_credits(x-account-id)使用。
     """
     poll = poll or _p.poll_otp
+
+    def finish(current, capture):
+        try:
+            return _finish_firefly_token(auth, current, email, lf, capture,
+                                         profile_preference=profile_preference)
+        except _OrganizationProfileActivated:
+            # Do not enter account completion or set a password just because
+            # accepting an invitation invalidated the verified session.
+            lf("firefly:组织邀请激活已提交，重新认证后核对组织状态")
+            auth.susi_token = ""
+            return _acquire_firefly_token(
+                auth, email, lf, poll=poll, password=password, otp_timeout=otp_timeout,
+                force_code_login=force_code_login, password_only=password_only,
+                profile_preference=profile_preference,
+            )
+
     if auth.susi_token:
         def capture_existing(r):
             auth.auth_state_encrypted = r.headers.get(
@@ -550,7 +578,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
 
         lf("firefly:沿用已验证的登录会话,切换账号资料并获取 token")
         try:
-            return _finish_firefly_token(auth, auth, email, lf, capture_existing, profile_preference=profile_preference)
+            return finish(auth, capture_existing)
         except _adm.AdminError as exc:
             if reuse_only:
                 raise
@@ -586,7 +614,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
     # 密码不是我们设的」那种号(导入的/别人跑的)必然 401 invalid_authentication。
     if force_code_login or not password:
         code_login("强制" if force_code_login else "没有该号的 Adobe 密码")
-        return _finish_firefly_token(auth, a2, email, lf, cap, profile_preference=profile_preference)
+        return finish(a2, cap)
 
     # a2 是新的 Sunbreak 客户端,不能只共享 cookie 就直接提交密码。
     # 必须先建立这个客户端的认证状态,否则 Adobe 返回 invalid_auth_session,
@@ -633,10 +661,10 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         lf(f"firefly type2e:密码登录被拒 {r.status_code} "
            f"{jd.get('errorCode','')},退回验证码")
         code_login("密码登录被拒")
-        return _finish_firefly_token(auth, a2, email, lf, cap, profile_preference=profile_preference)
+        return finish(a2, cap)
     a2.susi_token = tok
     lf("firefly type2e:密码会话已建立")
-    return _finish_firefly_token(auth, a2, email, lf, cap, profile_preference=profile_preference)
+    return finish(a2, cap)
 
 
 def _pick_enterprise_profile(
@@ -655,6 +683,8 @@ def _pick_enterprise_profile(
         for p in (fps or []) if isinstance(p, dict)
     ]
     a2._profiles_complete = False
+    a2._organization_links = []
+    a2._organization_lookup_error = ""
     disabled_ids = {p.get("userId") for p in (fps or [])
                     if isinstance(p, dict) and p.get("disabled")}
     try:
@@ -668,7 +698,12 @@ def _pick_enterprise_profile(
             headers=a2.headers(), timeout=15)
         data = r.json() if r.status_code == 200 else {}
         links = ((data.get("profileData") or {}).get("links")) or []
+        if not isinstance(links, list):
+            raise ValueError("invalid organization links")
         a2._profiles_complete = r.status_code == 200
+        if r.status_code != 200:
+            a2._organization_lookup_error = f"读取组织配置失败（HTTP {r.status_code}）"
+        a2._organization_links = [lk for lk in links if isinstance(lk, dict)]
         a2._available_profiles.extend(
             {"profile_id": lk.get("entitlementAccountUserId") or "",
              "name": lk.get("description") or "", "kind": "organization",
@@ -711,8 +746,97 @@ def _pick_enterprise_profile(
         pick = usable[0]
         return pick.get("entitlementAccountUserId") or "", pick.get("description") or ""
     except Exception as e:  # noqa: BLE001
+        a2._profiles_complete = False
+        a2._organization_lookup_error = "读取组织配置请求失败，无法确认可用组织"
         lf(f"firefly 取证:accounts/me 异常:{e}")
     return "", ""
+
+
+def _prefer_organization_profile(auth, a2, personal_guid, lf, cap):
+    """Try every eligible organization before publishing a personal fallback."""
+    if a2._organization_lookup_error:
+        # Missing evidence is not proof that the account has no usable team.
+        raise _adm.AdminError(a2._organization_lookup_error)
+    attempts = getattr(auth, "_organization_activation_attempts", None)
+    if attempts is None:
+        attempts = auth._organization_activation_attempts = {}
+    rejected = getattr(auth, "_organization_profile_rejections", None)
+    if rejected is None:
+        rejected = auth._organization_profile_rejections = {}
+    profiles = {p["profile_id"]: p for p in a2._available_profiles}
+    links = sorted(a2._organization_links, key=lambda lk: lk.get("status", "active") != "active")
+    reasons = []
+    for lk in links:
+        guid = lk.get("entitlementAccountUserId") or ""
+        label = "组织「" + str(lk.get("description") or "未命名组织")[:80] + "」"
+        item = profiles.get(guid, {})
+        state = item.get("status") or lk.get("status") or "active"
+        if not guid:
+            reasons.append(label + "缺少配置编号")
+            continue
+        if state in ("disabled", "suspected_deleted"):
+            reasons.append(label + ("已停用" if state == "disabled" else "疑似已删除"))
+            continue
+        if guid in rejected:
+            reasons.append(label + rejected[guid])
+            if rejected[guid] == "授权已过期（reason=2000）":
+                item["status"] = "expired"
+            continue
+        if state == "invited":
+            if guid not in attempts:
+                ident = lk.get("ident")
+                if not ident:
+                    attempts[guid] = "邀请缺少激活编号，无法提交激活"
+                else:
+                    # Record before POST: neither a timeout nor reauthentication
+                    # may replay an invitation whose result is uncertain.
+                    attempts[guid] = "提交激活后仍为 invited，尚未激活"
+                    lf(f"firefly:尝试激活 {label} 的 invited 邀请")
+                    try:
+                        r = a2.client.post(
+                            f"{_p.AUTH_HOST}/signin/v2/links/{ident}",
+                            headers=a2.headers(), json={"status": "active"}, timeout=15,
+                        )
+                        cap(r)
+                    except Exception:
+                        attempts[guid] = "激活请求未取得响应，重新认证核对后仍为 invited"
+                        raise _OrganizationProfileActivated from None
+                    if 200 <= r.status_code < 300:
+                        raise _OrganizationProfileActivated
+                    attempts[guid] = f"邀请激活失败（HTTP {r.status_code}）"
+                    if r.status_code >= 500 or r.status_code in (401, 408, 429):
+                        attempts[guid] += "，重新认证核对后仍为 invited"
+                        raise _OrganizationProfileActivated
+            reasons.append(label + attempts[guid])
+            continue
+        if state != "active":
+            reasons.append(label + "未激活（状态 " + str(state)[:40] + "）")
+            continue
+        lf(f"firefly:选择组织配置「{lk.get('description') or '未命名组织'}」 guid={guid}")
+        try:
+            token, context = _switch_firefly_profile(auth, a2, guid, lf, cap)
+        except _ProfileSwitchRejected as exc:
+            if exc.status_code >= 500 or exc.status_code in (401, 408, 429):
+                # An expired session, outage or rate limit does not prove that
+                # the organization itself is unavailable. Let login retry it.
+                raise
+            rejected[guid] = str(exc)
+            reasons.append(label + rejected[guid])
+            continue
+        if (context.get("access_profile_status") == 200
+                and str(context.get("access_profile_status_reason")) == "2000"):
+            item["status"] = "expired"
+            rejected[guid] = "授权已过期（reason=2000）"
+            reasons.append(label + rejected[guid])
+            continue
+        return token, context, guid
+    reason = "；".join(dict.fromkeys(reasons)) or "Adobe 未返回组织配置"
+    if not personal_guid:
+        raise _adm.AdminError("组织配置不可用，且没有可回退的个人配置：" + reason)
+    lf("firefly:回退到个人配置，原因：" + reason)
+    token, context = _switch_firefly_profile(auth, a2, personal_guid, lf, cap)
+    context["profile_fallback_reason"] = reason
+    return token, context, personal_guid
 
 
 def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
@@ -722,28 +846,33 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
         f"{_p.AUTH_HOST}/signin/v2/accounts/filtered_profiles?filter=isSessionForwardProfile%28%29",
         headers=a2.headers(), timeout=15)
     cap(r)
+    if profile_preference == "organization" and r.status_code != 200:
+        raise _adm.AdminError(f"读取账号配置失败（HTTP {r.status_code}），无法确认组织配置")
     fps = ((r.json() or {}).get("filteredProfiles") or []) if r.status_code == 200 else []
     personal_guid = next((p.get("userId") for p in fps if isinstance(p, dict)
                           and not p.get("disabled")
                           and (p.get("userId") or "").endswith("@AdobeID")), "")
     lf(f"firefly:filtered_profiles status={r.status_code} personal_guid={personal_guid or '-'}")
     org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps,
-                                                select_organization=profile_preference != "personal")
+                                                select_organization=not profile_preference)
     a2._profiles_complete = a2._profiles_complete and r.status_code == 200
     ent_guid = org_guid or personal_guid
     if profile_preference == "personal":
         lf("firefly:按指定设置使用个人配置")
         if not personal_guid:
             raise _adm.AdminError("指定的个人配置不可用，请检查账号或改选组织配置后重试")
-    elif not org_guid and personal_guid:
+    elif not profile_preference and not org_guid and personal_guid:
         lf("firefly:没有可用的非删除组织配置，回退到个人配置")
-    if not ent_guid:
+    if not ent_guid and profile_preference != "organization":
         raise _adm.AdminError("未找到可用的组织或个人配置,不会选择疑似已删除或已停用的配置")
-    lf(f"firefly:选择{'组织配置「' + org_desc + '」' if org_guid else '个人配置'} guid={ent_guid}")
-    token, context = _switch_firefly_profile(auth, a2, ent_guid, lf, cap)
+    if profile_preference == "organization":
+        token, context, ent_guid = _prefer_organization_profile(auth, a2, personal_guid, lf, cap)
+    else:
+        lf(f"firefly:选择{'组织配置「' + org_desc + '」' if org_guid else '个人配置'} guid={ent_guid}")
+        token, context = _switch_firefly_profile(auth, a2, ent_guid, lf, cap)
     # Reason 2000 is the observed Adobe response for expired/non-compliant
     # licenses. Zero credits or unavailable metadata alone do not imply expiry.
-    if (org_guid and context.get("access_profile_status") == 200
+    if (profile_preference != "organization" and org_guid and context.get("access_profile_status") == 200
             and str(context.get("access_profile_status_reason")) == "2000"):
         for item in a2._available_profiles:
             if item["profile_id"] == org_guid:
@@ -752,10 +881,11 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
             lf("firefly:组织配置授权已过期(reason=2000),回退到个人配置")
             ent_guid = personal_guid
             token, context = _switch_firefly_profile(auth, a2, ent_guid, lf, cap)
+            context["profile_fallback_reason"] = "组织「" + org_desc + "」授权已过期（reason=2000）"
         else:
             lf("firefly:组织配置授权已过期,没有可回退的个人配置")
     context.update(available_profiles=a2._available_profiles,
-                   profiles_complete=a2._profiles_complete)
+                   profiles_complete=a2._profiles_complete, profile_preference=profile_preference)
     auth.susi_token = token
     auth._enterprise_account_id = ent_guid
     auth._firefly_context = context
@@ -773,7 +903,7 @@ def _switch_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
     cap(r)
     lf(f"firefly:filterprofilemapping status={r.status_code}")
     if not 200 <= r.status_code < 300:
-        raise _adm.AdminError(f"firefly 配置切换失败 status={r.status_code}")
+        raise _ProfileSwitchRejected(f"配置切换失败（HTTP {r.status_code}）", r.status_code)
 
     # ims/tokens force
     try:
@@ -810,7 +940,9 @@ def _switch_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
     acct = data.get("account_type") or ""
     lf(f"firefly type2e:check/v6/token account_type={acct} got_token={bool(tok3)}")
     if r.status_code != 200 or not tok3:
-        raise _adm.AdminError(f"firefly check/v6/token 未返回 token status={r.status_code}")
+        if r.status_code != 200:
+            raise _ProfileSwitchRejected(f"获取配置 Token 失败（HTTP {r.status_code}）", r.status_code)
+        raise _adm.AdminError("firefly check/v6/token 未返回 token status=200")
     actual_id = data.get("userId") or extract_account_id(tok3)
     expected_type = "type1" if ent_guid.endswith("@AdobeID") else "type2e"
     if actual_id != ent_guid or acct != expected_type:
@@ -958,6 +1090,7 @@ def register_account(
                 set_password = _adm.complete_sub_account(
                     auth, email, lf, poll=poller, otp_timeout=otp_timeout,
                     legacy_completion=True,
+                    activate_profiles=profile_preference != "organization",
                 )
                 if set_password and on_credentials:
                     on_credentials(adobe_password=set_password)
