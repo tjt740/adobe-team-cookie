@@ -81,6 +81,7 @@ def _login_with_proxy_retry(
     password_only: bool = False,
     profile_preference: ProfilePreference = "",
     on_credentials=None,
+    check_cancelled=None,
     network_retries: int = MAX_NETWORK_RETRIES,
 ) -> tuple[dict | None, Exception | None]:
     """跑协议登录,网络/代理失败时换一个出口 IP 再试。返回 ``(rec, last_exc)``。
@@ -93,12 +94,16 @@ def _login_with_proxy_retry(
 
     def update_credentials(**values):
         nonlocal refresh_token, adobe_password
+        if check_cancelled:
+            check_cancelled()
         refresh_token = values.get("refresh_token") or refresh_token
         adobe_password = values.get("adobe_password") or adobe_password
         if on_credentials:
             on_credentials(**values)
 
     for attempt in range(network_retries + 1):
+        if check_cancelled:
+            check_cancelled()
         proxy = proxy_pool.random_proxy(proxy_raw, exclude=used)
         if attempt == 0:
             lf(f"[{email}] 协议登录(proxy={'有' if proxy else '无'})…")
@@ -136,6 +141,8 @@ def _login_with_proxy_retry(
                 break
             lf(f"🌐 [{email}] 网络/代理失败:{str(e)[:160]}")
             continue
+        if check_cancelled:
+            check_cancelled()
         proxy_pool.report_success(proxy)
         return rec, None
     return None, last_exc
@@ -156,7 +163,8 @@ def login_and_store(member_id: int, *, request_started_at=None, automatic=False,
     with reliable_integration.login_destination(destination):
         return login_coordinator.run(f'external:{member_id}', email,
             lambda: _login_and_store(member_id, **options), SessionLocal, saved,
-            requested_at=request_started_at, automatic=automatic)
+            requested_at=request_started_at, automatic=automatic,
+            check_cancelled=options.get('check_cancelled'))
 
 
 def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
@@ -216,6 +224,7 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
         password_only=otp_mode == "vietnam",
         profile_preference=profile_preference,
         on_credentials=lambda **values: _save_credentials(member_id, **values),
+        check_cancelled=check_cancelled,
         network_retries=network_retries,
     )
     if check_cancelled:
@@ -336,7 +345,7 @@ def batch_login_worker(job: Job) -> None:
         log_login(message)
 
     member_ids = list(dict.fromkeys(int(x) for x in (job.meta.get("member_ids") or [])))
-    job.set_extra('items', [{'id': mid, 'email': (job.meta.get('member_emails') or {}).get(str(mid), ''),
+    job.initialize_items([{'id': mid, 'email': (job.meta.get('member_emails') or {}).get(str(mid), ''),
                              'status': 'pending', 'message': '等待登录'} for mid in member_ids])
     job.target = len(member_ids)
     if not member_ids:
@@ -354,10 +363,15 @@ def batch_login_worker(job: Job) -> None:
         _log(f"任务 #{job.id}:开始登录 {len(member_ids)} 个外部子号,并发 {min(concurrency, len(member_ids))}")
 
     def _do(mid: int) -> None:
-        if not job.begin_item():
+        if not job.begin_item(mid):
             return
+        def check_cancelled():
+            job.check_cancelled(mid)
+        def log(message):
+            check_cancelled()
+            _log(message)
         try:
-            job.record_item(mid, status='running', message='正在登录')
+            check_cancelled()
             preferences = job.meta.get('member_profile_preferences') or {}
             options = {'profile_preference': preferences[str(mid)]} if str(mid) in preferences else {}
             code_modes = job.meta.get('member_code_login') or {}
@@ -368,16 +382,8 @@ def batch_login_worker(job: Job) -> None:
                 options['otp_mode'] = otp_modes[str(mid)]
             if job.meta.get('push_to_sub2'):
                 options['sync_to_sub2'] = False
-            res = login_and_store(mid, log=_log, check_cancelled=job.check_cancelled, **options)
-            job.bump(success=1) if res["ok"] else job.bump(fail=1)
+            res = login_and_store(mid, log=log, check_cancelled=check_cancelled, **options)
             message = res.get('message') or ('登录成功' if res['ok'] else '登录失败，请查看执行记录')
-            if res['ok'] and job.meta.get('push_to_sub2'):
-                from app.services import external_sub2
-                push = external_sub2.queue_login_push(
-                    mid, job.meta.get('sub2_target', ''), session_factory=SessionLocal)
-                message = '登录成功；' + push['message']
-            job.record_item(mid, status='done' if res['ok'] else 'failed',
-                            message=message)
         except JobCancelled:
             job.record_item(mid, status='cancelled', message='本次登录已终止')
             return
@@ -385,11 +391,22 @@ def batch_login_worker(job: Job) -> None:
             # login_and_store 内部已兜底大部分异常;这里再兜底一层,
             # 避免个别账号在 DB 层等处抛出的异常经 ex.map 逃逸,
             # 导致整批任务被中止(JobManager 把整个 job 标记为 error)。
-            job.bump(fail=1)
-            job.record_item(mid, status='failed', message='登录异常，请查看执行记录')
-            _log(f"✗ [id={mid}] 批量登录异常:{str(e)[:200]}")
+            if job.complete_item(mid, success=False, message='登录异常，请查看执行记录'):
+                _log(f"✗ [id={mid}] 批量登录异常:{str(e)[:200]}")
+        else:
+            # Finalize under the cancellation lock before handing off any Sub2 push.
+            # A stop accepted first prevents the handoff; completed results stay completed.
+            if job.complete_item(mid, success=bool(res['ok']), message=message) and res['ok'] and job.meta.get('push_to_sub2'):
+                try:
+                    from app.services import external_sub2
+                    push = external_sub2.queue_login_push(
+                        mid, job.meta.get('sub2_target', ''), session_factory=SessionLocal)
+                    message = '登录成功；' + push['message']
+                except Exception:
+                    message = '登录成功；Sub2 推送未能提交，请手动重试'
+                job.record_item(mid, message=message)
         finally:
-            job.end_item()
+            job.end_item(mid)
 
     with ThreadPoolExecutor(max_workers=min(concurrency, len(member_ids))) as ex:
         batches = (len(member_ids) + LOGIN_BATCH_SIZE - 1) // LOGIN_BATCH_SIZE
@@ -403,4 +420,10 @@ def batch_login_worker(job: Job) -> None:
                 pass
             _log(f"第 {index}/{batches} 批处理结束")
     job.result = {"total": len(member_ids), "success": job.success, "fail": job.fail}
-    _log(f"任务 #{job.id} 完成:成功 {job.success} / 失败 {job.fail}")
+    cancelled = sum(i.get('status') == 'cancelled' for i in job.extra.get('items', []))
+    if cancelled:
+        job.result['cancelled'] = cancelled
+        if cancelled == len(member_ids):
+            job.status = 'cancelled'
+    _log(f"任务 #{job.id} 完成:成功 {job.success} / 失败 {job.fail}" +
+         (f" / 已终止 {cancelled}" if cancelled else ""))

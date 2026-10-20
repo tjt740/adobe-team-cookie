@@ -24,6 +24,10 @@ class ExternalGroupAssignment(BaseModel):
     group_id: int | None = Field(default=None, gt=0)
 
 
+class ExternalMemberCancelRequest(BaseModel):
+    job_id: int = Field(gt=0)
+
+
 class ManualOtpChallenge(BaseModel):
     request_id: str
     email: str

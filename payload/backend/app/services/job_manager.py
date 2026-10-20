@@ -69,6 +69,8 @@ class Job:
         self._persist_lock = threading.Lock()
         self._pause_requested = False
         self._active_items = 0
+        self._active_item_ids: set[int] = set()
+        self._cancelled_item_ids: set[int] = set()
         self._persist_cb = persist_cb
 
     # ---- 供 worker 调用 ----
@@ -107,26 +109,80 @@ class Job:
     def cancelled(self) -> bool:
         return self._cancel.is_set()
 
-    def check_cancelled(self) -> None:
+    def check_cancelled(self, item_id: int | None = None) -> None:
         if self.cancelled:
             raise JobCancelled()
+        if item_id is not None:
+            with self._lock:
+                if item_id in self._cancelled_item_ids:
+                    raise JobCancelled()
 
-    def begin_item(self) -> bool:
+    def initialize_items(self, items: list[dict]) -> None:
+        with self._lock:
+            self.extra['items'] = [dict(item, status='cancelled', message='本次登录已终止')
+                if item['id'] in self._cancelled_item_ids else dict(item) for item in items]
+        self.persist()
+
+    def begin_item(self, item_id: int | None = None) -> bool:
         with self._condition:
-            while self._pause_requested and not self.cancelled:
+            while self._pause_requested and not self.cancelled and item_id not in self._cancelled_item_ids:
                 self._condition.wait()
-            if self.cancelled:
+            if self.cancelled or item_id in self._cancelled_item_ids:
                 return False
             self._active_items += 1
-            return True
+            if item_id is not None:
+                self._active_item_ids.add(item_id)
+                for item in self.extra.get('items', []):
+                    if item.get('id') == item_id:
+                        item.update(status='running', message='正在登录')
+        self.persist()
+        return True
 
-    def end_item(self) -> None:
+    def end_item(self, item_id: int | None = None) -> None:
         with self._condition:
             self._active_items -= 1
+            self._active_item_ids.discard(item_id)
             if self._pause_requested and not self._active_items and not self.cancelled:
                 self.status = "paused"
                 self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 已暂停，等待继续或终止")
         self.persist()
+
+    def cancel_item(self, item_id: int, *, operator: str = '') -> str:
+        """Signal one external login; accepted cancellation wins over later completion."""
+        with self._condition:
+            if self.type != 'external_login' or item_id not in self.meta.get('member_ids', []):
+                return 'not_found'
+            item = next((i for i in self.extra.get('items', []) if i.get('id') == item_id), None)
+            if item_id in self._cancelled_item_ids:
+                return 'already_stopping' if item and item.get('status') == 'cancelling' else 'cancelled'
+            if self.status not in ACTIVE_STATUSES or (item and item.get('status') in ('done', 'failed', 'cancelled', 'interrupted')):
+                return 'finished'
+            self._cancelled_item_ids.add(item_id)
+            self.extra['cancelled_item_ids'] = sorted(self._cancelled_item_ids)
+            if item is None:
+                item = {'id': item_id, 'email': (self.meta.get('member_emails') or {}).get(str(item_id), '')}
+                self.extra.setdefault('items', []).append(item)
+            active = item_id in self._active_item_ids
+            item.update(status='cancelling' if active else 'cancelled',
+                        message='已请求终止，等待当前请求退出' if active else '本次登录已终止')
+            self.logs.append(f"{beijing_time(fmt='%H:%M:%S')} [id={item_id}] {operator or '管理员'} 请求终止本账号，其他账号继续执行")
+            self._condition.notify_all()
+        self.persist()
+        return 'requested'
+
+    def complete_item(self, item_id: int, *, success: bool, message: str) -> bool:
+        with self._lock:
+            item = next(i for i in self.extra['items'] if i.get('id') == item_id)
+            if self.cancelled or item_id in self._cancelled_item_ids:
+                item.update(status='cancelled', message='本次登录已终止，已保存的数据保留')
+                completed = False
+            else:
+                item.update(status='done' if success else 'failed', message=message)
+                self.success += int(success)
+                self.fail += int(not success)
+                completed = True
+        self.persist()
+        return completed
 
     def pause(self) -> bool:
         with self._condition:
@@ -181,6 +237,7 @@ class Job:
                 "target": self.target,
                 "success": self.success,
                 "fail": self.fail,
+                "cancelled_count": sum(i.get('status') == 'cancelled' for i in self.extra.get('items', [])),
                 "result": self.result,
                 "error": self.error,
                 "created_at": self.created_at,
@@ -211,6 +268,7 @@ class Job:
         job.finished_at = int(finished) if finished else None
         job.logs = list(_json_loads(row.get("logs_json"), []))
         job.extra = dict(_json_loads(row.get("extra_json"), {}))
+        job._cancelled_item_ids = set(job.extra.get('cancelled_item_ids', []))
         return job
 
 
@@ -357,13 +415,15 @@ class JobManager:
                         job.status = "cancelled"
                         job.logs.append(f"{beijing_time(fmt='%H:%M:%S')} 任务已终止，已完成的结果和日志已保留")
                         for item in job.extra.get('items', []):
-                            if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
+                            if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing', 'cancelling'):
                                 item.update(status='cancelled', message='本次任务已终止，已保存的数据保留')
                     else:
                         # A worker exception can leave its last item running.
                         # Terminal jobs must never keep a login spinner alive.
                         for item in job.extra.get('items', []):
-                            if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
+                            if item.get('status') == 'cancelling' or item.get('id') in job._cancelled_item_ids:
+                                item.update(status='cancelled', message='本次登录已终止，已保存的数据保留')
+                            elif item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
                                 item.update(status='failed' if job.status == 'error' else 'interrupted',
                                             message='任务已结束，本项结果未确认，请查看执行记录')
                     job.finished_at = int(time.time())
@@ -388,7 +448,9 @@ class JobManager:
             for row in rows:
                 extra = _json_loads(row['extra_json'], {})
                 for item in extra.get('items', []):
-                    if item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
+                    if item.get('status') == 'cancelling' or item.get('id') in extra.get('cancelled_item_ids', []):
+                        item.update(status='cancelled', message='服务重启，已终止本账号登录；已保存的数据保留')
+                    elif item.get('status') in ('pending', 'running', 'login', 'checking', 'pushing'):
                         item.update(status='interrupted', message='服务重启，本次登录中断；可重新勾选重试')
                 message = '服务已重启，任务中断；已保存的数据保留，请重新勾选重试'
                 logs = _json_loads(row['logs_json'], [])
@@ -473,6 +535,7 @@ class JobManager:
                 if isinstance(item, dict):
                     items.setdefault(item.get('id'), item)
             items_by_job[row['id']] = items
+            data['cancelled_count'] = sum(i.get('status') == 'cancelled' for i in items.values())
             batch = _json_loads(row['batch_json'], None)
             if batch:
                 data['extra']['batch'] = batch
@@ -546,6 +609,26 @@ class JobManager:
             message = (message if requested or stopping else "终止请求未全部完成") + f"；{len(failed)} 个任务未确认终止，请重试"
         return {"requested": requested, "already_stopping": stopping, "skipped": skipped,
                 "failed": len(failed), "message": message}
+
+    def cancel_external_member(self, job_id: int, member_id: int, *, operator: str = '') -> str:
+        job = self._jobs.get(job_id)
+        if job:
+            return job.cancel_item(member_id, operator=operator)
+        job = self._get_record(job_id)
+        if not job:
+            return 'not_found'
+        # A durable orphan has no in-flight request; only the selected item is retired.
+        job._persist_cb = self._persist_job
+        result = job.cancel_item(member_id, operator=operator)
+        if result in ('requested', 'already_stopping'):
+            job.record_item(member_id, status='cancelled', message='本账号登录已终止，已保存的数据保留')
+            terminal = {i['id'] for i in job.extra.get('items', [])
+                        if i.get('status') in ('done', 'failed', 'cancelled', 'interrupted')}
+            if set(job.meta.get('member_ids', [])) <= terminal:
+                job.status = 'cancelled' if all(i.get('status') == 'cancelled' for i in job.extra['items']) else 'done'
+                job.finished_at = int(time.time())
+                job.persist()
+        return result
 
     def cancel(self, job_id: int) -> tuple[bool, str]:
         job = self._jobs.get(job_id)

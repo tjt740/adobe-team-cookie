@@ -30,13 +30,15 @@ def assert_owner(db):
             raise RuntimeError('登录任务已失去所有权，未保存旧结果')
 
 
-def run(source_key, email, action, session_factory, read_result, *, requested_at=None, automatic=False):
+def run(source_key, email, action, session_factory, read_result, *, requested_at=None, automatic=False, check_cancelled=None):
     email = email.strip().lower()
     requested_at = time.time() if requested_at is None else requested_at
     owner = uuid.uuid4().hex
     joined_owner = None
     deadline = time.monotonic() + 360
     while True:
+        if check_cancelled:
+            check_cancelled()
         with _GUARD, session_factory() as db:
             row = db.get(LoginLease, email)
             now = time.time()
@@ -96,6 +98,8 @@ def run(source_key, email, action, session_factory, read_result, *, requested_at
     token = _current.set((email, owner))
     result = {'ok': False, 'code': 'internal', 'message': '登录中断，请检查任务结果'}
     try:
+        if check_cancelled:
+            check_cancelled()
         result = action()
         return result
     finally:

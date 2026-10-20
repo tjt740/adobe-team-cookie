@@ -11,7 +11,7 @@ from app.crud import external_member as crud
 from app.db.session import get_db
 from app.models.user import User
 from app.models.external_member import ExternalMember, ExternalMemberGroup
-from app.schemas.external_member import AccountType, ExternalGroupCreate, ExternalGroupAssignment
+from app.schemas.external_member import AccountType, ExternalGroupCreate, ExternalGroupAssignment, ExternalMemberCancelRequest
 from app.schemas.adobe_account import JobStatusOut
 from app.schemas.common import BatchIds, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResult, Page
 from app.schemas.external_member import ExternalBatchProfilePreferenceUpdate, ExternalImportRequest, ExternalLoginFilter, ExternalMemberOut, ExternalNoteUpdate, ExternalProfilePreferenceUpdate
@@ -156,7 +156,8 @@ def _start_login(members, db, operator):
 
 def _active_jobs(ids):
     return {mid: jobs[0] for mid, jobs in JOBS.external_member_jobs(ids).items()
-            if jobs[0]["status"] in {"running", "pausing", "paused", "cancelling"}}
+            if jobs[0]["status"] in {"running", "pausing", "paused", "cancelling"}
+            and jobs[0].get('item_status') != 'cancelled'}
 
 
 @router.patch("/members/{member_id}/otp-mode", summary="设置验证码自动获取或手动输入")
@@ -372,6 +373,25 @@ def import_members(payload: ExternalImportRequest, db: Session = Depends(get_db)
 def cancel_all_jobs() -> dict:
     with _login_lock:
         return JOBS.cancel_all("external_login")
+
+
+@router.post('/members/{member_id}/cancel-job', summary='仅终止本账号的登录任务')
+def cancel_member_job(member_id: int, payload: ExternalMemberCancelRequest,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    with _login_lock:
+        if not crud.get(db, member_id):
+            raise HTTPException(status_code=404, detail='账号不存在，请刷新后重试')
+        latest = JOBS.external_member_jobs([member_id]).get(member_id, [])
+        if not latest or latest[0]['id'] != payload.job_id:
+            raise HTTPException(status_code=409, detail='账号任务已变化，请刷新后重试')
+        result = JOBS.cancel_external_member(payload.job_id, member_id, operator=user.username)
+        if result == 'not_found':
+            raise HTTPException(status_code=404, detail='未找到本账号的登录任务')
+        messages = {'requested': '已请求终止本账号登录，同批其他账号继续执行；当前请求退出后结束',
+                    'already_stopping': '本账号正在终止，请等待当前请求退出',
+                    'cancelled': '本账号已终止', 'finished': '本账号的登录任务已结束，无需终止'}
+        return {'job_id': payload.job_id, 'member_id': member_id, 'requested': result == 'requested',
+                'message': messages[result]}
 
 
 @router.post("/members/batch-login", response_model=JobStatusOut, summary="批量登录刷新cookie")

@@ -51,9 +51,13 @@ async def main():
         for mid, label in enumerate(['排队中', '登录中', '本轮成功', '本轮失败', '已中断'], 1):
             row = page.locator(f'tr[data-member="{mid}"]')
             await expect(row.locator('.extm-status')).to_contain_text(label)
+            if mid <= 2:
+                await expect(row.locator('[data-stop-member]')).to_be_enabled()
+                await expect(row.locator('[data-login]')).to_have_count(0)
+                continue
             button = row.locator('[data-login]')
-            await expect(button).to_have_attribute('aria-busy', 'true' if mid == 2 else 'false')
-            await expect(button.locator('.extm-spin')).to_have_count(1 if mid == 2 else 0)
+            await expect(button).to_have_attribute('aria-busy', 'false')
+            await expect(button.locator('.extm-spin')).to_have_count(0)
             if mid == 5:
                 await expect(button).to_be_enabled()
             else:
@@ -66,7 +70,7 @@ async def main():
         await expect(page.locator('#extm-import-drawer')).to_contain_text('登录成功后自动推送 Sub2')
         assert not errors, errors
         await browser.close()
-        print('PASS: queued/running/success/failure/interrupted rows, spinner accuracy and batch progress')
+        print('PASS: queued/running row cancellation, success/failure/interrupted rows and batch progress')
 
 
 asyncio.run(main())

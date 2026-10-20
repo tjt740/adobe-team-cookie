@@ -6,8 +6,8 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261020-quiet-list', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var viewURL = new URL('./external-members-view.js?v=20261021-member-stop', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, stoppingMembers: new Set(), importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -166,7 +166,7 @@
   // ---------- 页面主体(route 与 overlay 共用) ----------
   function buildBody(host, mount) {
     var tableHTML =
-      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:30px"><col style="width:260px"><col style="width:110px"><col style="width:106px"><col><col style="width:136px"><col style="width:116px"><col style="width:128px"></colgroup><thead><tr>' +
+      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:30px"><col style="width:260px"><col style="width:110px"><col style="width:106px"><col><col style="width:136px"><col style="width:116px"><col style="width:160px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
           '<th>邮箱</th><th>积分 <span class="extm-th-hint">可用 / 总</span></th><th>当前配置</th><th>登录 / Sub2 状态</th><th>订阅</th><th>最后登录</th><th>操作</th>' +
         '</tr></thead><tbody id="extm-tbody"><tr><td colspan="9" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
@@ -244,10 +244,17 @@
   function setLoading(btn, busy, text, spinning) { if (!btn) return; if (view && view.ownsButton(btn.id)) { view.button(btn.id, {disabled:busy, loading:spinning === undefined ? busy : spinning, text:text}); return; } btn.disabled = busy; btn.setAttribute("aria-busy", String(busy)); btn.innerHTML = ((spinning === undefined ? busy : spinning) ? spinner() : "") + esc(text); }
   function rowById(id) { return st.rows.find(function (r) { return r.id === id; }); }
   function activeJob(j) { return !!j && ["running", "pausing", "paused", "cancelling"].includes(j.status); }
-  function running(r) { return st.pending.has(r.id) || activeJob(r.latest_job) || !!r.otp_challenge; }
+  function itemPhase(r) {
+    var job = r.latest_job;
+    var item = job && job.extra && (job.extra.items || []).find(function (i) {return i.id === r.id;});
+    return job && (job.item_status || (item && item.status));
+  }
+  function waitingOtp(r) { return !!r.otp_challenge && !['cancelled','cancelling'].includes(itemPhase(r)) && !(r.latest_job && ['cancelled','cancelling'].includes(r.latest_job.status)); }
+  function running(r) { return st.pending.has(r.id) || (activeJob(r.latest_job) && itemPhase(r) !== 'cancelled') || waitingOtp(r); }
+  function canStopMember(r) { return activeJob(r.latest_job) && !['done','failed','cancelled','interrupted'].includes(itemPhase(r)); }
   function loginProgress(r) {
     var job = r.latest_job, item = job && job.extra && (job.extra.items || []).find(function (i) { return i.id === r.id; });
-    var phase = st.pending.has(r.id) ? 'submitting' : r.otp_challenge ? 'otp' : job && (job.item_status || (item && item.status));
+    var phase = st.pending.has(r.id) ? 'submitting' : waitingOtp(r) ? 'otp' : job && (job.item_status || (item && item.status));
     if (activeJob(job) && (!phase || ['pending', 'running'].includes(phase))) {
       phase = ['paused', 'pausing', 'cancelling'].includes(job.status) ? job.status : (phase || 'running');
     }
@@ -260,7 +267,7 @@
       pausing:['暂停中','info',false], cancelling:['终止中','info',false]};
     var state = states[phase];
     return state ? {label:state[0], tone:state[1], spinning:state[2],
-      message:st.pending.has(r.id) ? '正在提交任务…' : r.otp_challenge ? '等待手动验证码' :
+      message:st.pending.has(r.id) ? '正在提交任务…' : waitingOtp(r) ? '等待手动验证码' :
         (job && job.item_message) || (item && item.message) || ''} : null;
   }
   function detailState(id) { return st.details[id] || (st.details[id] = { jobs: [], historyPage: 1, historySize: 200, checked: new Set(), manage: false, closing: false, closeTimer: null, selected: null, job: null, auto: true, scope: "member", loading: false, action: false, error: "" }); }
@@ -382,6 +389,7 @@
       var tr = body.querySelector('tr[data-member="' + r.id + '"]');
       if (!tr) { tr = document.createElement("tr"); tr.dataset.member = r.id; }
       var busy = running(r), saving = st.profileSaving.has(r.id), expanded = st.expanded.has(r.id), progress = loginProgress(r);
+      var canStop = canStopMember(r), stopping = st.stoppingMembers.has(r.id) || (progress && progress.label === '终止中');
       tr.className = expanded ? "extm-expanded" : "";
       var message = progress ? progress.message : r.message;
       var hideMessage = !message || (r.login_status === 'ok' && /^登录成功(?:；已提交 Sub2 推送(?:，可查看账号同步状态)?)?$/.test(message.trim()));
@@ -397,7 +405,8 @@
           (hideMessage ? '' : '<button class="extm-link extm-clip extm-status-message" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
         '<td data-subscription>' + subPill(r) + '</td>' +
         '<td class="cr extm-last-login"><span>' + esc(fmtTime(r.last_login_at).split(' ')[0]) + '</span><small>' + esc(fmtTime(r.last_login_at).split(' ')[1] || '') + '</small></td>' +
-        '<td><div class="extm-actions">' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
+        '<td><div class="extm-actions">' + (waitingOtp(r) && !stopping ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : canStop ? '' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
+        (canStop ? '<button class="extm-btn sm extm-stop-member" data-stop-member="' + r.id + '" aria-label="终止 ' + esc(r.email) + ' 的登录任务" title="仅终止本账号，同批其他账号继续执行" aria-busy="' + !!stopping + '"' + (stopping ? ' disabled' : '') + '>' + (stopping ? '终止中' : '终止') + '</button>' : '') +
         '<button class="extm-link extm-row-more" data-row-more="' + r.id + '" popovertarget="extm-row-menu" aria-label="' + esc(r.email) + ' 的更多操作" aria-haspopup="dialog" aria-controls="extm-row-menu" aria-expanded="false">更多' + window.OKAD_ICONS.svg('chevron', 12) + '</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
       if (tr !== cursor) body.insertBefore(tr, cursor);
@@ -436,6 +445,7 @@
     body.onclick = function (e) {
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
+      if (b.hasAttribute('data-stop-member')) stopMemberTask(Number(b.dataset.stopMember));
       if (b.hasAttribute('data-row-more')) { e.preventDefault(); showRowMenu(Number(b.dataset.rowMore), b); }
       if (b.hasAttribute("data-credit-error")) showCreditError(Number(b.dataset.creditError));
       if (b.hasAttribute('data-sub2-details')) showSub2Details(Number(b.dataset.sub2Details));
@@ -769,7 +779,7 @@
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务历史</strong><span class="sp"></span><button class="extm-btn dft sm" data-action="manage" aria-pressed="false">管理历史</button><button class="extm-btn del sm" data-action="delete">删除选中</button></div>' +
         '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col></colgroup>' +
         '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>时间</th></tr></thead><tbody></tbody></table></div><nav class="extm-history-pager"></nav></section>' +
-        '<section class="extm-task-card"><div class="extm-task-head"><strong>任务详情</strong><div class="extm-task-actions"><label class="extm-auto"><input type="checkbox" data-auto checked>自动刷新</label><button class="extm-btn dft sm" data-action="refresh">刷新</button><button class="extm-btn dft sm" data-action="pause">暂停任务</button><button class="extm-btn del sm" data-action="cancel">终止任务</button></div></div>' +
+        '<section class="extm-task-card"><div class="extm-task-head"><strong>任务详情</strong><div class="extm-task-actions"><label class="extm-auto"><input type="checkbox" data-auto checked>自动刷新</label><button class="extm-btn dft sm" data-action="refresh">刷新</button><button class="extm-btn dft sm" data-action="pause">暂停任务</button><button class="extm-btn del sm" data-action="cancel">终止整批</button></div></div>' +
         '<div class="extm-task-body"><div class="extm-job-title"></div><div class="extm-job-meta"></div><div class="extm-counts"></div><div class="extm-progress" role="progressbar" aria-label="任务进度"><div></div></div><div class="extm-detail-error extm-job-error"></div>' +
         '<div class="extm-log-tools"><span data-log-count>实时日志</span><span class="sp"></span><select class="extm-in" data-log-scope aria-label="日志范围"><option value="member">当前账号日志</option><option value="all">整批任务日志</option></select><button class="extm-btn dft sm" data-action="clear-logs">清空日志</button></div>' +
         '<div class="extm-log-legend" aria-label="日志颜色说明"><span><i class="success"></i>成功</span><span><i class="warn"></i>警告</span><span><i class="error"></i>错误</span><span><i class="progress"></i>进度</span><span><i class="info"></i>普通</span></div><pre class="extm-logs" tabindex="0" aria-label="任务日志"></pre><div class="extm-scope-note"></div></div></section></div>';
@@ -803,7 +813,7 @@
       return '<tr data-job="' + j.id + '" class="' + (j.id === d.selected ? 'active' : '') + '" aria-selected="' + (j.id === d.selected) + '">' +
         '<td class="extm-history-select"><input type="checkbox" data-job-check="' + j.id + '" aria-label="选择任务 #' + j.id + '"' + (d.checked.has(j.id) ? ' checked' : '') + (activeJob(j) ? ' disabled' : '') + '></td>' +
         '<td><button class="extm-link" title="查看任务 #' + j.id + '">#' + j.id + '</button></td><td>' + jobPill(j) + '</td>' +
-        '<td title="成功 ' + j.success + '，失败 ' + j.fail + '">' + (j.success + j.fail) + '/' + j.target + '</td>' +
+        '<td title="成功 ' + j.success + '，失败 ' + j.fail + '，已终止 ' + (j.cancelled_count || 0) + '">' + (j.success + j.fail + (j.cancelled_count || 0)) + '/' + j.target + '</td>' +
         '<td title="' + esc(fmtTime(j.created_at)) + '">' + esc(fmtTime(j.created_at).slice(5)) + '</td></tr>';
     }).join("") : '<tr><td colspan="' + (d.manage ? 5 : 4) + '" class="extm-empty">' + (d.loading ? '正在读取任务…' : '暂无关联任务，点击重登开始') + '</td></tr>');
     panel.querySelector("[data-auto]").checked = d.auto;
@@ -825,10 +835,11 @@
     var batch = job && job.extra && job.extra.batch;
     var oldBatch = panel.querySelector('[data-login-batch]'); if (oldBatch) oldBatch.remove();
     if (batch) panel.querySelector('.extm-job-meta').insertAdjacentHTML('beforeend', '<span data-login-batch>批次 <b>' + esc(batch.index) + '/' + esc(batch.total) + ' · 每批最多 ' + esc(batch.size) + ' 个</b></span>');
-    var pct = job && job.target ? Math.min(100, Math.round((job.success + job.fail) / job.target * 100)) : 0;
+    var cancelled = job && job.cancelled_count || 0;
+    var pct = job && job.target ? Math.min(100, Math.round((job.success + job.fail + cancelled) / job.target * 100)) : 0;
     var progress = panel.querySelector('.extm-progress'); progress.setAttribute('aria-valuenow', pct); progress.setAttribute('aria-valuemin', '0'); progress.setAttribute('aria-valuemax', '100');
     progress.firstElementChild.style.width = pct + '%'; progress.firstElementChild.className = job && (job.fail || job.status === 'error') ? 'failed' : '';
-    setHTML(panel.querySelector('.extm-counts'), job ? '<span>总进度 <b>' + (job.success + job.fail) + '/' + job.target + '</b></span><span class="extm-count-success">成功 <b>' + job.success + '</b></span><span class="' + (job.fail ? 'extm-count-fail' : 'extm-count-zero') + '">失败 <b>' + job.fail + '</b></span>' : '');
+    setHTML(panel.querySelector('.extm-counts'), job ? '<span>总进度 <b>' + (job.success + job.fail + cancelled) + '/' + job.target + '</b></span><span class="extm-count-success">成功 <b>' + job.success + '</b></span><span class="' + (job.fail ? 'extm-count-fail' : 'extm-count-zero') + '">失败 <b>' + job.fail + '</b></span>' + (cancelled ? '<span>已终止 <b>' + cancelled + '</b></span>' : '') : '');
     setText(panel.querySelector('.extm-job-error'), job ? job.error || '' : '');
     var lines = job && job.logs || [];
     if (d.scope === 'member') lines = lines.filter(function (line) { return line.toLowerCase().includes(row.email.toLowerCase()) || line.includes('[id=' + id + ']') || !(/[\w.+-]+@[\w.-]+\.[a-z]{2,}|\[id=\d+\]/i.test(line)); });
@@ -852,6 +863,21 @@
       return jobApi('/' + selected).then(function (job) { if (selected === d.selected) d.job = job; });
     }).catch(function (e) { d.error = '任务刷新失败: ' + e.message; }).finally(function () { d.loading = false; renderDetail(id); });
     return d.promise;
+  }
+
+  async function stopMemberTask(id) {
+    var row = rowById(id); if (!row || !canStopMember(row) || st.stoppingMembers.has(id)) return;
+    var jobId = row.latest_job.id;
+    st.stoppingMembers.add(id); renderRows();
+    try {
+      var result = await api('/members/' + id + '/cancel-job', {method:'POST', body:{job_id:jobId}});
+      toast('success', result.message);
+      await load(true);
+      await Promise.all(Array.from(st.expanded).filter(rowById).map(function (mid) {return refreshDetail(mid, true);}));
+    } catch (e) {
+      toast('error', '终止失败：' + e.message);
+      await load(true);
+    } finally { st.stoppingMembers.delete(id); renderRows(); }
   }
 
   async function stopAllTasks() {

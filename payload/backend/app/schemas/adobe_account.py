@@ -223,6 +223,7 @@ class CleanupMembersRequest(BaseModel):
 
 
 class JobStatusOut(BaseModel):
+    cancelled_count: int = 0
     item_status: str | None = None
     item_message: str = ""
     id: int
