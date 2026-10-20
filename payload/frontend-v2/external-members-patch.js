@@ -391,7 +391,7 @@
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
         '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.group_name ? '<span class="extm-group-tag" title="自定义分组：' + esc(r.group_name) + '">' + esc(r.group_name) + '</span>' : '') + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'vietnam' ? '越南登录' : r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
-        '<td>' + creditCell(r) + '</td><td><button class="extm-link" data-expand="' + r.id + '" title="展开查看账号配置">' + profilePill(r.account_profile) + '</button></td>' +
+        '<td>' + creditCell(r) + '</td><td><button class="extm-link extm-profile-toggle" data-expand="' + r.id + '" title="' + esc(r.account_profile && r.account_profile.fallback_reason ? '回退个人配置原因：' + r.account_profile.fallback_reason : '展开查看账号配置') + '">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
           '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
@@ -667,7 +667,8 @@
   function profilePill(p) {
     var kind = p && p.current_kind;
     return '<span class="extm-pill ' + (kind === 'organization' ? 'organization' : kind === 'personal' ? 'personal' : 'mut') + '">' +
-      (kind === 'organization' ? '组织配置' : kind === 'personal' ? '个人配置' : '未获取') + '</span>';
+      (kind === 'organization' ? '组织配置' : kind === 'personal' ? '个人配置' : '未获取') + '</span>' +
+      (kind === 'personal' && p.fallback_reason ? '<span class="extm-pill warn" data-profile-fallback title="' + esc(p.fallback_reason) + '">已回退个人</span>' : '');
   }
   function profileDetail(row) {
     var p = row.account_profile;
@@ -678,6 +679,8 @@
     var html = head + '<div class="extm-task-body"><dl class="extm-profile-fields">' +
       field('当前配置名称', p.current_profile_name) + field('当前组织 ID', p.current_org_id || (p.current_kind === 'personal' ? '不适用（当前为个人配置）' : '')) +
       field('当前配置 ID', p.current_profile_id) + field('积分查询身份 ID', p.credits_account_id) + '</dl>' +
+      (p.requested_preference ? '<p class="extm-msg mut">本次登录选择：' + (p.requested_preference === 'organization' ? '组织配置优先' : '个人配置') + '</p>' : '') +
+      (p.fallback_reason ? '<p class="extm-profile-fallback-reason"><strong>回退个人配置原因：</strong>' + esc(p.fallback_reason) + '</p>' : '') +
       '<p class="extm-msg mut">以下为最近一次登录获取的资料。' + (p.profiles_complete ? '' : '部分资料未获取，列表可能不完整。') +
       (row.login_status !== 'ok' ? '本次未登录成功，保留上次资料。' : '') + '</p>' +
       '<div class="extm-profile-list-title">已获取的配置</div><div class="extm-profile-options">';
@@ -685,7 +688,7 @@
       var current = !!item.profile_id && item.profile_id === p.current_profile_id;
       return '<div class="extm-profile-option"><div>' + profilePill({current_kind:item.kind}) +
         '<strong>' + esc(item.name || '名称未获取') + '</strong>' + (current ? '<span class="extm-pill ok">当前使用</span>' : '') +
-        '<span class="extm-msg mut">' + esc(({active:'已启用',disabled:'已停用',inactive:'未激活',suspected_deleted:'疑似已删除',expired:'授权已过期'}[item.status]) || item.status || '状态未获取') + '</span></div>' +
+        '<span class="extm-msg mut">' + esc(({active:'已启用',disabled:'已停用',inactive:'未激活',invited:'邀请待激活',suspected_deleted:'疑似已删除',expired:'授权已过期'}[item.status]) || item.status || '状态未获取') + '</span></div>' +
         '<div class="extm-profile-id">配置 ID：' + esc(item.profile_id || '未获取') + (item.org_id ? ' · 组织 ID：' + esc(item.org_id) : '') + '</div></div>';
     }).join('') || '<p class="extm-msg mut">未获取配置列表</p>';
     html += '</div>';

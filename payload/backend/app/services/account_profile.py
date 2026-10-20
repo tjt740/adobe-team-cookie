@@ -36,5 +36,7 @@ def build_profile_snapshot(context, credits_account_id):
         current_profile_id=current_id, current_profile_name=current.name if current else "",
         current_org_id=org_id, credits_account_id=credits_account_id,
         profiles=list(profiles.values()), profiles_complete=bool(context.get("profiles_complete")),
+        requested_preference=context.get("profile_preference") or "",
+        fallback_reason=context.get("profile_fallback_reason") or "",
         subscription_owners=list(owners.values()), fetched_at=datetime.now(timezone.utc),
     ).model_dump(mode="json")

@@ -45,6 +45,10 @@
 #extm-import-result { margin:0 0 12px; max-height:96px; overflow:auto; overflow-wrap:anywhere; white-space:pre-wrap; }
 #extm-import-result:empty,.extv-operation-message:empty { display:none; }
 .extv-operation-message { margin:0 0 16px; overflow-wrap:anywhere; }
+#extm-embed .extm-profile-toggle { display:inline-flex; flex-direction:column; align-items:flex-start; gap:4px; max-width:100%; }
+#extm-embed .extm-profile-card { background:var(--ws-paper,#fff); color:var(--ws-text,#273342); border-color:var(--ws-line,#e4eaf2); }
+#extm-embed .extm-profile-card :is(.extm-task-head,.extm-profile-option) { background:var(--ws-soft,#f8fafc); border-color:var(--ws-line,#e4eaf2); }
+.extm-profile-fallback-reason { margin:12px 0; padding:10px 12px; border-left:3px solid var(--ws-warning,#b07830); background:var(--ws-soft,#f8fafc); color:var(--ws-text,#273342); font-size:13px; white-space:normal; overflow-wrap:anywhere; }
 @keyframes extv-drawer-in { from { transform:translateX(100%); } to { transform:translateX(0); } }
 @media(prefers-reduced-motion:reduce) { .extv-import-drawer[open] { animation:none; } }
 @media(max-width:600px) {

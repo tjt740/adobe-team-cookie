@@ -250,6 +250,7 @@ def complete_sub_account(
     *, country: str = "", locale: str = "",
     poll: Optional[Callable] = None, otp_timeout: int = 180,
     legacy_completion: bool = False,
+    activate_profiles: bool = True,
 ) -> str:
     """被邀请子号首次登录:若账号未补全,自动填写姓名/密码/生日并接受条款,
     然后激活并切换到企业(被邀请)资料,使后续可换取 firefly token。
@@ -259,6 +260,7 @@ def complete_sub_account(
     返回**本次实际设置的密码**;账号本来就已补全(密码不是我们设的)时返回 ""。
     调用方据此决定要不要把密码记进库里。
     legacy_completion 仅供直接登录失败后的原路线使用，保留原来的补全判定。
+    activate_profiles=False 时仅补全资料，组织邀请交由偏好选择流程统一处理。
     """
     try:
         r = auth.client.get(
@@ -367,7 +369,7 @@ def complete_sub_account(
     link = next(
         (lk for lk in links if lk.get("ident") and lk.get("status") != "active"), None
     )
-    if link:
+    if link and activate_profiles:
         try:
             r = auth.client.post(
                 f"{_AUTH_HOST}/signin/v2/links/{link['ident']}",

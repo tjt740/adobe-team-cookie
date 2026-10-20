@@ -28,5 +28,7 @@ class AccountProfile(BaseModel):
     credits_account_id: str = ""
     profiles: list[ProfileItem] = Field(default_factory=list)
     profiles_complete: bool = False
+    requested_preference: ProfilePreference = ""
+    fallback_reason: str = ""
     subscription_owners: list[SubscriptionOwner] = Field(default_factory=list)
     fetched_at: datetime
