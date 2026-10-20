@@ -3,6 +3,7 @@ import asyncio
 import copy
 import mimetypes
 import os
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -74,7 +75,7 @@ async def scenario(browser, prefix, expand):
         await page.goto('http://login-sync.test' + prefix + '/external-members')
         member = page.locator('tr[data-member="1"]')
         stock = member.locator('[data-sub2-stock]')
-        timestamp = member.locator('[data-sub2-pushed-at]')
+        timestamp = page.locator('#extm-detail-1 [data-sub2-pushed-at]')
         await expect(stock).to_have_text('未在库 Sub2')
         if expand:
             await member.locator('[data-login]').click()
@@ -86,7 +87,8 @@ async def scenario(browser, prefix, expand):
                    credits_total=4000, credits_available=4000,
                    sub2_status='pending', sub2_message='等待同步 Cookie')
         await expect(member).to_contain_text('Sub2 待同步', timeout=6000)
-        await expect(timestamp).to_have_text('—')
+        if expand:
+            await expect(timestamp).to_have_text('—')
 
         # Keep an old inventory request in flight across the delivery. Its
         # completion must not swallow the forced follow-up read.
@@ -97,7 +99,10 @@ async def scenario(browser, prefix, expand):
         row.update(sub2_status='synced', sub2_account_id=1123,
                    sub2_synced_at='2026-10-19T01:00:05Z',
                    latest_job={**job, 'item_status': 'done', 'item_message': '登录成功'})
-        await expect(timestamp).to_have_text('2026-10-19 09:00:05', timeout=6500)
+        if expand:
+            await expect(timestamp).to_have_text('2026-10-19 09:00:05', timeout=6500)
+        else:
+            await expect(stock).to_have_attribute('title', re.compile('上次同步 2026-10-19 09:00'), timeout=6500)
         hold_stock = False
         release_stock.set()
         await expect(stock).to_have_text('在库 Sub2', timeout=6000)
@@ -125,7 +130,8 @@ async def scenario(browser, prefix, expand):
           document.dispatchEvent(new Event('visibilitychange'));
         }''')
         await expect(member).to_contain_text('模拟同步失败', timeout=2000)
-        await expect(timestamp).to_have_text('2026-10-19 09:00:05')
+        if expand:
+            await expect(timestamp).to_have_text('2026-10-19 09:00:05')
         assert not errors, errors
     finally:
         release_detail.set()

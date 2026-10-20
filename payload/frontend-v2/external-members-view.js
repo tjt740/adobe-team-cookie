@@ -51,6 +51,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
   function positionActions(event) {
     const details=event.currentTarget;
     if(!details.open)return;
+    details.dataset.scrollLeft=String(details.closest('.extm-batch-row').scrollLeft);
     const menu=details.querySelector('div'), anchor=details.querySelector('summary').getBoundingClientRect();
     const width=Math.min(menu.offsetWidth,window.innerWidth-24);
     const below=window.innerHeight-anchor.bottom-12, above=anchor.top-12;
@@ -58,7 +59,10 @@ export function mountExternalMembers(host, actions, tableHTML) {
     Object.assign(menu.style,{left:Math.max(12,Math.min(anchor.right-width,window.innerWidth-width-12))+'px',right:'auto',
       top:(below>=height?anchor.bottom+6:Math.max(12,anchor.top-height-6))+'px',maxHeight:Math.max(44,height)+'px'});
   }
-  function closeActions() {const more=host.querySelector('#extm-more-actions');if(more)more.open=false;}
+  function closeActions() {
+    const more=host.querySelector('#extm-more-actions');
+    if(more && more.dataset.scrollLeft!==String(more.closest('.extm-batch-row').scrollLeft))more.open=false;
+  }
   function apply() {
     const f = filters.value;
     errors.value.credits = f.creditsMin != null && f.creditsMax != null && f.creditsMin > f.creditsMax ? '积分最大值不能小于最小值' : '';
@@ -169,7 +173,7 @@ export function mountExternalMembers(host, actions, tableHTML) {
           ]),
           h('div',{class:'extm-batch-row',role:'group',tabindex:0,'aria-label':'批量操作，宽度不足时可左右滚动',onScroll:closeActions},[
             h('div',{class:'extm-batch-controls'},[
-              h('span',{class:'selc'},['已选 ',h('b',{id:'extm-selc'},String(ui.value.selected)),' 个']),
+              h('span',{class:'selc'},ui.value.selected?['已选 ',h('b',{id:'extm-selc'},String(ui.value.selected)),' 个']:['勾选账号后可批量操作',h('b',{id:'extm-selc',hidden:true},'0')]),
               field('批量登录配置','extm-batch-profile',select('extm-batch-profile',ui.value.profile,options([['__mixed__',ui.value.profilePlaceholder],['','不指定（原逻辑）'],['personal','个人配置'],['organization','组织配置优先']]).map(o=>({...o,disabled:o.value==='__mixed__'})),actions.profile,{disabled:ui.value.profileDisabled}),'extv-batch-profile'),
               field('批量设置分组','extm-batch-group',select('extm-batch-group',ui.value.group,[{value:'__mixed__',label:ui.value.groupSaving?'保存分组中…':ui.value.selected?'选择分组':'请先勾选账号',disabled:true},{value:'0',label:'未分组'},...groupOptions()],actions.assignGroup,{filterable:true,disabled:!ui.value.selected||ui.value.groupSaving}),'extv-batch-profile'),
               button('extm-batch-login','选中批量重登',actions.batchLogin,{type:'primary',secondary:true}),

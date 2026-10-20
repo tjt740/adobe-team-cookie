@@ -100,3 +100,78 @@ html.dark .extv-filters input[type=date] { color-scheme:dark; }
 .extv-group-create { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; margin-top:12px; }
 .extv-group-create>.extv-field { flex:1; min-width:160px; }
 #extm-embed .extm-group-tag { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:none; padding:1px 6px; border:1px solid var(--ws-line,#d8e2f0); border-radius:4px; background:var(--ws-soft,#edf3fb); color:var(--ws-text,#426185); font-size:12px; }
+
+/* The account list uses quiet text for context and reserves emphasis for results. */
+#extm-embed .extm-t { min-width:1160px; }
+#extm-embed .extm-th-hint { display:block; font-size:10px; font-weight:400; color:var(--ws-muted); }
+#extm-embed .extm-t>tbody>tr[data-member]>td { padding-top:12px; padding-bottom:12px; }
+#extm-embed .extm-t :is(th,td) { border-bottom-color:var(--ws-line); }
+#extm-embed .extm-t>tbody>tr[data-member]:hover { --extm-row-bg:var(--ws-soft); }
+#extm-embed .extm-t>tbody>tr.extm-expanded { --extm-row-bg:var(--ws-soft); }
+#extm-embed .extm-t :is(.extm-pill,.extm-company-tag) { min-height:0; padding:0; border:0; border-radius:0; background:transparent; color:var(--ws-muted); font-size:12px; font-weight:400; line-height:20px; }
+#extm-embed .extm-t .extm-pill.ok { color:#37815b; }
+#extm-embed .extm-t .extm-pill.bad { color:#bd4d54; }
+#extm-embed .extm-t .extm-pill.warn { color:#a16b28; }
+#extm-embed .extm-t .extm-pill.info { color:var(--ws-blue); }
+#extm-embed .extm-t .extm-pill:is(.personal,.organization) { color:var(--ws-text); }
+#extm-embed .extm-t .extm-success { display:inline-flex; align-items:center; gap:5px; font-weight:500; }
+#extm-embed .extm-t .extm-success:hover { background:transparent; filter:none; text-decoration:underline; }
+#extm-embed .extm-t [data-subscription]>.extm-pill { gap:7px; }
+#extm-embed .extm-t [data-subscription]>.extm-pill::before { content:''; width:6px; height:6px; flex:none; background:currentColor; border-radius:50%; }
+#extm-embed .extm-email-row { flex-wrap:nowrap; gap:6px; }
+#extm-embed .extm-email-row .extm-email { flex:1; width:0; font:13px/21px system-ui,-apple-system,"PingFang SC",sans-serif; color:var(--ws-text); }
+#extm-embed .extm-email-row :is(.extm-company-tag,.extm-group-tag) { padding:0 5px; min-height:18px; font-size:10px; line-height:16px; border:1px solid var(--ws-line); border-radius:4px; background:var(--ws-soft); color:var(--ws-muted); }
+#extm-embed .extm-email-row .extm-group-tag { max-width:80px; }
+#extm-embed .extm-email-row .extm-company-tag .okad-icon { display:none; }
+#extm-embed .extm-account-meta { gap:10px; margin-top:4px; }
+#extm-embed .extm-account-meta [data-sub2-stock] { font-size:11px; gap:5px; color:var(--ws-muted); }
+#extm-embed .extm-account-meta [data-sub2-stock]::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
+#extm-embed .extm-account-meta [data-sub2-stock].ok { color:#56846c; }
+#extm-embed .extm-account-meta .extm-sub2-details { font-size:0; min-height:20px; width:20px; }
+#extm-embed .extm-account-meta .extm-sub2-details .okad-icon { width:12px; height:12px; }
+#extm-embed .extm-account-meta .extm-mode-link { color:var(--ws-muted); font-size:11px; }
+#extm-embed .extm-account-meta .extm-mode-link .okad-icon { display:none; }
+#extm-embed .extm-t .extm-status { display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+#extm-embed .extm-status-primary { display:flex; align-items:center; gap:8px; max-width:100%; }
+#extm-embed .extm-status-secondary { display:flex; align-items:center; flex-wrap:wrap; gap:0 10px; max-width:100%; }
+#extm-embed .extm-t [data-sub2-health] { font-size:11px; white-space:normal; }
+#extm-embed .extm-credentials { color:var(--ws-muted); font-size:11px; line-height:18px; }
+#extm-embed .extm-t .extm-status-message { max-width:100%; font-size:11px; color:var(--ws-muted); }
+#extm-embed .extm-last-login>span,#extm-embed .extm-last-login>small { display:block; font-size:11px; font-variant-numeric:tabular-nums; }
+#extm-embed .extm-last-login>small { color:var(--ws-muted); margin-top:2px; }
+#extm-embed .extm-t .cr b { color:var(--ws-text); font-size:14px; font-weight:600; }
+#extm-embed .extm-t .cr { color:var(--ws-muted); }
+#extm-embed .extm-t .extm-profile-toggle { gap:2px; }
+#extm-embed .extm-t [data-profile-fallback] { font-size:11px; }
+#extm-embed .extm-t .extm-actions { gap:14px; align-items:center; }
+#extm-embed .extm-t .extm-actions>.extm-btn { background:transparent; color:var(--ws-blue); border:0; padding:0; height:28px; box-shadow:none; }
+#extm-embed .extm-t .extm-actions>.extm-btn:hover { background:transparent; color:var(--ws-blue); text-decoration:underline; }
+#extm-embed .extm-t .extm-row-more { display:inline-flex; gap:3px; align-items:center; height:28px; color:var(--ws-muted); font:12px system-ui; white-space:nowrap; }
+#extm-embed .extm-row-more>.okad-icon { transform:rotate(90deg); }
+#extm-embed .extm-row-menu { position:fixed; inset:auto; margin:0; width:156px; max-width:calc(100vw - 24px); padding:5px; border:1px solid var(--ws-line); border-radius:8px; background:var(--ws-paper); color:var(--ws-text); box-shadow:0 8px 28px #18294524; }
+#extm-embed .extm-row-menu:popover-open { display:flex; flex-direction:column; }
+#extm-embed .extm-row-menu>button { display:block; text-align:left; width:100%; padding:9px 12px; border:0; border-radius:5px; background:transparent; color:var(--ws-text); font:13px system-ui; cursor:pointer; }
+#extm-embed .extm-row-menu>button:hover { background:var(--ws-soft); }
+#extm-embed .extm-row-menu>button:focus-visible { outline:2px solid var(--ws-blue); outline-offset:-2px; }
+#extm-embed .extm-row-menu>button[data-del] { color:#bd4d54; border-top:1px solid var(--ws-line); margin-top:4px; border-radius:0 0 5px 5px; }
+#extm-embed .extm-row-menu>button:disabled { opacity:.45; cursor:not-allowed; }
+#extm-embed .extm-account-times { display:flex; gap:16px 32px; flex-wrap:wrap; margin:0 0 14px; padding:12px 16px; background:var(--ws-paper); border:1px solid var(--ws-line); border-radius:6px; }
+#extm-embed .extm-account-times>div { display:flex; gap:10px; font-size:12px; }
+#extm-embed .extm-account-times dt { color:var(--ws-muted); }
+#extm-embed .extm-account-times dd { margin:0; color:var(--ws-text); font-variant-numeric:tabular-nums; }
+#extm-embed .extm-batch-row[data-ws-selected=false] :is(.extv-batch-profile,#extm-batch-login,#extm-batch-del,#extm-export-emails,#extm-sub2-push) { display:none; }
+html.dark #extm-embed .extm-t .extm-pill.ok { color:#7dc79b; }
+html.dark #extm-embed .extm-t .extm-pill.bad { color:#ed9299; }
+html.dark #extm-embed .extm-t .extm-pill.warn { color:#ddba78; }
+@media(max-width:800px) {
+  #extm-embed .extm-t .extm-actions>:is(.extm-btn,.extm-row-more),#extm-embed .extm-row-menu>button { min-height:44px; }
+  #extm-embed .extm-account-meta .extm-sub2-details { min-height:44px; width:32px; }
+}
+@media(max-width:600px) {
+  body #extm-embed .extm-t { min-width:0; }
+  body #extm-embed .extm-tw { max-height:none; }
+  body #extm-embed .extm-t .extm-status { gap:4px; }
+  body #extm-embed .extm-t [data-ws-label="登录 / Sub2 状态"] { grid-column:1/-1; }
+  body #extm-embed .extm-t .extm-status-secondary { gap:4px 12px; }
+  #extm-embed .extm-account-times { flex-direction:column; gap:8px; padding:12px; }
+}

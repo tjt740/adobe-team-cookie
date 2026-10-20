@@ -88,8 +88,9 @@ async def main():
                         await pager.scroll_into_view_if_needed()
                         await assert_layout()
                     # Last-row actions remain above the footer and can receive pointer input.
-                    delete = page.locator('tr[data-member]').last.locator('[data-del]')
-                    await delete.click(trial=True)
+                    await page.locator('tr[data-member]').last.locator('[data-row-more]').click()
+                    await page.locator('#extm-row-menu [data-del]').click(trial=True)
+                    await page.keyboard.press('Escape')
                     await expect(pager).to_be_in_viewport()
                     await assert_layout()
                 print(f'LAYOUT_OK {prefix or "/"} {width}x{height}', flush=True)

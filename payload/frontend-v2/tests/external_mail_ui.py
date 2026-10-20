@@ -108,6 +108,7 @@ async def main():
         await expect(page.locator("#extm-import-result")).to_contain_text("缺少 Adobe 密码")
         await expect(page.locator("#extm-import")).to_have_value("one@example.com----")
         await page.locator("#extm-import-done").click()
+        await page.locator("[data-row-more='1']").click()
         await page.locator("[data-mail='1']").click()
         dialog = page.locator("#extm-mail-dialog")
         await expect(dialog.locator("summary")).to_contain_text("Adobe 验证码")

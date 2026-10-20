@@ -47,6 +47,8 @@ async def main():
             data = dict(queued=1, skipped=0, message='已提交 1 个账号同步')
         elif path == '/api/adobe-accounts/jobs':
             data = []
+        elif path.startswith('/api/external/members/') and path.endswith('/jobs'):
+            data = []
         elif path == '/api/settings':
             data = {'concurrency': 2}
         else:
@@ -66,10 +68,12 @@ async def main():
         await expect(button).to_be_disabled()
         first = page.locator('[data-member="1"] [data-sub2-stock]')
         second = page.locator('[data-member="2"] [data-sub2-stock]')
-        pushed_at = page.locator('[data-member="1"] [data-sub2-pushed-at]')
-        await expect(page.locator('.extm-t th').filter(has_text='最后推送cookie 时间')).to_have_count(1)
+        await page.locator('[data-member="1"] .extm-toggle').click()
+        await page.locator('[data-member="2"] .extm-toggle').click()
+        pushed_at = page.locator('#extm-detail-1 [data-sub2-pushed-at]')
+        await expect(page.locator('.extm-t th').filter(has_text='最后推送cookie 时间')).to_have_count(0)
         await expect(pushed_at).to_have_text('—')
-        await expect(page.locator('[data-member="2"] [data-sub2-pushed-at]')).to_have_text('—')
+        await expect(page.locator('#extm-detail-2 [data-sub2-pushed-at]')).to_have_text('—')
         await expect(page.locator('[data-member="1"] .extm-status')).to_contain_text('本轮成功')
         await expect(page.locator('[data-member="1"]')).not_to_contain_text('已提交 Sub2 推送')
         rows[0]['latest_job']['status'] = 'done'

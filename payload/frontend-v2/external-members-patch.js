@@ -6,7 +6,7 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261020-custom-groups', document.currentScript.src).href;
+  var viewURL = new URL('./external-members-view.js?v=20261020-quiet-list', document.currentScript.src).href;
   var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
@@ -133,10 +133,8 @@
     if (health.state === 'error') {
       var labels = codes.slice();
       if (!labels.length || (health.errors || []).some(function (e) { return !e.code; })) labels.push('其他异常');
-      return labels.map(function (code) {
-        var tone = code === 408 || code === 429 ? 'warn' : 'bad';
-        return '<span data-sub2-health class="extm-pill ' + tone + '" title="' + esc(checked + ' · 异常待成功验证') + '">Sub2 ' + esc(code) + '</span>';
-      }).join('');
+      var tone = labels.every(function (code) { return code === 408 || code === 429; }) ? 'warn' : 'bad';
+      return '<span data-sub2-health class="extm-pill ' + tone + '" title="' + esc(checked + ' · 历史异常待成功验证，不代表本轮登录失败') + '">Sub2 ' + esc(labels.join(' / ')) + '</span>';
     }
     return '<span data-sub2-health class="extm-pill ' + (health.state === 'recovered' ? 'ok' : 'mut') + '" title="' + esc(checked) + '">' + (health.state === 'recovered' ? 'Sub2 已有成功证据' : 'Sub2 待验证') + '</span>';
   }
@@ -168,10 +166,10 @@
   // ---------- 页面主体(route 与 overlay 共用) ----------
   function buildBody(host, mount) {
     var tableHTML =
-      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:270px"></colgroup><thead><tr>' +
+      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:30px"><col style="width:260px"><col style="width:110px"><col style="width:106px"><col><col style="width:136px"><col style="width:116px"><col style="width:128px"></colgroup><thead><tr>' +
           '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
+          '<th>邮箱</th><th>积分 <span class="extm-th-hint">可用 / 总</span></th><th>当前配置</th><th>登录 / Sub2 状态</th><th>订阅</th><th>最后登录</th><th>操作</th>' +
+        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="9" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
     view = mount(host, {
       filter: function (filters) {
         st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health; st.statesF = filters.states || [];
@@ -305,7 +303,7 @@
     var controller = st.loadController = new AbortController();
     if (!silent) st.loadingSeq = seq;
     renderPagination();
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty" aria-hidden="true"></td></tr>';
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="9" class="extm-empty" aria-hidden="true"></td></tr>';
     return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&"), {controller:controller}).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.loadError = "";
@@ -373,7 +371,7 @@
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || (st.loadingSeq ? '' : '暂无匹配的外部子号')) + '</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { closeRowMenu(); body.innerHTML = '<tr><td colspan="9" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || (st.loadingSeq ? '' : '暂无匹配的外部子号')) + '</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -392,16 +390,15 @@
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
         '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.group_name ? '<span class="extm-group-tag" title="自定义分组：' + esc(r.group_name) + '">' + esc(r.group_name) + '</span>' : '') + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'vietnam' ? '越南登录' : r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link extm-profile-toggle" data-expand="' + r.id + '" title="' + esc(r.account_profile && r.account_profile.fallback_reason ? '回退个人配置原因：' + r.account_profile.fallback_reason : '展开查看账号配置') + '">' + profilePill(r.account_profile) + '</button></td>' +
-        '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
-          '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
-          '<span class="extm-cap ' + (r.has_adobe_password ? 'ok' : 'no') + '" title="Adobe 密码">' + (r.has_adobe_password ? '有密码' : '无密码') + '</span>' +
+        '<td><div class="extm-status"><div class="extm-status-primary">' +
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
-          (hideMessage ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
+          '</div><div class="extm-status-secondary">' + healthPills(r) +
+          '<span class="extm-credentials" title="' + (r.has_cookie ? '已保存 Cookie' : '尚未保存 Cookie') + ' · ' + (r.has_adobe_password ? '已保存 Adobe 密码' : '未保存 Adobe 密码') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + ' · ' + (r.has_adobe_password ? '有密码' : '无密码') + '</span></div>' +
+          (hideMessage ? '' : '<button class="extm-link extm-clip extm-status-message" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
         '<td data-subscription>' + subPill(r) + '</td>' +
-        '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
-        '<td class="cr" data-sub2-pushed-at>' + esc(fmtTime(r.sub2_synced_at, true)) + '</td>' +
-        '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
-        '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
+        '<td class="cr extm-last-login"><span>' + esc(fmtTime(r.last_login_at).split(' ')[0]) + '</span><small>' + esc(fmtTime(r.last_login_at).split(' ')[1] || '') + '</small></td>' +
+        '<td><div class="extm-actions">' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
+        '<button class="extm-link extm-row-more" data-row-more="' + r.id + '" popovertarget="extm-row-menu" aria-label="' + esc(r.email) + ' 的更多操作" aria-haspopup="dialog" aria-controls="extm-row-menu" aria-expanded="false">更多' + window.OKAD_ICONS.svg('chevron', 12) + '</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
       if (tr !== cursor) body.insertBefore(tr, cursor);
       cursor = tr.nextElementSibling;
@@ -409,7 +406,7 @@
         var fresh = false;
         var detail = body.querySelector('tr[data-detail="' + r.id + '"]');
         if (!detail) { fresh = true; detail = document.createElement("tr"); detail.dataset.detail = r.id; detail.className = "extm-detail-row"; detail.innerHTML = '<td><div class="extm-fold is-closed"><div class="extm-fold-clip"><div class="extm-detail" id="extm-detail-' + r.id + '"></div></div></div></td>'; }
-        detail.firstElementChild.colSpan = 11;
+        detail.firstElementChild.colSpan = 9;
         if (detail !== cursor) body.insertBefore(detail, cursor);
         cursor = detail.nextElementSibling;
         renderDetail(r.id);
@@ -421,6 +418,17 @@
         }
       }
     });
+    var menu = el('extm-row-menu');
+    if (menu && menu.matches(':popover-open')) {
+      var trigger = body.querySelector('[data-row-more="' + menu.dataset.rowId + '"]');
+      if (!trigger) closeRowMenu();
+      else {
+        trigger.setAttribute('aria-expanded', 'true');
+        var menuRow = rowById(Number(menu.dataset.rowId));
+        menu.querySelector('[data-del]').disabled = running(menuRow) || st.profileSaving.has(menuRow.id);
+        positionRowMenu();
+      }
+    }
     body.onchange = function (e) {
       if (!e.target.matches(".extm-rowck")) return;
       var id = Number(e.target.dataset.id); if (e.target.checked) st.sel.add(id); else st.sel.delete(id); updSel();
@@ -428,6 +436,7 @@
     body.onclick = function (e) {
       var b = e.target.closest("button"); if (!b || b.disabled) return;
       if (b.hasAttribute("data-expand")) toggleDetail(Number(b.dataset.expand));
+      if (b.hasAttribute('data-row-more')) { e.preventDefault(); showRowMenu(Number(b.dataset.rowMore), b); }
       if (b.hasAttribute("data-credit-error")) showCreditError(Number(b.dataset.creditError));
       if (b.hasAttribute('data-sub2-details')) showSub2Details(Number(b.dataset.sub2Details));
       if (b.hasAttribute("data-copy-email")) copyEmail(Number(b.dataset.copyEmail));
@@ -594,7 +603,7 @@
     dialog.addEventListener('cancel', function (event) { if (busy) event.preventDefault(); });
     dialog.addEventListener('close', function () {
       dialog.remove();
-      var button = document.querySelector('[data-note="' + id + '"]');
+      var button = document.querySelector('[data-row-more="' + id + '"]');
       if (st.open && button) button.focus({ preventScroll: true });
     });
     form.onsubmit = async function (event) {
@@ -647,6 +656,58 @@
       openFold.classList.remove('is-closed'); openFold.removeAttribute('aria-hidden'); openFold.inert = false;
       refreshDetail(id, true);
     }
+  }
+
+  function closeRowMenu() {
+    var menu = el('extm-row-menu');
+    if (menu && menu.matches(':popover-open')) {
+      var anchor = document.querySelector('[data-row-more="' + menu.dataset.rowId + '"]');
+      if (anchor) anchor.setAttribute('aria-expanded', 'false');
+      menu.hidePopover();
+    }
+  }
+  function positionRowMenu() {
+    var menu = el('extm-row-menu'); if (!menu || !menu.matches(':popover-open')) return;
+    var trigger = document.querySelector('[data-row-more="' + menu.dataset.rowId + '"]');
+    if (!trigger) { closeRowMenu(); return; }
+    var anchor = trigger.getBoundingClientRect(), box = menu.getBoundingClientRect();
+    var region = trigger.closest('.extm-tw').getBoundingClientRect();
+    if (anchor.bottom < Math.max(0, region.top) || anchor.top > Math.min(window.innerHeight, region.bottom)) { closeRowMenu(); return; }
+    menu.style.left = Math.max(12, Math.min(anchor.right - box.width, window.innerWidth - box.width - 12)) + 'px';
+    menu.style.top = (anchor.bottom + box.height + 6 <= window.innerHeight - 12 ? anchor.bottom + 6 : Math.max(12, anchor.top - box.height - 6)) + 'px';
+  }
+  function showRowMenu(id, trigger) {
+    var row = rowById(id); if (!row) return;
+    var menu = el('extm-row-menu');
+    if (!menu) {
+      menu = document.createElement('div'); menu.id = 'extm-row-menu'; menu.className = 'extm-row-menu';
+      menu.setAttribute('popover', 'auto'); menu.setAttribute('role', 'dialog'); menu.setAttribute('aria-label', '账号更多操作');
+      menu.addEventListener('toggle', function (event) {
+        var anchor = document.querySelector('[data-row-more="' + menu.dataset.rowId + '"]');
+        if (anchor) {
+          anchor.setAttribute('aria-expanded', String(event.newState === 'open'));
+          if (event.newState === 'closed' && menu.contains(document.activeElement)) anchor.focus({preventScroll:true});
+        }
+      });
+      menu.onclick = function (event) {
+        var button = event.target.closest('button'); if (!button || button.disabled) return;
+        var member = Number(menu.dataset.rowId); closeRowMenu();
+        var anchor = document.querySelector('[data-row-more="' + member + '"]');
+        if (anchor) anchor.focus({preventScroll:true});
+        if (button.hasAttribute('data-note')) editNote(member);
+        if (button.hasAttribute('data-mail')) showMail(member);
+        if (button.hasAttribute('data-del')) doDelete([member]);
+      };
+      el(HOST_ID).appendChild(menu);
+    }
+    var same = menu.dataset.rowId === String(id) && menu.matches(':popover-open');
+    closeRowMenu(); if (same) return;
+    menu.dataset.rowId = id;
+    menu.innerHTML = '<button type="button" data-note="' + id + '">编辑备注</button><button type="button" data-mail="' + id + '">查看邮件</button><button type="button" data-del="' + id + '"' + (running(row) || st.profileSaving.has(id) ? ' disabled' : '') + '>删除账号</button>';
+    menu.showPopover();
+    positionRowMenu();
+    trigger.setAttribute('aria-expanded', 'true');
+    menu.querySelector('button').focus({preventScroll:true});
   }
 
   function logLevel(line) {
@@ -704,7 +765,7 @@
     var d = detailState(id);
     if (!panel.dataset.ready) {
       panel.dataset.ready = "1";
-      panel.innerHTML = '<section class="extm-profile-card extm-task-card" aria-label="账号配置详情"></section><div class="extm-detail-error" role="status"></div><div class="extm-task-layout">' +
+      panel.innerHTML = '<dl class="extm-account-times" aria-label="账号时间记录"></dl><section class="extm-profile-card extm-task-card" aria-label="账号配置详情"></section><div class="extm-detail-error" role="status"></div><div class="extm-task-layout">' +
         '<section class="extm-task-card"><div class="extm-task-head"><strong>任务历史</strong><span class="sp"></span><button class="extm-btn dft sm" data-action="manage" aria-pressed="false">管理历史</button><button class="extm-btn del sm" data-action="delete">删除选中</button></div>' +
         '<div class="extm-history-wrap"><table class="extm-history"><colgroup><col class="extm-history-select" style="width:30px"><col style="width:48px"><col style="width:92px"><col style="width:55px"><col></colgroup>' +
         '<thead><tr><th class="extm-history-select"></th><th>ID</th><th>状态</th><th>进度</th><th>时间</th></tr></thead><tbody></tbody></table></div><nav class="extm-history-pager"></nav></section>' +
@@ -728,6 +789,7 @@
         if (e.target.hasAttribute("data-log-scope")) { d.scope = e.target.value; renderDetail(id); }
       };
     }
+    setHTML(panel.querySelector('.extm-account-times'), '<div><dt>邮箱导入</dt><dd>' + esc(fmtTime(row.created_at)) + '</dd></div><div><dt>最后登录</dt><dd>' + esc(fmtTime(row.last_login_at)) + '</dd></div><div><dt>最后推送 Cookie</dt><dd data-sub2-pushed-at>' + esc(fmtTime(row.sub2_synced_at, true)) + '</dd></div>');
     setHTML(panel.querySelector('.extm-profile-card'), profileDetail(row));
     panel.classList.toggle('extm-manage-history', d.manage);
     var manage = panel.querySelector('[data-action="manage"]');
@@ -1213,7 +1275,7 @@
     if (!st.open || !view) return;
     refreshAll(false); refreshStock(true);
   }
-  function hide() { if (st.loadController) st.loadController.abort(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; if (view) view.close(); var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
+  function hide() { closeRowMenu(); if (st.loadController) st.loadController.abort(); var w = el(HOST_ID); if (w) w.classList.remove("on"); var more = el("extm-more-actions"); if (more) more.open = false; st.open = false; if (view) view.close(); var note = el('extm-note-dialog'); if (note) note.close(); var mail = el('extm-mail-dialog'); if (mail) mail.close(); var otp = el('extm-otp-dialog'); if (otp) otp.close(); var mode = el('extm-mode-dialog'); if (mode) mode.close(); var push = el('extm-sub2-confirm-dialog'); if (push) push.close(); var detail = el('extm-sub2-detail-dialog'); if (detail) detail.close(); st.stock = null; st.stockEpoch++; }
   window.OKAD_NAV.register({
     id: NAV_ID, route: "external-members", panel: HOST_ID, label: "外部子号", icon: "external", first: true,
     open: show, close: hide,
@@ -1228,6 +1290,8 @@
     if (st.open && !document.hidden) { refreshAll(false); refreshStock(false); }
   }, 3000);
   document.addEventListener('visibilitychange', function () { if (st.open && !document.hidden) { refreshAll(false); refreshStock(true); } });
+  document.addEventListener('scroll', positionRowMenu, true);
+  window.addEventListener('resize', closeRowMenu);
   window.addEventListener('okad:sub2-stock-changed', function () { refreshStock(true); });
 
 })();
