@@ -70,6 +70,10 @@ MOBILE_BROWSER=webkit payload/backend/.venv/bin/python payload/frontend-v2/tests
 - 数据库：`data/app.db`，升级保留
 - 管理员：`admin`，首次随机密码见服务器 `.env` 的 `FIRST_ADMIN_PASSWORD`
 
+日常源码小改使用 [快速增量发布](deploy/primary/fast-release.md)：`python3 deploy/primary/release.py deploy --base <上次实际发布提交>`。只传变更文件，复用一条 SSH 连接，前端免重启，后端保留现有空闲检查、备份和回退；每个阶段记录耗时。`plan` 可只读核验，已经在线或只有文档／工具变化时直接跳过发布。依赖、模型和容器配置等变化继续走专用流程。
+
+首次初始化：
+
 ```bash
 python3 deploy/init-env.py
 docker compose up -d --build

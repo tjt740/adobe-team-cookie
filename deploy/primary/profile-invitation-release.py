@@ -68,7 +68,11 @@ def database_summary():
         db.execute('BEGIN')
         settings = {k: hashlib.sha256((v or '').encode()).hexdigest() for k, v in db.execute('SELECT key,value FROM settings')}
         ids = [r[0] for r in db.execute('SELECT id FROM external_members ORDER BY id')]
-        return {'settings_hashes':settings, 'external_member_ids':ids}
+        protected = {}
+        for table in ('users', 'adobe_accounts', 'adobe_members', 'external_members', 'emails'):
+            rows = db.execute('SELECT * FROM ' + table + ' ORDER BY id').fetchall()
+            protected[table] = {'count':len(rows), 'hash':hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode()).hexdigest()}
+        return {'settings_hashes':settings, 'external_member_ids':ids, 'protected_records':protected}
 
 
 def require_idle():
@@ -121,6 +125,11 @@ def restore_host(backup):
             shutil.copy2(backup / 'payload' / name, path)
         else:
             path.unlink(missing_ok=True)
+
+
+# Reusable release entrypoints can supply feature-specific smoke checks.
+CANDIDATE_CHECK = "import inspect;import app.main;from app.services.adobe_admin import complete_sub_account;from app.services.firefly import _prefer_organization_profile;from app.services.account_profile import build_profile_snapshot;assert 'activate_profiles' in inspect.signature(complete_sub_account).parameters;p=build_profile_snapshot({'check_account_type':'type1','check_user_id':'synthetic@AdobeID','profile_preference':'organization','profile_fallback_reason':'synthetic fallback'},'synthetic@AdobeID');assert p['fallback_reason']=='synthetic fallback' and p['requested_preference']=='organization';print('CANDIDATE_PROFILE_SCHEMA_AND_IMPORT_OK')"
+LIVE_CHECK = "import json,sqlite3,urllib.request\nfrom app.core.security import create_access_token\nc=sqlite3.connect('file:/app/data/app.db?mode=ro',uri=True)\nassert c.execute('PRAGMA integrity_check').fetchone()[0]=='ok'\nuid,version=c.execute('SELECT id,token_version FROM users WHERE is_active=1 AND is_superuser=1 LIMIT 1').fetchone()\ntoken=create_access_token(uid,expires_minutes=5,token_version=version)\ndef get(path):\n with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:9500'+path,headers={'Authorization':'Bearer '+token}),timeout=30) as r:return json.load(r)\nassert get('/api/health')['status']=='ok'\nschema=get('/openapi.json')['components']['schemas']['AccountProfile']['properties']\nassert 'fallback_reason' in schema and 'requested_preference' in schema\nmembers=get('/api/external/members?size=1')\nassert members['total']==c.execute('SELECT count(*) FROM external_members').fetchone()[0]\nfor member in members['items']:\n assert 'cookie' not in member and 'access_token' not in member and 'adobe_password' not in member\n profile=member.get('account_profile')\n if profile: assert 'fallback_reason' in profile and 'requested_preference' in profile\nprint(json.dumps({'api':'ok','database':'ok','members':members['total'],'profile_schema':'ok'}))\n"
 
 
 def main(mode):
@@ -191,7 +200,7 @@ def main(mode):
     run(['docker', 'build', '--network', 'none', '--pull=false', '-t', image, str(STAGE)])
     expected = source | {n:meta['files'][n]['after'] for n in FILES}
     assert hashes(image) == expected, 'Candidate changes unrelated source files'
-    run(['docker','run','--rm','--network','none','--entrypoint','python',image,'-c',"import inspect;import app.main;from app.services.adobe_admin import complete_sub_account;from app.services.firefly import _prefer_organization_profile;from app.services.account_profile import build_profile_snapshot;assert 'activate_profiles' in inspect.signature(complete_sub_account).parameters;p=build_profile_snapshot({'check_account_type':'type1','check_user_id':'synthetic@AdobeID','profile_preference':'organization','profile_fallback_reason':'synthetic fallback'},'synthetic@AdobeID');assert p['fallback_reason']=='synthetic fallback' and p['requested_preference']=='organization';print('CANDIDATE_PROFILE_SCHEMA_AND_IMPORT_OK')"])
+    run(['docker','run','--rm','--network','none','--entrypoint','python',image,'-c',CANDIDATE_CHECK])
     assert inspect(CONTAINER)['Id'] == current['Id'] and hashes() == source and configs() == private
     assert other_containers() == others, 'Another service changed while preparing'
     require_idle()
@@ -204,7 +213,7 @@ def main(mode):
         changed = True
         switch(image)
         assert hashes() == expected, 'Unexpected runtime source changes'
-        verification=json.loads(out(['docker','exec',CONTAINER,'python','-c',"import json,sqlite3,urllib.request\nfrom app.core.security import create_access_token\nc=sqlite3.connect('file:/app/data/app.db?mode=ro',uri=True)\nassert c.execute('PRAGMA integrity_check').fetchone()[0]=='ok'\nuid,version=c.execute('SELECT id,token_version FROM users WHERE is_active=1 AND is_superuser=1 LIMIT 1').fetchone()\ntoken=create_access_token(uid,expires_minutes=5,token_version=version)\ndef get(path):\n with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:9500'+path,headers={'Authorization':'Bearer '+token}),timeout=30) as r:return json.load(r)\nassert get('/api/health')['status']=='ok'\nschema=get('/openapi.json')['components']['schemas']['AccountProfile']['properties']\nassert 'fallback_reason' in schema and 'requested_preference' in schema\nmembers=get('/api/external/members?size=1')\nassert members['total']==c.execute('SELECT count(*) FROM external_members').fetchone()[0]\nfor member in members['items']:\n assert 'cookie' not in member and 'access_token' not in member and 'adobe_password' not in member\n profile=member.get('account_profile')\n if profile: assert 'fallback_reason' in profile and 'requested_preference' in profile\nprint(json.dumps({'api':'ok','database':'ok','members':members['total'],'profile_schema':'ok'}))\n"]))
+        verification=json.loads(out(['docker','exec',CONTAINER,'python','-c',LIVE_CHECK]))
         print('LIVE_READ_ONLY_PROFILE_CHECK_OK',json.dumps(verification),flush=True)
         for name in FILES:
             shutil.copy2(STAGE / 'payload' / name, APP / 'payload' / name)
