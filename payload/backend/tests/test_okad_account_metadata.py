@@ -53,7 +53,7 @@ def test_backfill_is_metadata_only_and_skips_ambiguous_or_foreign_sources(db, se
     items = calls[0][2]['items']
     assert [r['id'] for r in items] == [1,2,9]
     assert [r['is_company'] for r in items] == [True,False,False]
-    assert all(set(r) == {'id','issuer','source_key','email','is_company'} for r in items)
+    assert all(set(r) == {'id','issuer','source_key','email','is_company','account_type','group_id','group_name'} for r in items)
     assert rows == original
     assert company.cookie == 'private-cookie'
     assert not list(db.scalars(select(CredentialDelivery)))
@@ -105,3 +105,44 @@ def test_metadata_batches_are_bounded(db, setup, monkeypatch):
     sync_inventory_metadata(CFG, remote)
     assert [len(batch) for batch in calls] == [200,5]
     assert len({item['id'] for batch in calls for item in batch}) == 205
+
+
+def test_group_edits_backfill_and_clear_without_credential_changes(db, setup, monkeypatch):
+    from app.models.external_member import ExternalMemberGroup
+    group = ExternalMemberGroup(name='客户 A', name_key='客户 a')
+    row = ExternalMember(email='grouped@example.com', otp_mode='vietnam', group=group, cookie='keep-cookie')
+    db.add(row); db.commit()
+    remote = {'id': 7, 'email': row.email, 'imported_email': row.email}
+    sent = []
+    monkeypatch.setattr(link, 'request', lambda cfg, method, path, body: sent.append(body['items'][0]))
+    sync_inventory_metadata(CFG, [remote])
+    assert (sent[-1]['group_id'], sent[-1]['group_name'], sent[-1]['account_type']) == (group.id, '客户 A', 'vietnam')
+    remote['account_metadata'] = {k: v for k, v in sent[-1].items() if k != 'id'}
+    row.group = None; db.commit()
+    sync_inventory_metadata(CFG, [remote])
+    assert sent[-1]['group_id'] is None and sent[-1]['group_name'] == ''
+    assert row.cookie == 'keep-cookie'
+    assert not list(db.scalars(select(CredentialDelivery)))
+    assert not list(db.scalars(select(RecoveryJob)))
+
+
+def test_legacy_group_sync_uses_admin_metadata_endpoint(db, setup, monkeypatch):
+    from app.services.okad_account_metadata import sync_current_metadata
+    from app.models.external_member import ExternalMemberGroup
+    group = ExternalMemberGroup(name='客户 A', name_key='客户 a')
+    row = ExternalMember(email='legacy-group@example.com', group=group)
+    db.add(row); db.commit()
+    cfg = {**CFG, 'enabled': False, 'admin_token': 'synthetic', 'base_url': 'https://current.test'}
+    monkeypatch.setattr(link, 'settings', lambda db: {**cfg, 'base_url': 'https://old-reliable.test'})
+    monkeypatch.setattr(external_sub2, 'config', lambda db: cfg)
+    calls = []
+    def request(config, method, path, body=None):
+        assert config['base_url'] == 'https://current.test'
+        calls.append((method, path, body))
+        if method == 'GET':
+            return {'items': [{'id': 8, 'email': row.email, 'imported_email': row.email}], 'next_cursor': 0}
+        return {'updated': 1}
+    monkeypatch.setattr(external_sub2, '_request', request)
+    sync_current_metadata()
+    assert [call[:2] for call in calls] == [('GET', '/admin/accounts/okad-inventory?after_id=0'), ('POST', '/admin/accounts/okad-metadata')]
+    assert calls[-1][2]['items'][0]['group_id'] == group.id

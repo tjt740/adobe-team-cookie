@@ -1,10 +1,18 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 from app.models import integration as _integration_models  # register durable integration tables
+
+
+class ExternalMemberGroup(Base):
+    __tablename__ = "external_member_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    name_key: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
 
 
 class ExternalMember(Base):
@@ -19,6 +27,8 @@ class ExternalMember(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     note: Mapped[str] = mapped_column(Text, default="", server_default="")
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("external_member_groups.id"), nullable=True, index=True)
+    group: Mapped[ExternalMemberGroup | None] = relationship(lazy="joined")
 
     # 导入的微软邮箱凭据(收 Adobe 验证码用):邮箱----密码----ClientID----RefreshToken
     mail_password: Mapped[str] = mapped_column(String(255), default="")

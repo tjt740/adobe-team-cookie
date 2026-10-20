@@ -6,8 +6,8 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261019-vietnam-login', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var viewURL = new URL('./external-members-view.js?v=20261020-custom-groups', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -175,7 +175,7 @@
     view = mount(host, {
       filter: function (filters) {
         st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health; st.statesF = filters.states || [];
-        st.profileF = filters.profile; st.companyF = filters.company;
+        st.profileF = filters.profile; st.companyF = filters.company; st.groupF = filters.group;
         st.creditsField = filters.creditsField;
         st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
         st.creditsMax = filters.creditsMax == null ? '' : String(filters.creditsMax);
@@ -184,10 +184,11 @@
       },
       refresh: function () {
         view.button('extm-refresh', {loading:true, disabled:true});
-        return refreshStock(true).then(function () { return refreshAll(true); }).finally(function () {
+        return Promise.all([refreshStock(true), loadGroups()]).then(function () { return refreshAll(true); }).finally(function () {
           view.button('extm-refresh', {loading:false, disabled:false});
         });
       },
+      createGroup: createGroup, loadGroups: loadGroups, assignGroup: assignGroup,
       import: doImport, mail: mailAction, stopAll: stopAllTasks, batchLogin: batchLogin, profile: saveSelectedProfilePreference,
       delete: batchDelete, export: exportCookies, exportEmails: exportEmails, push: pushSub2, loginAll: loginAll,
       page: goPage,
@@ -202,7 +203,7 @@
       Array.prototype.forEach.call(document.querySelectorAll(".extm-rowck"), function (c) { c.checked = on; });
       updSel();
     };
-    loadMailConfig(); load();
+    loadMailConfig(); loadGroups(); load();
   }
 
   function dateBoundary(value, nextDay) {
@@ -225,7 +226,9 @@
       if (st.creditsMax !== "") filters.credits_max = Number(st.creditsMax);
     }
     if (st.profileF) filters.current_profile = st.profileF;
-    if (st.companyF !== "") filters.is_company = st.companyF === "true";
+    if (st.companyF === "true" || st.companyF === "false") filters.is_company = st.companyF === "true";
+    if (st.companyF) filters.account_type = {true:'company',false:'non_company',vietnam:'vietnam'}[st.companyF];
+    if (st.groupF !== "" && st.groupF != null) filters.group_id = Number(st.groupF);
     return filters;
   }
   function qs() {
@@ -387,7 +390,7 @@
       setHTML(tr,
         '<td class="extm-select-cell"><input type="checkbox" class="extm-rowck" data-id="' + r.id + '" aria-label="选择 ' + esc(r.email) + '"' + (st.sel.has(r.id) ? ' checked' : '') + '></td>' +
         '<td><button class="extm-link extm-toggle" data-expand="' + r.id + '" aria-label="' + (expanded ? '收起' : '展开') + ' ' + esc(r.email) + ' 的任务详情" aria-expanded="' + expanded + '" aria-controls="extm-detail-' + r.id + '">' + window.OKAD_ICONS.svg('chevron', 16) + '</button></td>' +
-        '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'vietnam' ? '越南登录' : r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
+        '<td><div class="extm-email-row"><button class="extm-link extm-clip extm-email" data-copy-email="' + r.id + '" title="点击复制账号：' + esc(r.email) + '" aria-label="复制账号 ' + esc(r.email) + '">' + esc(r.email) + '</button>' + (r.group_name ? '<span class="extm-group-tag" title="自定义分组：' + esc(r.group_name) + '">' + esc(r.group_name) + '</span>' : '') + (r.uses_supply_mail ? '<span class="extm-company-tag" title="验证码通过 supply.ink 取信">' + window.OKAD_ICONS.svg('tag', 12) + '公司</span>' : '') + '</div><div class="extm-account-meta">' + sub2Pill(r) + '<button class="extm-link extm-mode-link" data-otp-settings="' + r.id + '" aria-label="修改 ' + esc(r.email) + ' 的验证码获取方式" title="点击修改验证码获取方式"' + (busy || saving ? ' disabled' : '') + '>' + window.OKAD_ICONS.svg('settings', 11) + (r.otp_mode === 'vietnam' ? '越南登录' : r.otp_mode === 'manual' ? '手动验证码' : '自动取码') + '</button></div></td>' +
         '<td>' + creditCell(r) + '</td><td><button class="extm-link extm-profile-toggle" data-expand="' + r.id + '" title="' + esc(r.account_profile && r.account_profile.fallback_reason ? '回退个人配置原因：' + r.account_profile.fallback_reason : '展开查看账号配置') + '">' + profilePill(r.account_profile) + '</button></td>' +
         '<td><div class="extm-status" style="flex-wrap:wrap">' + healthPills(r) +
           '<span class="extm-cap ' + (r.has_cookie ? 'ok' : 'no missing') + '">' + (r.has_cookie ? '有 Cookie' : '无 Cookie') + '</span>' +
@@ -834,6 +837,7 @@
     var preferences = new Set(selectedRows.map(function (row) { return row.profile_preference || ''; }));
     view.button("extm-stop-all", {disabled:st.stoppingAll, loading:st.stoppingAll, text:st.stoppingAll ? "正在终止…" : "终止所有任务"});
     view.update({selected:st.sel.size,
+      group:'__mixed__', groupSaving:!!st.groupSaving,
       profilePlaceholder:st.profileSaving.size ? '保存中…' : !st.sel.size ? '请先勾选账号' : '所选配置不一致',
       profile:!st.profileSaving.size && preferences.size === 1 ? selectedRows[0].profile_preference || '' : '__mixed__',
       profileDisabled:!st.sel.size || busy || st.profileSaving.size > 0 || !!st.loginAllSubmitting});
@@ -1049,6 +1053,24 @@
     finally { st.sub2Confirming = false; st.sub2Submitting = false; updSel(); }
   }
 
+  async function loadGroups() {
+    try { var groups = await api('/groups'); if (!Array.isArray(groups)) throw new Error('分组列表格式无效'); st.groups = groups; view.groups(st.groups); }
+    catch (error) { view.update({groupsError:'分组加载失败：' + error.message}); }
+  }
+  async function createGroup(name) {
+    var group = await api('/groups', {method:'POST', body:{name:name}});
+    st.groups = st.groups.concat([group]); view.groups(st.groups); return group;
+  }
+  async function assignGroup(value) {
+    var ids = selIds(); if (!ids.length || st.groupSaving || value === '__mixed__') return;
+    st.groupSaving = true; updSel();
+    try {
+      var data = await api('/members/group', {method:'PATCH', body:{ids:ids, group_id:value === '0' ? null : Number(value)}});
+      toast('success', data.message); st.sel.clear(); await load();
+    } catch (error) { toast('error', error.message); }
+    finally { st.groupSaving = false; updSel(); }
+  }
+
   async function doImport() {
     if (st.importing) return;
     var btn = el('extm-do-import'), content = view.form.content.trim();
@@ -1057,6 +1079,7 @@
     try {
       var payload = {content:content, on_duplicate:view.form.duplicate};
       if (view.form.otpMode) payload.otp_mode = view.form.otpMode;
+      if (view.form.group) payload.group_id = view.form.group === '0' ? null : Number(view.form.group);
       var r = await api('/members/import', { method: 'POST', body: payload });
       var msg = '导入完成: 新增 ' + r.created + ' · 更新 ' + r.updated + ' · 跳过 ' + r.skipped + ' · 失败 ' + r.failed;
       if (r.job_id) msg += ' · 登录任务 #' + r.job_id + '，每批最多 50 个，成功后自动推送 Sub2';

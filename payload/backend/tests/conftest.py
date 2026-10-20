@@ -46,7 +46,8 @@ def client(SessionLocal, engine, monkeypatch):
     from app.api.deps import get_current_user
     from app.main import app
     from app.models.user import User
-    from app.services import job_manager
+    from app.services import job_manager, okad_account_metadata
+    monkeypatch.setattr(okad_account_metadata, "sync_current_metadata", lambda: None)
 
     monkeypatch.setattr(job_manager, "engine", engine)
     monkeypatch.setattr(job_manager.JOBS, "_jobs", {})

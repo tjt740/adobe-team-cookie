@@ -1,4 +1,6 @@
-from sqlalchemy import inspect, text
+import uuid
+
+from sqlalchemy import inspect, select, text
 
 from app.core.config import settings
 from app.crud import user as user_crud
@@ -58,6 +60,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "mail_url": "TEXT DEFAULT ''",
     },
     "external_members": {
+        "group_id": "INTEGER REFERENCES external_member_groups(id)",
         "note": "TEXT NOT NULL DEFAULT ''",
         "operator": "VARCHAR(255) DEFAULT ''",
         "mail_password": "VARCHAR(255) DEFAULT ''",
@@ -97,6 +100,8 @@ def _run_migrations() -> None:
                 if name not in present:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
                     print(f"[init_db] 迁移:为 {table} 新增列 {name}")
+        if "external_members" in existing_tables:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_external_members_group_id ON external_members(group_id)"))
 
 
 def init_db() -> None:
@@ -105,6 +110,10 @@ def init_db() -> None:
 
     db = SessionLocal()
     try:
+        from app.models.setting import Setting
+        if not db.scalar(select(Setting).where(Setting.key == "okad_instance_id")):
+            db.add(Setting(key="okad_instance_id", value=uuid.uuid4().hex))
+            db.commit()
         existing = user_crud.get_by_username(db, settings.FIRST_ADMIN_USERNAME)
         if not existing:
             user_crud.create_user(
