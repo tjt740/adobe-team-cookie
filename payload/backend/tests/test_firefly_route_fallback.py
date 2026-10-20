@@ -65,6 +65,30 @@ def test_primary_success_skips_original_route(login):
     assert not any("登录路线 2/2" in line for line in login.logs)
 
 
+def test_ims_success_with_revoked_business_token_is_not_login_success(login, monkeypatch):
+    def rejected(*args, error_out, **kwargs):
+        error_out.update(message="积分查询凭证已失效（HTTP 401 / 401013）", http_status=401)
+        return None
+
+    monkeypatch.setattr(firefly, "fetch_credits_detail", rejected)
+    with pytest.raises(firefly._adm.AdminError, match="登录会话验证失败.*401013"):
+        login.run()
+    assert login.events == ["primary", "close"]
+    assert not login.saved
+
+
+@pytest.mark.parametrize("message", ["Adobe 拒绝访问（HTTP 403）", "积分接口请求失败或超时，请稍后重试"])
+def test_unknown_quota_does_not_reject_otherwise_authenticated_session(login, monkeypatch, message):
+    def unavailable(*args, error_out, **kwargs):
+        error_out.update(message=message)
+        return None
+
+    monkeypatch.setattr(firefly, "fetch_credits_detail", unavailable)
+    record = login.run()
+    assert record["cookie"] and record["credits"] is None
+    assert record["credits_error"] == message
+
+
 @pytest.mark.parametrize("error", [firefly._adm.AdminError("needs completion"), TimeoutError("connection timeout")])
 def test_primary_failure_uses_original_route_once(login, error):
     result = login.run(primary=error)

@@ -73,6 +73,15 @@ def test_zero_balance_is_a_success():
     assert result == {'available': 0, 'total': 0} and error == {}
 
 
+def test_revoked_session_stops_before_network_retry_can_hide_401():
+    error = {}
+    session = session_for(response(401, {'error_code': '401013', 'message': 'private-cookie'}),
+                          RuntimeError('should not retry'))
+    assert firefly.fetch_credits_detail('tok', 'id', session=session,
+                                        attempts=3, error_out=error) is None
+    assert error == {'message': '积分查询凭证已失效（HTTP 401 / 401013）', 'http_status': 401}
+
+
 def test_final_network_failure_does_not_leak_exception_or_keep_previous_http_code():
     error = {}
     session = session_for(response(451, {'error_code': '10009'}), RuntimeError('private-cookie'))

@@ -250,7 +250,8 @@ def fetch_credits_detail(
     """返回 {'available': float, 'total': float};None 表示查询失败。
 
     分母取 data['total']['quota']['total'](已由抓包核实),可用取 ['available']。
-    error_out 可接收最终失败的安全提示；不保存响应正文或凭证。
+    error_out 可接收最终失败的安全提示；401 另带 http_status，且不重试已失效凭证。
+    不保存响应正文或凭证。
     """
     def failed(message):
         if error_out is not None:
@@ -315,6 +316,10 @@ def fetch_credits_detail(
                 failed(message)
                 if callable(log):
                     log(message)
+                if r.status_code == 401:
+                    if error_out is not None:
+                        error_out["http_status"] = 401
+                    return None
         except Exception:
             failed("积分接口请求失败或超时，请稍后重试")
             if callable(log):
@@ -1190,6 +1195,12 @@ def register_account(
             session=client.session,
             error_out=credits_error,
         )
+        if credits_error.get("http_status") == 401:
+            # IMS 发出 token 不代表业务接口接受它。不能覆盖原 Cookie 或将
+            # 已被 Adobe 拒绝的会话标成登录成功；也不要因此进入补资料路线。
+            raise _adm.AdminError(
+                "Adobe 登录会话验证失败：" + credits_error["message"]
+            )
         credits = credits_detail["available"] if credits_detail else None
         credits_total = credits_detail["total"] if credits_detail else None
         expires_at = extract_jwt_expiry(token)

@@ -7,6 +7,7 @@ from __future__ import annotations
 """
 
 import random
+import re
 import uuid
 
 try:
@@ -18,7 +19,6 @@ except ImportError:  # 没装 curl_cffi 时回退
 
     _HAS_CURL_CFFI = False
 
-CHROME_VERSIONS = ["136.0.0.0", "131.0.0.0"]
 UA_TEMPLATES = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{v} Safari/537.36",
 ]
@@ -44,7 +44,7 @@ def _pick_impersonate() -> str:
         key=lambda v: int(v[len("chrome"):]),
         reverse=True,
     )
-    return chromes[0] if chromes else (vals[0] if vals else "chrome124")
+    return chromes[0] if chromes else "chrome124"
 
 
 # 进程启动时算一次:当前环境支持的最佳 Chrome 指纹
@@ -60,7 +60,13 @@ def normalize_proxy(proxy: str) -> str:
 
 class HttpClient:
     def __init__(self, proxy: str = ""):
-        ver = random.choice(CHROME_VERSIONS)
+        # The installed curl_cffi can be older than the advertised browser.
+        # Derive HTTP identity from the selected TLS profile so a single login
+        # never declares Chrome 131/136 while using Chrome 124's handshake.
+        match = re.fullmatch(r"chrome(\d+)", IMPERSONATE_TARGET)
+        if not match:
+            raise ValueError("Adobe HTTP client requires a desktop Chrome profile")
+        ver = f"{match.group(1)}.0.0.0"
         self.user_agent = random.choice(UA_TEMPLATES).format(v=ver)
         self.locale = random.choice(LOCALE_POOL)
         self.accept_language = f"{self.locale},en;q=0.9"
@@ -76,10 +82,7 @@ class HttpClient:
         self._sec_ch_ua_platform = '"Windows"'
         p = normalize_proxy(proxy)
         if _HAS_CURL_CFFI:
-            try:
-                self.session = _requests.Session(impersonate=IMPERSONATE_TARGET)
-            except Exception:
-                self.session = _requests.Session()
+            self.session = _requests.Session(impersonate=IMPERSONATE_TARGET)
         else:
             self.session = _requests.Session()
         if p:
