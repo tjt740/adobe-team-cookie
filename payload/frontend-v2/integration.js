@@ -65,9 +65,16 @@
   function cancelReads() {
     requestID++; reads.forEach(function (controller) { controller.abort(); }); reads.clear(); refreshing = false;
   }
-  function badge(state) {
+  function badge(state, delivery) {
     var tone = ['ready','done'].includes(state) ? 'good' : ['attention','blocked','failed'].includes(state) ? 'bad' : 'warn';
-    return '<span class="integration-badge ' + tone + '">' + esc(labels[state] || state) + '</span>';
+    var label = labels[state] || state;
+    if (state === 'retry' && delivery) {
+      var verification = delivery.receipt && delivery.receipt.integration && delivery.receipt.integration.verification;
+      label = verification === 'proxy_pending' || delivery.message === 'Cookie 已写入，等待 Sub2 代理就绪' ? '等待代理' :
+        verification === 'verification_retry' || delivery.message === 'Cookie 已写入，等待重新验证' ? '等待验证' : '等待重试';
+    }
+    if (state === 'blocked') label = '同步失败';
+    return '<span class="integration-badge ' + tone + '">' + esc(label) + '</span>';
   }
   async function api(path, method, body) {
     var token = localStorage.getItem('okad_token');
@@ -127,7 +134,7 @@
         (delivery && delivery.account_id ? ' · Sub2 #' + esc(delivery.account_id) : '') + '</small></td><td>' +
         '<span class="integration-badge ' + (row.auto_recovery ? 'good' : 'warn') + '">' + (row.auto_recovery ? '可自动恢复' : row.recovery_code === 'configuration' ? '等待连接配置' : '需要处理') + '</span><small>' + esc(row.recovery_message) + '</small></td><td>' +
         (row.has_cookie ? (row.version ? 'v' + esc(row.version) : '待编号') : '尚无 Cookie') + '</td><td>' +
-        (delivery ? badge(delivery.state) + '<small>' + esc(delivery.message) + (delivery.next_at ? ' · 下次 ' + window.OKAD_TIME.clock(delivery.next_at) : '') + (delivery.updated_at ? '<br>更新于 ' + window.OKAD_TIME.format(delivery.updated_at) : '') + '</small>' : '<span class="integration-muted">尚未登记可靠同步</span>') +
+        (delivery ? badge(delivery.state, delivery) + '<small>' + esc(delivery.message) + (delivery.next_at ? ' · 下次 ' + window.OKAD_TIME.clock(delivery.next_at) : '') + (delivery.updated_at ? '<br>更新于 ' + window.OKAD_TIME.format(delivery.updated_at) : '') + '</small>' : '<span class="integration-muted">尚未登记可靠同步</span>') +
         '</td><td><div class="integration-actions"><button data-action="' + (delivery ? 'retry-sync' : 'push') + '" data-source="' + esc(row.source_key) + '" data-unavailable="' + !row.has_cookie + '">' +
         (delivery ? '同步与验证' : '推送入库') + '</button>' + (row.recovery_code === 'needs_manual' ?
           '<a data-route href="' + window.OKAD_ROUTE.href('/external-members') + '">手动验证码登录</a>' :

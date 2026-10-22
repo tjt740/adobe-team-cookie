@@ -6,7 +6,7 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261021-member-stop', document.currentScript.src).href;
+  var viewURL = new URL('./external-members-view.js?v=20261022-sync-status', document.currentScript.src).href;
   var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, stoppingMembers: new Set(), importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
@@ -938,10 +938,15 @@
     view.button('extm-login-all', {disabled:!!st.loginAllSubmitting || st.stoppingAll || st.pending.size > 0 || st.profileSaving.size > 0, loading:!!st.loginAllSubmitting,
       text:st.loginAllSubmitting ? '提交重登中…' : qs().length ? '一键重登筛选结果' : '一键重登全部'});
     view.button('extm-batch-del', {disabled:busy || saving || !st.sel.size});
-    var pushing = st.sub2Submitting || st.rows.some(function (r) {return st.sel.has(r.id) && ['pending','syncing'].includes(r.sub2_status);});
+    var selectedSync = st.rows.filter(function (r) {return st.sel.has(r.id) && ['pending','syncing'].includes(r.sub2_status);});
+    var sending = st.sub2Submitting || selectedSync.some(function (r) {return r.sub2_status === 'syncing' && !waitingForProxy(r);});
+    var pushing = sending || selectedSync.length > 0;
+    var waitingLabel = selectedSync.length && selectedSync.every(waitingForProxy) ? '等待代理' :
+      selectedSync.length && selectedSync.every(function (r) {return syncLabel(r) === '等待验证';}) ? '等待验证' :
+      selectedSync.length && selectedSync.every(function (r) {return syncLabel(r) === '等待重试';}) ? '等待重试' : '等待同步';
     ['extm-sub2-push','extm-sub2-relink'].forEach(function (id) {
-      view.button(id, {disabled:!!pushing || !!st.sub2Confirming || !st.sel.size || busy, loading:!!pushing,
-        text:pushing ? 'Sub2 同步中…' : id === 'extm-sub2-push' ? '推送 Sub2' : '重新关联 / 推送'});
+      view.button(id, {disabled:!!pushing || !!st.sub2Confirming || !st.sel.size || busy, loading:!!sending,
+        text:sending ? 'Sub2 同步中…' : pushing ? waitingLabel : id === 'extm-sub2-push' ? '推送 Sub2' : '重新关联 / 推送'});
     });
   }
   function selIds() { return Array.from(st.sel); }
@@ -962,6 +967,17 @@
     return {tone: tone, label: label, tip: tip};
   }
 
+  function waitingForProxy(row) {
+    return ['pending','syncing'].includes(row.sub2_status) && row.sub2_message === 'Cookie 已写入，等待 Sub2 代理就绪';
+  }
+
+  function syncLabel(row) {
+    if (waitingForProxy(row)) return '等待代理';
+    if (row.sub2_status === 'pending' && row.sub2_message === 'Cookie 已写入，等待重新验证') return '等待验证';
+    if (row.sub2_status === 'pending' && /重试/.test(row.sub2_message || '')) return '等待重试';
+    return {pending:'Sub2 待同步', syncing:'Sub2 同步中', failed:'Sub2 同步失败'}[row.sub2_status];
+  }
+
   function sub2Pill(row) {
     var stock = sub2Stock(row), tip = stock.tip;
     var detail = row.sub2_message || '';
@@ -969,17 +985,18 @@
     if (row.sub2_synced_at) detail += ' · 上次同步 ' + fmtTime(row.sub2_synced_at);
     if (row.sub2_status === 'synced') tip += ' · 本页 Cookie 上次同步成功' + detail;
     var html = '<span data-sub2-stock class="extm-pill ' + stock.tone + '" style="margin-top:4px" title="' + esc(tip) + '">' + stock.label + '</span>';
-    var state = { pending: ['warn', 'Sub2 待同步'], syncing: ['info', 'Sub2 同步中'], failed: ['bad', 'Sub2 同步失败'] }[row.sub2_status];
+    var label = syncLabel(row);
+    var state = label && [row.sub2_status === 'failed' ? 'bad' : row.sub2_status === 'syncing' && !waitingForProxy(row) ? 'info' : 'warn', label];
     var button = '<button type="button" class="extm-link extm-sub2-details" data-sub2-details="' + row.id + '" aria-haspopup="dialog" aria-label="查看 ' + esc(row.email) + ' 的 Sub2 同步详情">' + window.OKAD_ICONS.svg('info', 12) + '详情</button>';
     if (!state) return '<span class="extm-sub2-state">' + html + button + '</span>';
     return html + ' <span class="extm-sub2-state"><span class="extm-pill ' + state[0] + '" style="margin-top:4px" title="' + esc(detail) + '">' + state[1] + '</span>' + button + '</span>' +
-      (row.sub2_status === 'failed' ? '<span class="extm-clip" style="font-size:12px;color:#d03050" title="' + esc(detail) + '">' + esc(row.sub2_message || '请重新推送') + '</span>' : '');
+      (row.sub2_status === 'failed' || row.sub2_status === 'pending' ? '<span class="extm-clip" style="font-size:12px;color:' + (row.sub2_status === 'failed' ? '#d03050' : 'var(--ws-muted,#7d8797)') + '" title="' + esc(detail) + '">' + esc(row.sub2_message || (row.sub2_status === 'failed' ? '请重新推送' : '等待后台处理')) + '</span>' : '');
   }
 
   function sub2Explanation(row) {
     var status = row.sub2_status || 'not_pushed', message = (row.sub2_message || '').trim();
-    if (status === 'pending' && message === 'Cookie 已写入，等待 Sub2 代理就绪') return {
-      title: '已发送到 Sub2，正在等可用线路',
+    if (waitingForProxy(row)) return {
+      title: '等待代理',
       reason: '账号的登录信息已经送到 Sub2。这个账号使用的网络线路暂时没有准备好，所以还不能检查账号能否使用。',
       action: '不用重新登录，也不用重复推送。请管理员在 Sub2 检查线路是否正常、有没有空位。线路准备好后，系统会自动继续检查。'
     };

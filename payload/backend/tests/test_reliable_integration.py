@@ -67,6 +67,32 @@ def test_delivery_failure_retries_cookie_without_login(db,setup,monkeypatch):
     db.expire_all();d=db.get(CredentialDelivery,'test-site/'+key)
     assert d.state=='retry' and d.next_at>time.time() and d.lease_until==0
     assert row.cookie=='secret-cookie' and not list(db.scalars(select(RecoveryJob)))
+    from app.services.external_sub2 import summary
+    assert summary(row,link.target(CFG))['sub2_status']=='pending'
+    assert summary(row,link.target(CFG))['sub2_message']=='network'
+
+
+@pytest.mark.parametrize('failure,message', [
+    ('not_found','Sub2 没有该账号，请先手动推送入库'),
+    ('configuration','联动密钥无效或无权操作，请检查配置'),
+])
+def test_failure_before_remote_id_updates_external_status(db,setup,monkeypatch,failure,message):
+    from app.services.external_sub2 import summary
+    row=ExternalMember(email='unlinked@test.example',cookie='saved-cookie',login_status='ok')
+    db.add(row);db.commit();key='external:'+str(row.id)
+    link.queue_source(db,key)
+    def request(cfg,method,path,body=None):
+        if failure=='not_found':
+            return {'site_id':CFG['site_id']} if path=='/capabilities' else {'items':[],'next_cursor':0}
+        raise link.IntegrationError(failure,message)
+    monkeypatch.setattr(link,'request',request)
+    link.deliver('test-site/'+key)
+    db.expire_all();delivery=db.get(CredentialDelivery,'test-site/'+key)
+    assert delivery.state=='blocked' and delivery.account_id is None
+    shown=summary(row,link.target(CFG))
+    assert shown['sub2_status']=='failed' and shown['sub2_message']==message
+    assert shown['sub2_account_id'] is None and shown['sub2_synced_at'] is None
+    assert row.cookie=='saved-cookie'
 
 
 def test_late_delivery_cannot_ack_new_cookie(db,setup,monkeypatch,SessionLocal):

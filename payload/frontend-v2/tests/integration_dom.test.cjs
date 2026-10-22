@@ -43,6 +43,20 @@ function harness() {
     open:async()=>{w.OKAD_INTEGRATION.open();await flush();}};
 }
 
+test('delivery badges distinguish proxy waits, verification, retries and concrete failures', async t => {
+  const h=harness();t.after(()=>h.dom.window.close());await h.open();
+  const delivery={state:'retry',message:'Cookie 已写入，等待 Sub2 代理就绪',receipt:{integration:{verification:'proxy_pending'}}};
+  h.state.items[0].delivery=delivery;await h.poll();
+  assert.match(h.get('sources').textContent,/等待代理/);
+  delivery.message='Cookie 已写入，等待重新验证';delivery.receipt.integration.verification='verification_retry';await h.poll();
+  assert.match(h.get('sources').textContent,/等待验证/);
+  delivery.message='联动连接暂不可用，保留 Cookie 后重试';delivery.receipt=null;await h.poll();
+  assert.match(h.get('sources').textContent,/等待重试/);
+  delivery.state='blocked';delivery.message='Sub2 没有该账号，请先手动推送入库';await h.poll();
+  assert.match(h.get('sources').textContent,/同步失败/);
+  assert.match(h.get('sources').textContent,/Sub2 没有该账号，请先手动推送入库/);
+});
+
 test('polling preserves table/button identity, focus, draft and empty-state nodes', async t => {
   const h=harness();t.after(()=>h.dom.window.close());await h.open();
   const row=h.get('sources').firstChild, button=row.querySelector('button'), empty=h.get('jobs').firstChild;

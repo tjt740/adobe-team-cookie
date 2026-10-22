@@ -2,6 +2,12 @@
 
 Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 界面。
 
+## Sub2 同步状态
+
+外部子号账号行、批量推送按钮和联动中心区分「等待代理」「等待验证」「等待重试」与排队同步。等待状态不持续显示发送动画；只有提交请求或实际发送 Cookie 时显示「同步中」。失败直接展示具体原因，未取得远端账号编号时也会回写失败状态，保留已保存的 Cookie 和原关联。
+
+验证：后端 `test_reliable_integration.py`、`test_sub2_node_resume.py`、`test_external_sub2.py`、`test_integration_foundation.py`；浏览器 `external_sync_status_ui.py` 覆盖根路径和 `/okad/`、桌面和手机、失败轮询及按钮恢复，支持 `SYNC_BROWSER=webkit`。联动中心另有 `integration_dom.test.cjs` 回归。
+
 ## 外部子号列表简化
 
 列表用文字和订阅圆点替代成片的实色标签，本轮登录结果与 Sub2 历史异常分两层展示，多个异常码合并显示，Cookie／密码作为辅助信息。未勾选账号时收起批量操作；每行保留重登和「更多」，备注、邮件及删除从更多菜单进入。列表保留最后登录时间，导入和最后推送 Cookie 的时间移到展开详情，仍会跟随轮询更新。1440px 桌面可完整显示各列，手机沿用卡片布局，分页不覆盖卡片。

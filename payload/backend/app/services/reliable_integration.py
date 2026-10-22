@@ -371,11 +371,12 @@ def deliver(key):
             current.updated_at=time.time()
             if source_key.startswith('external:'):
                 member=db.get(ExternalMember,int(source_key.split(':')[1]))
-                if member and aid:
+                if member:
                     from app.services.external_sub2 import destination
                     dest=destination(cfg)
                     link=(member.sub2_links or {}).get(dest,{})
-                    member.sub2_links={**(member.sub2_links or {}),dest:{**link,'account_id':aid,
+                    member.sub2_links={**(member.sub2_links or {}),dest:{**link,
+                        **({'account_id':aid} if aid else {}),
                         'status':('synced' if state in ('ready','paused') else 'pending' if retry else 'failed'),'message':message,
                         **({'synced_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()} if receipt else {})}}
             elif source_key.startswith('pool:') and receipt:

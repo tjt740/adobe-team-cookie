@@ -59,6 +59,9 @@ def waiting(db, SessionLocal, monkeypatch):
     db.expire_all()
     delivery = db.get(CredentialDelivery, key)
     assert delivery.state == 'retry'
+    shown = external_sub2.summary(row, external_sub2.destination(CFG))
+    assert shown['sub2_status'] == 'pending'
+    assert shown['sub2_message'] == 'Cookie 已写入，等待 Sub2 代理就绪'
     delivery.next_at = time.time() + 900
     db.commit()
     calls.clear()
