@@ -7,7 +7,9 @@ export const managementRoutes = [
   {path: 'sub2', name: 'sub2', component: {render: () => null},
     meta: {title: 'Sub2 管理', requiresAuth: true, okadPanel: 'sub2-nav-mng'}},
   {path: 'integration', name: 'integration', component: {render: () => null},
-    meta: {title: '联动中心', requiresAuth: true, okadPanel: 'integration-nav'}}
+    meta: {title: '联动中心', requiresAuth: true, okadPanel: 'integration-nav'}},
+  {path: 'self-built-records', name: 'self-built-records', component: {render: () => null},
+    meta: {title: '自建号记录', requiresAuth: true, okadPanel: 'self-built-records-nav'}}
 ];
 
 export function legacyPanelRedirect(route) {
