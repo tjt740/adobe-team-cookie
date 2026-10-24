@@ -1,5 +1,11 @@
 # Adobe Team Cookie
 
+## 外部子号邮件查看
+
+每行「更多 → 查看邮件」按账号已有配置读取最近 5 封邮件，支持 supply.ink、微软邮箱（IMAP / Graph）、HTTP 取信地址及 MoeMail。窗口显示主题、发件人、收件人、时间和正文，默认展开最新一封；完整正文读取失败可重试，列表可刷新。长邮件独立滚动，手机和深色模式均可查看。微软轮换后的邮箱令牌保存回原账号。只有越南验证码接收、未配置正文取信接口时会明确提示。
+
+验证：后端 `tests/test_external_mail.py`、`tests/test_supply_mail.py`；浏览器 `payload/frontend-v2/tests/external_member_mail_ui.py` 使用本地资源和合成邮件，覆盖根路径／`/okad/`、桌面／手机、正文、重试、刷新、关闭和请求取消，设置 `MAIL_BROWSER=webkit` 可检查 WebKit。
+
 Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 界面。
 
 ## 外部子号自定义分组

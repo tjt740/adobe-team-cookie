@@ -549,31 +549,68 @@
   }
   function showMail(id) {
     var row = rowById(id); if (!row || el('extm-mail-dialog')) return;
-    var dialog = document.createElement('dialog'); dialog.id = 'extm-mail-dialog'; dialog.className = 'extm-note-dialog';
-    dialog.style.width = 'min(760px,calc(100vw - 40px))'; dialog.setAttribute('aria-labelledby', 'extm-mail-title');
-    dialog.innerHTML = '<h3 id="extm-mail-title">最近邮件</h3><p></p><div data-messages role="status"></div><footer><button type="button" class="extm-btn dft" data-refresh>刷新邮件</button><button type="button" class="extm-btn" data-close>关闭</button></footer>';
-    dialog.querySelector('p').textContent = row.email + ' · supply.ink 最近 5 封邮件';
+    var dialog = document.createElement('dialog'); dialog.id = 'extm-mail-dialog'; dialog.className = 'extm-note-dialog extm-mail-dialog';
+    dialog.setAttribute('aria-labelledby', 'extm-mail-title');
+    dialog.innerHTML = '<header><h3 id="extm-mail-title">最近邮件</h3><p data-mail-account></p></header><div class="extm-mail-content"><p data-mail-status role="status" aria-live="polite"></p><div data-messages></div></div><footer><button type="button" class="extm-btn dft" data-refresh>刷新邮件</button><button type="button" class="extm-btn" data-close>关闭</button></footer>';
+    dialog.querySelector('[data-mail-account]').textContent = row.email;
     var refresh = dialog.querySelector('[data-refresh]'), messages = dialog.querySelector('[data-messages]');
+    var status = dialog.querySelector('[data-mail-status]'), controllers = new Set(), generation = 0;
+    function cancelRequests() { controllers.forEach(function (controller) { controller.abort(); }); controllers.clear(); }
+    async function read(path) {
+      var controller = new AbortController(); controllers.add(controller);
+      try { return await api(path, {controller:controller}); }
+      finally { controllers.delete(controller); }
+    }
+    function renderMessage(mail, source, first, version) {
+      var details = document.createElement('details'), summary = document.createElement('summary');
+      var metadata = document.createElement('p'), pre = document.createElement('pre'), retry = document.createElement('button');
+      var loaded = Object.prototype.hasOwnProperty.call(mail, 'body'), loading = false;
+      details.className = 'extm-mail-item'; metadata.className = 'extm-mail-meta';
+      retry.type = 'button'; retry.className = 'extm-btn dft'; retry.textContent = '重试读取正文'; retry.hidden = true;
+      function showContent(content) {
+        summary.textContent = (content.subject || mail.subject || '（无主题）') + ' · ' + fmtTime(content.date || mail.date);
+        metadata.textContent = '发件人：' + (content.sender || mail.sender || '未知') + '　收件人：' + (content.recipient || mail.recipient || row.email);
+        pre.textContent = loaded ? (content.body || '该邮件没有正文') : (mail.preview || '展开查看完整正文');
+      }
+      async function loadBody() {
+        if (loaded || loading || !details.open || version !== generation) return;
+        if (!mail.id || !['graph', 'imap', 'moemail'].includes(source)) { pre.textContent = '接口未返回正文'; return; }
+        loading = true; retry.hidden = true; pre.textContent = '正在读取邮件正文…'; details.setAttribute('aria-busy', 'true');
+        try {
+          var content = await read('/members/' + id + '/mail/message?source=' + encodeURIComponent(source) + '&message_id=' + encodeURIComponent(mail.id));
+          if (!dialog.isConnected || version !== generation) return;
+          loaded = true; showContent(content);
+        } catch (error) {
+          if (dialog.isConnected && version === generation) { pre.textContent = error.message; retry.hidden = false; }
+        } finally { loading = false; details.setAttribute('aria-busy', 'false'); }
+      }
+      showContent(mail); details.append(summary, metadata, pre, retry); messages.appendChild(details);
+      details.addEventListener('toggle', loadBody); retry.onclick = loadBody;
+      if (first) { details.open = true; loadBody(); }
+    }
     async function fetchMessages() {
       if (refresh.disabled) return;
-      refresh.disabled = true; messages.textContent = '正在获取邮件…';
+      var version = ++generation; cancelRequests();
+      refresh.disabled = true; messages.replaceChildren(); messages.setAttribute('aria-busy', 'true');
+      status.textContent = '正在获取邮件…'; status.classList.remove('extm-mail-error');
       try {
-        var data = await api('/members/' + id + '/mail');
-        if (!dialog.isConnected) return;
-        messages.replaceChildren();
-        if (!data.messages.length) messages.textContent = '该账号暂无邮件，稍后点击刷新。';
-        data.messages.forEach(function (mail) {
-          var details = document.createElement('details'), summary = document.createElement('summary'), pre = document.createElement('pre');
-          summary.textContent = (mail.subject || '（无主题）') + ' · ' + fmtTime(mail.date);
-          pre.textContent = mail.body || '接口未返回正文'; pre.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 system-ui';
-          details.style.cssText = 'padding:12px 0;border-bottom:1px solid var(--ws-line,#e4eaf2)';
-          details.append(summary, pre); messages.appendChild(details);
+        var data = await read('/members/' + id + '/mail');
+        if (!dialog.isConnected || version !== generation) return;
+        if (!Array.isArray(data.messages)) throw new Error('邮件列表格式无效，请刷新重试');
+        status.textContent = (data.source_label ? data.source_label + ' · ' : '') + (data.messages.length ? '最近 ' + data.messages.length + ' 封邮件，展开可查看正文' : '该账号暂无邮件，稍后点击刷新。');
+        data.messages.forEach(function (mail, index) {
+          renderMessage(mail, mail.source || data.source, index === 0, version);
         });
-      } catch (e) { if (dialog.isConnected) messages.textContent = e.message; }
-      finally { refresh.disabled = false; }
+      } catch (e) {
+        if (dialog.isConnected && version === generation) { status.textContent = e.message; status.classList.add('extm-mail-error'); }
+      } finally { refresh.disabled = false; messages.setAttribute('aria-busy', 'false'); }
     }
     refresh.onclick = fetchMessages; dialog.querySelector('[data-close]').onclick = function () { dialog.close(); };
-    dialog.addEventListener('close', function () { dialog.remove(); });
+    dialog.addEventListener('close', function () {
+      ++generation; cancelRequests(); dialog.remove();
+      var trigger = document.querySelector('[data-row-more="' + id + '"],tr[data-member="' + id + '"] [data-mail]');
+      if (st.open && trigger) trigger.focus({preventScroll:true});
+    });
     document.body.appendChild(dialog); dialog.showModal(); fetchMessages();
   }
 

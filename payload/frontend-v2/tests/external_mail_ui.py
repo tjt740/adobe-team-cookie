@@ -111,12 +111,12 @@ async def main():
         await page.locator("[data-mail='1']").click()
         dialog = page.locator("#extm-mail-dialog")
         await expect(dialog.locator("summary")).to_contain_text("Adobe 验证码")
-        await dialog.locator("summary").click()
+        await expect(dialog.locator("details")).to_have_attribute("open", "")
         await expect(dialog.locator("pre")).to_contain_text("654321")
         assert await dialog.locator("img").count() == 0
         state["mail_error"] = True
         await dialog.locator("[data-refresh]").click()
-        await expect(dialog.locator("[data-messages]")).to_contain_text("Token 已失效")
+        await expect(dialog.locator("[data-mail-status]")).to_contain_text("Token 已失效")
         await expect(dialog.locator("[data-refresh]")).to_be_enabled()
         await dialog.locator("[data-close]").click()
         await expect(dialog).to_have_count(0)
