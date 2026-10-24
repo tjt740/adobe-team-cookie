@@ -85,12 +85,16 @@ def test_http_200_with_business_401_fails_without_echoing_provider_payload():
     assert "secret-token" not in str(error.value)
 
 
-def test_config_is_saved_masked_preserved_and_clearable(client, db):
+def test_config_is_saved_visible_preserved_and_clearable(client, db):
     secret = "A" * 32
     assert not client.get("/api/external/mail/config").json()["configured"]
     saved = client.put("/api/external/mail/config", json={"token": "Bearer " + secret})
     assert saved.status_code == 200 and saved.json()["configured"]
-    assert secret not in saved.text
+    assert saved.json()["token"] == secret
+    assert saved.headers["Cache-Control"] == "no-store"
+    loaded = client.get("/api/external/mail/config")
+    assert loaded.json()["token"] == secret
+    assert loaded.headers["Cache-Control"] == "no-store"
     assert supply_mail.get_token(db) == secret
     client.put("/api/external/mail/config", json={"token": ""})
     assert supply_mail.get_token(db) == secret

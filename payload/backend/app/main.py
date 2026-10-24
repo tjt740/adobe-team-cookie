@@ -33,11 +33,14 @@ async def lifespan(app: FastAPI):
     external_sub2.resume_pending()
     from app.services import reliable_integration
     reliable_integration.start()
+    from app.services import supply_mail_health
+    supply_mail_health.start()
     MONITOR.start()
     log_store.STORE.add("INFO", "system", "服务启动完成")
     try:
         yield
     finally:
+        supply_mail_health.stop()
         MONITOR.stop()
         reliable_integration.stop()
 

@@ -19,7 +19,7 @@ from app.services import external_login, external_sub2, external_sub2_stock, sub
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
 from app.schemas.external_member import AccountState, CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
-from app.services import supply_mail, manual_otp
+from app.services import supply_mail, supply_mail_health, manual_otp
 from app.crud.setting import _set
 
 router = APIRouter(
@@ -69,32 +69,37 @@ def assign_group(payload: ExternalGroupAssignment, background: BackgroundTasks, 
     return {"updated": len(members), "message": f"已更新 {len(members)} 个账号的分组"}
 
 
-@router.get("/mail/config", summary="获取 supply.ink 取信配置状态")
-def mail_config(db: Session = Depends(get_db)) -> dict:
-    return {"configured": bool(supply_mail.get_token(db)), "api_base": supply_mail.API_BASE}
+@router.get("/mail/config", summary="获取 supply.ink 取信配置和连接状态")
+def mail_config(response: Response, db: Session = Depends(get_db)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    with supply_mail_health.LOCK:
+        token = supply_mail.get_token(db)
+        return {"configured": bool(token), "token": token, "api_base": supply_mail.API_BASE,
+                "health": supply_mail_health.snapshot(db, token)}
 
 
 @router.put("/mail/config", summary="保存 supply.ink 取信 Token")
-def save_mail_config(payload: SupplyMailConfigUpdate, db: Session = Depends(get_db)) -> dict:
+def save_mail_config(payload: SupplyMailConfigUpdate, response: Response, db: Session = Depends(get_db)) -> dict:
     import re
     token = re.sub(r"^Bearer\s+", "", (payload.token or "").strip(), flags=re.I)
     if token and not re.fullmatch(r"[A-Za-z0-9._\-]+", token):
         raise HTTPException(status_code=400, detail="Token 格式无效，请粘贴 Token 裸串")
     if payload.clear_token or token:
-        _set(db, supply_mail.TOKEN_KEY, "" if payload.clear_token else token)
-        db.commit()
-    return mail_config(db)
+        with supply_mail_health.LOCK:
+            next_token = "" if payload.clear_token else token
+            if next_token != supply_mail.get_token(db):
+                supply_mail_health.reset(db, next_token)
+            _set(db, supply_mail.TOKEN_KEY, next_token)
+            db.commit()
+    return mail_config(response, db)
 
 
 @router.post("/mail/test", summary="测试 supply.ink 邮件连接")
 def test_mail(db: Session = Depends(get_db)) -> dict:
-    mailbox = supply_mail.SupplyMailbox(supply_mail.get_token(db))
     try:
-        return mailbox.test()
+        return supply_mail_health.check(db)
     except supply_mail.SupplyMailError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    finally:
-        mailbox.close()
 
 
 @router.get("/members/{member_id}/mail", summary="查看外部子号最近五封 supply.ink 邮件")

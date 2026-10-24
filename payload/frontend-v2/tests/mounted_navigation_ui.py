@@ -84,7 +84,7 @@ async def check(browser, prefix):
     await expect(page.locator("#extm-embed")).to_be_visible()
     # Settings guards and links inside native screens also need the route base.
     await page.goto(ORIGIN + prefix + "/settings")
-    for selector in ("#okad-clash-settings", "#okad-local-pool-settings", "#okad-external-apikey",
+    for selector in ("#okad-supply-mail-settings", "#okad-clash-settings", "#okad-local-pool-settings", "#okad-external-apikey",
                      "#okad-captcha-settings", "#okad-user-management"):
         await expect(page.locator(selector)).to_be_visible()
     await page.goto(ORIGIN + prefix + "/logs")

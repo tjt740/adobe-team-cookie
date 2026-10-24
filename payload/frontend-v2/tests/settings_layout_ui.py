@@ -7,7 +7,7 @@ from playwright.async_api import async_playwright, expect
 
 BASE = os.environ.get('ADOBE_TEST_URL', 'http://127.0.0.1:18080')
 ROOT = Path(__file__).resolve().parents[3]
-CARDS = ['okad-local-pool-settings', 'okad-external-apikey', 'okad-captcha-settings']
+CARDS = ['okad-supply-mail-settings', 'okad-local-pool-settings', 'okad-external-apikey', 'okad-captcha-settings']
 
 async def main():
     async with async_playwright() as p:
