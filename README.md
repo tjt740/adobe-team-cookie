@@ -182,3 +182,5 @@ docker compose logs --tail=100 app
 ## Supply Token 设置与连接状态
 
 项目设置的 Clash 订阅代理上方常驻「Supply 邮件 Token」模块，默认中性背景、明文回显 Token，无说明文字。测试成功显示绿色方框、SVG 对勾图标和「token 正常」水印，失败显示红色方框、SVG 叉号图标和「token 异常」水印，不使用 emoji；更换或清除 Token 后恢复中性。后端每小时检测已保存的 Token，结果和下次检测时间持久化，关闭页面或重启服务不丢失进度；页面自动读取最近结果。与外部子号共用同一份配置。验证：后端 `tests/test_supply_mail.py`、`tests/test_supply_mail_health.py`；浏览器 `payload/frontend-v2/tests/supply_settings_ui.py`，覆盖根路径、`/okad/`、桌面、手机、明文回显、三种状态、水印、定时刷新及页面切换。
+
+已于 2026-10-24 10:40:53（上海时间）发布主服务器，功能提交 `c1aa445`。公网验证确认 Token 正常、明文回显、SVG 水印和每小时检测生效；发布与备份详见 [发布记录](deploy/primary/supply-token-settings-20261024.md)。
