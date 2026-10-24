@@ -20,6 +20,8 @@ Adobe 母号、子号与 Cookie 管理平台，FastAPI + SQLite + 预构建 Web 
 
 ## 邮箱导入批次
 
+2026-10-24 10:51（北京时间）已部署主服务器，版本 `email-management-20261024t024717z`，应用提交 `62a6507`。402 条历史邮箱原有字段和使用状态核验不变；数据库、原文件及回滚镜像已备份。公网桌面／手机页面与完整格式、批次筛选及导入必填项均已核验。发布记录见 `docs/releases/email-management-20261024.md`。
+
 邮箱管理顶部的「历史邮箱格式」可读取当前筛选的全部记录或已勾选记录，每条邮箱的「邮箱格式」可单独查看。抽屉完整显示 `邮箱----密码----ClientID----RefreshToken`，也可切换 `邮箱|密码|RefreshToken|ClientID`；有取信链接时追加末尾，空字段保留空位，支持选择全部及一键复制。按库内当前保存的字段整理，兼容旧记录；此前未保存原始导入文本，不能恢复原分隔符或已覆盖的旧值。该功能只读，不修改邮箱资料、导入时间或使用状态。
 
 验证：`tests/test_email_formats.py`、`payload/frontend-v2/tests/email_formats_ui.py`，覆盖完整长 Token、取信链接、空字段、跨页筛选、勾选／单条范围、复制降级、读取失败和过期响应，以及根路径、`/okad/`、桌面／手机和深色主题；`MAIL_BROWSER=webkit` 可复验 WebKit。
