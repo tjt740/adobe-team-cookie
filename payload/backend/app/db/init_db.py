@@ -58,6 +58,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "emails": {
         "mail_url": "TEXT DEFAULT ''",
+        "import_batch": "VARCHAR(8)",
+        "imported_at": "DATETIME",
     },
     "external_members": {
         "group_id": "INTEGER REFERENCES external_member_groups(id)",
@@ -92,6 +94,8 @@ def _run_migrations() -> None:
     inspector = inspect(engine)
     existing_tables = inspector.get_table_names()
     with engine.begin() as conn:
+        backfill_email_imports = ("emails" in existing_tables and
+            "imported_at" not in {col["name"] for col in inspector.get_columns("emails")})
         for table, columns in _MIGRATIONS.items():
             if table not in existing_tables:
                 continue
@@ -100,6 +104,10 @@ def _run_migrations() -> None:
                 if name not in present:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
                     print(f"[init_db] 迁移:为 {table} 新增列 {name}")
+        if "emails" in existing_tables:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emails_import_batch ON emails(import_batch)"))
+            if backfill_email_imports:
+                conn.execute(text("UPDATE emails SET imported_at = created_at WHERE imported_at IS NULL"))
         if "external_members" in existing_tables:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_external_members_group_id ON external_members(group_id)"))
 

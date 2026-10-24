@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.models.email import Email
 from app.schemas.common import BatchImportResult
-from app.schemas.email import EmailCreate, EmailUpdate
+from app.schemas.email import EmailCreate, EmailUpdate, EmailFormatsRequest, EmailFormatsOut
+from app.services import external_sub2_stock
 
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -111,6 +112,18 @@ def _parse_email_line(line: str) -> dict[str, str] | None:
     }
 
 
+def _email_query(*, keyword="", is_used=None, import_batch=None):
+    stmt = select(Email)
+    if keyword:
+        like = f"%{keyword}%"
+        stmt = stmt.where(or_(Email.email.like(like), Email.remark.like(like)))
+    if is_used is not None:
+        stmt = stmt.where(Email.is_used == is_used)
+    if import_batch is not None:
+        stmt = stmt.where(Email.import_batch == import_batch)
+    return stmt
+
+
 def list_emails(
     db: Session,
     *,
@@ -118,18 +131,37 @@ def list_emails(
     size: int = 200,
     keyword: str = "",
     is_used: bool | None = None,
+    import_batch: str | None = None,
 ) -> tuple[list[Email], int]:
-    stmt = select(Email)
-    if keyword:
-        like = f"%{keyword}%"
-        stmt = stmt.where(or_(Email.email.like(like), Email.remark.like(like)))
-    if is_used is not None:
-        stmt = stmt.where(Email.is_used == is_used)
+    stmt = _email_query(keyword=keyword, is_used=is_used, import_batch=import_batch)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
         db.scalars(stmt.order_by(Email.id.desc()).offset((page - 1) * size).limit(size))
     )
     return items, total
+
+
+def email_formats(db: Session, data: EmailFormatsRequest) -> EmailFormatsOut:
+    stmt = _email_query(keyword=data.keyword.strip(), is_used=data.is_used,
+                        import_batch=data.import_batch)
+    if data.ids is not None:
+        stmt = stmt.where(Email.id.in_(data.ids))
+    separator = "|" if data.format == "pipe" else "----"
+    keys = ("email", "password", "refresh_token", "client_id") if data.format == "pipe" else (
+        "email", "password", "client_id", "refresh_token")
+    lines = []
+    for row in db.scalars(stmt.order_by(Email.id.desc())):
+        fields = [getattr(row, key) or "" for key in keys]
+        if row.mail_url:
+            fields.append(row.mail_url)
+        lines.append(separator.join(fields))
+    return EmailFormatsOut(content="\n".join(lines), total=len(lines))
+
+
+def import_batches(db: Session) -> list[str]:
+    return list(db.scalars(select(Email.import_batch).where(
+        Email.import_batch.is_not(None)
+    ).distinct().order_by(Email.import_batch.desc())))
 
 
 def get(db: Session, email_id: int) -> Email | None:
@@ -172,7 +204,19 @@ def mark_used_by_email(db: Session, email: str) -> None:
 
 
 def create(db: Session, data: EmailCreate) -> Email:
-    obj = Email(**data.model_dump())
+    obj = get_by_email(db, data.email)
+    if obj and data.on_duplicate == "skip":
+        return obj
+    payload = data.model_dump(exclude={"on_duplicate"})
+    now = datetime.now(timezone.utc)
+    used = data.email.strip().lower() in external_sub2_stock.emails_in_stock(db)
+    payload.update(imported_at=now, is_used=used,
+                   used_at=(obj.used_at if obj and obj.is_used else now) if used else None)
+    if obj:
+        for key, value in payload.items():
+            setattr(obj, key, value)
+    else:
+        obj = Email(**payload)
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -198,13 +242,16 @@ def delete_many(db: Session, ids: list[int]) -> int:
     return len(objs)
 
 
-def batch_import(db: Session, content: str, on_duplicate: str = "skip") -> BatchImportResult:
+def batch_import(db: Session, content: str, on_duplicate: str = "skip",
+                 *, import_batch: str | None = None) -> BatchImportResult:
     """批量导入,兼容两种格式(每行一条):
 
     - ``邮箱|密码|RefreshToken|ClientID``
     - ``邮箱----密码----ClientID----RefreshToken``
     """
     result = BatchImportResult(created=0, updated=0, skipped=0, failed=0)
+    in_stock = None
+    now = datetime.now(timezone.utc)
 
     for line_no, raw in enumerate(content.splitlines(), start=1):
         line = raw.strip()
@@ -221,6 +268,14 @@ def batch_import(db: Session, content: str, on_duplicate: str = "skip") -> Batch
         data = {k: v for k, v in fields.items() if k in _EMAIL_COLUMNS}
 
         existing = get_by_email(db, email)
+        if existing and on_duplicate == "skip":
+            result.skipped += 1
+            continue
+        if in_stock is None:
+            in_stock = external_sub2_stock.emails_in_stock(db)
+        used = email.strip().lower() in in_stock
+        data.update(import_batch=import_batch, imported_at=now, is_used=used,
+                    used_at=(existing.used_at if existing and existing.is_used else now) if used else None)
         if existing:
             if on_duplicate == "overwrite":
                 for k, v in data.items():
@@ -231,6 +286,7 @@ def batch_import(db: Session, content: str, on_duplicate: str = "skip") -> Batch
             continue
 
         db.add(Email(**data))
+        db.flush()  # A duplicate later in this same request must see the inserted row.
         result.created += 1
 
     db.commit()

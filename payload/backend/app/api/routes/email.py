@@ -12,7 +12,6 @@ from app.crud import setting as setting_crud
 from app.db.session import get_db
 from app.schemas.common import (
     BatchIds,
-    BatchImportRequest,
     BatchImportResult,
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -20,7 +19,11 @@ from app.schemas.common import (
     Page,
 )
 from app.schemas.email import (
+    EmailBatchImportRequest,
     EmailCreate,
+    EmailFormatsRequest,
+    EmailFormatsOut,
+    ImportBatch,
     EmailOut,
     EmailUpdate,
     MoeMailGenerateRequest,
@@ -42,18 +45,27 @@ def list_emails(
     size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     keyword: str = "",
     is_used: bool | None = None,
+    import_batch: ImportBatch | None = None,
     db: Session = Depends(get_db),
 ) -> Page[EmailOut]:
     items, total = crud.list_emails(
-        db, page=page, size=size, keyword=keyword.strip(), is_used=is_used
+        db, page=page, size=size, keyword=keyword.strip(), is_used=is_used, import_batch=import_batch
     )
     return Page(items=items, total=total, page=page, size=size)
 
 
+@router.get("/import-batches", response_model=list[str], summary="导入批次选项")
+def import_batches(db: Session = Depends(get_db)) -> list[str]:
+    return crud.import_batches(db)
+
+
+@router.post("/formats", response_model=EmailFormatsOut, summary="完整邮箱格式（只读）")
+def email_formats(data: EmailFormatsRequest, db: Session = Depends(get_db)) -> EmailFormatsOut:
+    return crud.email_formats(db, data)
+
+
 @router.post("", response_model=EmailOut, summary="新增单个邮箱")
 def create_email(data: EmailCreate, db: Session = Depends(get_db)) -> EmailOut:
-    if crud.get_by_email(db, data.email):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该邮箱已存在")
     return crud.create(db, data)
 
 
@@ -86,9 +98,9 @@ def batch_delete(payload: BatchIds, db: Session = Depends(get_db)) -> MessageRes
 
 @router.post("/batch-import", response_model=BatchImportResult, summary="批量导入")
 def batch_import(
-    payload: BatchImportRequest, db: Session = Depends(get_db)
+    payload: EmailBatchImportRequest, db: Session = Depends(get_db)
 ) -> BatchImportResult:
-    return crud.batch_import(db, payload.content, payload.on_duplicate)
+    return crud.batch_import(db, payload.content, payload.on_duplicate, import_batch=payload.import_batch)
 
 
 @router.post("/moemail/generate", response_model=BatchImportResult, summary="批量创建 MoeMail 邮箱")
@@ -139,7 +151,7 @@ def generate_moemail(
             f"{address}----{payload.password or ''}----"
             f"moemail://edu6.site?api_key={api_key}&email_id={email_id}"
         )
-        imported = crud.batch_import(db, line, payload.on_duplicate)
+        imported = crud.batch_import(db, line, payload.on_duplicate, import_batch=payload.import_batch)
         result.created += imported.created
         result.updated += imported.updated
         result.skipped += imported.skipped

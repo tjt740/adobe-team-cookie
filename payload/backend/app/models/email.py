@@ -17,6 +17,10 @@ class Email(Base):
     refresh_token: Mapped[str] = mapped_column(Text, default="")
     client_id: Mapped[str] = mapped_column(String(255), default="")
     mail_url: Mapped[str] = mapped_column(Text, default="")
+    import_batch: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)
+    imported_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=lambda: datetime.now(timezone.utc)
+    )
     is_used: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     remark: Mapped[str] = mapped_column(String(255), default="")
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

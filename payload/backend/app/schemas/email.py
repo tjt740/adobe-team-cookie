@@ -1,6 +1,19 @@
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+
+def _valid_import_batch(value: str) -> str:
+    try:
+        datetime.strptime(value, "%Y%m%d")
+    except ValueError:
+        raise ValueError("请选择有效的导入批次日期（YYYYMMDD）")
+    return value
+
+
+ImportBatch = Annotated[str, Field(pattern=r"^[0-9]{8}$"), AfterValidator(_valid_import_batch)]
+DuplicateAction = Literal["skip", "overwrite"]
 
 
 class EmailBase(BaseModel):
@@ -13,7 +26,27 @@ class EmailBase(BaseModel):
 
 
 class EmailCreate(EmailBase):
-    pass
+    import_batch: ImportBatch
+    on_duplicate: DuplicateAction
+
+
+class EmailBatchImportRequest(BaseModel):
+    content: str
+    import_batch: ImportBatch
+    on_duplicate: DuplicateAction
+
+
+class EmailFormatsRequest(BaseModel):
+    keyword: str = ""
+    is_used: bool | None = None
+    import_batch: ImportBatch | None = None
+    ids: list[int] | None = Field(default=None, max_length=10000)
+    format: Literal["standard", "pipe"] = "standard"
+
+
+class EmailFormatsOut(BaseModel):
+    content: str
+    total: int
 
 
 class EmailUpdate(BaseModel):
@@ -33,13 +66,16 @@ class MoeMailGenerateRequest(BaseModel):
     name_prefix: str = ""
     expiry_time: int = 0
     password: str = ""
-    on_duplicate: str = "overwrite"
+    on_duplicate: DuplicateAction
+    import_batch: ImportBatch
 
 
 class EmailOut(EmailBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    import_batch: str | None
+    imported_at: datetime | None
     is_used: bool
     used_at: datetime | None
     created_at: datetime

@@ -82,6 +82,15 @@ def _snapshot(cfg, refresh=False):
         return result
 
 
+def emails_in_stock(db):
+    """Confirmed email identities for import defaults; unavailable inventory defaults off."""
+    cfg = external_sub2.config(db)
+    if not cfg.get('base_url') or not (cfg.get('admin_token') or (cfg.get('enabled') and cfg.get('integration_key'))):
+        return set()
+    result = _snapshot(cfg)
+    return set(result['by_email']) if result['ok'] else set()
+
+
 def membership(db, refresh=False):
     cfg = external_sub2.config(db)
     if not cfg.get('base_url') or not (cfg.get('admin_token') or (cfg.get('enabled') and cfg.get('integration_key'))):

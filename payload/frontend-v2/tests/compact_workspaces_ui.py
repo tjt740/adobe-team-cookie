@@ -49,6 +49,10 @@ async def check(browser,prefix):
         await drawer.get_by_role('button',name='关闭',exact=True).tap()
         await page.get_by_role('button',name=button,exact=True).click()
         await expect(content).to_have_value('synthetic@example.test|demo')
+        if route=='email':
+            await drawer.get_by_label('导入批次',exact=True).fill('2026-10-24')
+            await drawer.locator('.ws-email-import-field').nth(1).locator('.n-base-selection').click()
+            await page.locator('.n-base-select-option:visible').filter(has=page.get_by_text('跳过',exact=True)).click()
         data.fail=True
         await drawer.get_by_role('button',name='开始导入',exact=True).tap()
         await expect(drawer.locator('[role=alert]')).to_contain_text('模拟导入失败')
