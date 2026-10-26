@@ -200,3 +200,5 @@ docker compose logs --tail=100 app
 登录和查看邮件按完整邮箱匹配账号库，优先复用上次成功的 Token；账号库编号只缓存在当前 Token 的取信客户端中。一轮登录固定配置快照与匹配成功的 Token，修改设置不替换运行中任务的凭据。匹配有总时间上限，失效 Token 不阻止查询其他配置；确定无匹配时短暂阻止自动恢复重试，网络／权限异常不会误记为邮箱不存在，新 Token 会使旧的未匹配缓存失效。默认单 Token 沿用原取码路径，手动验证码、越南登录和已有邮箱凭据保持优先级。
 
 保存和测试 Token 不触发 Adobe 登录或 Sub2 推送，不改变账号编号、来源键、Cookie 或 Sub2 关联。取码失败保留已有 Cookie；登录成功继续沿用原 Sub2 联动。验证：`test_supply_multiple_tokens.py` 与取码、邮件、登录、手动／越南验证码、Sub2、可靠联动及分页回归共 197 项后端检查；`payload/frontend-v2/tests/supply_settings_ui.py` 覆盖根路径和 `/okad/` 的桌面／手机四个场景。
+
+已于 2026-10-26 14:27:37（上海时间）发布主服务器，提交 `79382b0`。原 Token、Sub2 固定关联和 Cookie 版本完整性已核验；公网默认 Token 正常，详见 [多 Token 发布记录](deploy/primary/multiple-supply-tokens-20261026.md)。
