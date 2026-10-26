@@ -80,7 +80,6 @@ def _login_with_proxy_retry(
     otp_poller=None,
     password_only: bool = False,
     profile_preference: ProfilePreference = "",
-    use_default_profile: bool = False,
     on_credentials=None,
     network_retries: int = MAX_NETWORK_RETRIES,
 ) -> tuple[dict | None, Exception | None]:
@@ -117,7 +116,6 @@ def _login_with_proxy_retry(
                 adobe_password=adobe_password,
                 supply_token=supply_token,
                 profile_preference=profile_preference,
-                **({"use_default_profile": True} if use_default_profile else {}),
                 force_code_login=(force_code_login or FORCE_CODE_LOGIN) and not password_only,
                 log=lambda mm: lf(f"[{email}] {mm}"),
                 on_credentials=update_credentials,
@@ -157,10 +155,6 @@ def login_and_store(member_id: int, *, request_started_at=None, automatic=False,
         member = crud.get(db, member_id)
         return {"cookie": member.cookie or "", "credits_available": member.credits_available,
                 "credits_total": member.credits_total} if member else {}
-    if automatic:
-        # Cookie recovery follows Adobe's default session profile. Keep the
-        # saved preference for later explicit, human-initiated logins.
-        options.update(profile_preference="", use_default_profile=True)
     with reliable_integration.login_destination(destination):
         return login_coordinator.run(f'external:{member_id}', email,
             lambda: _login_and_store(member_id, **options), SessionLocal, saved,
@@ -169,7 +163,6 @@ def login_and_store(member_id: int, *, request_started_at=None, automatic=False,
 
 def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
                     profile_preference: ProfilePreference | None = None,
-                    use_default_profile: bool = False,
                     force_code_login: bool | None = None,
                     otp_mode: str | None = None,
                     discover_existing_sub2: bool = False,
@@ -205,7 +198,7 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
     # 网络原因挂掉时换一个出口 IP 再试一次(见 _login_with_proxy_retry)
     proxy_raw = (settings.proxy_url or "") if settings.proxy_enabled else ""
     label = {'personal': '个人配置', 'organization': '组织配置（无可用组织时回退个人）'}.get(profile_preference, '未指定，沿用原逻辑')
-    lf(f"[{email}] 本次登录配置：{'Adobe 默认配置' if use_default_profile else label}")
+    lf(f"[{email}] 本次登录配置：{label}")
     if otp_mode != "vietnam" and (force_code_login or FORCE_CODE_LOGIN):
         lf(f"[{email}] 本次使用邮箱验证码登录")
     otp_poller = None
@@ -233,7 +226,6 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
             otp_poller=otp_poller,
             password_only=otp_mode == "vietnam",
             profile_preference=profile_preference,
-            **({"use_default_profile": True} if use_default_profile else {}),
             on_credentials=lambda **values: _save_credentials(member_id, **values),
             network_retries=network_retries,
         )
