@@ -1,0 +1,19 @@
+{
+  "status": "verified",
+  "url": "https://creative.cheap/okad/settings",
+  "configured": true,
+  "connection_status": "ok",
+  "hourly_schedule": true,
+  "plaintext_input": true,
+  "svg_watermarks": true,
+  "multiple_token_ui": true,
+  "saved_entries": 1,
+  "desktop_mobile": true,
+  "anonymous_denied": true,
+  "source_assets_match": true,
+  "original_token_preserved": true,
+  "sub2_associations_preserved": true,
+  "cookie_version_integrity": true,
+  "unexpected_writes": [],
+  "page_errors": []
+}
