@@ -128,8 +128,8 @@ def sources(page: Annotated[int,Query(ge=1)]=1, size: Annotated[int,Query(ge=1,l
     from app.models.external_member import ExternalMember
     from app.models.adobe_member import AdobeMember
     cfg=link.settings(db)
-    from app.services.supply_mail import get_token
-    supply_available=bool(get_token(db))
+    from app.services.supply_mail_tokens import entries
+    supply_available=entries(db, active_only=True)
     page=max(1,page)
     external_count=db.scalar(select(func.count()).select_from(ExternalMember))
     pool_count=db.scalar(select(func.count()).select_from(AdobeMember).where(AdobeMember.is_admin.is_(False)))

@@ -108,6 +108,8 @@ def _login_with_proxy_retry(
         used = proxy
         started = time.monotonic()
         try:
+            if (force_code_login or FORCE_CODE_LOGIN) and callable(getattr(otp_poller, "prepare", None)):
+                otp_poller.prepare()
             rec = firefly.register_account(
                 email=email, refresh_token=refresh_token, client_id=client_id,
                 mail_url=mail_url, proxy_url=proxy, otp_timeout=180,
@@ -185,6 +187,10 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
         settings = setting_crud.get_settings(db)
         from app.services.supply_mail import get_token
         supply_token = get_token(db) if otp_mode == "auto" else ""
+        supply_route = None
+        if otp_mode == "auto" and not mail_url and not (rt and cid):
+            from app.services.supply_mail_tokens import routing
+            supply_route = routing(db, email, session_factory=SessionLocal)
     finally:
         db.close()
 
@@ -196,7 +202,11 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
     if otp_mode != "vietnam" and (force_code_login or FORCE_CODE_LOGIN):
         lf(f"[{email}] 本次使用邮箱验证码登录")
     otp_poller = None
-    if otp_mode == "manual":
+    if supply_route is not None:
+        from app.services.adobe_otp import make_otp_poller
+        otp_poller, _ = make_otp_poller(refresh_token="", client_id="", supply_token=supply_token,
+                                       supply_routing=supply_route, log=lambda msg: lf(f"[{email}] {msg}"))
+    elif otp_mode == "manual":
         lf(f"[{email}] 验证码采用手动输入；需要验证码时请在账号行提交")
         def otp_poller(mail_email, timeout=180, **kwargs):
             return manual_otp.BROKER.request(member_id, email, timeout=timeout,
@@ -207,17 +217,21 @@ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
         lf(f"[{email}] 本次采用越南登录：Adobe 密码登录，需要邮箱验证时自动接码")
         otp_poller = make_vietnam_otp_poller(log=lambda msg: lf(f"[{email}] {msg}"),
                                             check_cancelled=check_cancelled)
-    rec, exc = _login_with_proxy_retry(
-        email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
-        adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
-        supply_token=supply_token,
-        force_code_login=force_code_login,
-        otp_poller=otp_poller,
-        password_only=otp_mode == "vietnam",
-        profile_preference=profile_preference,
-        on_credentials=lambda **values: _save_credentials(member_id, **values),
-        network_retries=network_retries,
-    )
+    try:
+        rec, exc = _login_with_proxy_retry(
+            email=email, refresh_token=rt, client_id=cid, mail_url=mail_url,
+            adobe_password=adobe_pwd, proxy_raw=proxy_raw, lf=lf,
+            supply_token=supply_token,
+            force_code_login=force_code_login,
+            otp_poller=otp_poller,
+            password_only=otp_mode == "vietnam",
+            profile_preference=profile_preference,
+            on_credentials=lambda **values: _save_credentials(member_id, **values),
+            network_retries=network_retries,
+        )
+    finally:
+        if callable(getattr(otp_poller, "close", None)):
+            otp_poller.close()
     if check_cancelled:
         check_cancelled()
     if exc is not None:

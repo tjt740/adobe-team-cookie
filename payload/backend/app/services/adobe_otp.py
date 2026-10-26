@@ -148,6 +148,7 @@ def make_otp_poller(
     client_id: str,
     mail_url: str = "",
     supply_token: str = "",
+    supply_routing=None,
     proxy_url: str = "",
     timeout: int = 180,
     use_proxy_for_mail: bool = False,
@@ -160,6 +161,7 @@ def make_otp_poller(
         from app.services.supply_mail import SupplyMailbox
 
         used_codes: dict[str, set[str]] = {}
+        routed = supply_routing.mailbox() if supply_routing is not None else None
 
         def supply_poll(email: str, timeout: int | None = None, interval: int = 5,
                         base_url: str = "") -> str:
@@ -167,7 +169,7 @@ def make_otp_poller(
             deadline = time.monotonic() + wait_s
             not_before = time.time() - 15
             used = used_codes.setdefault(email.lower(), set())
-            mailbox = SupplyMailbox(supply_token)
+            mailbox = routed if routed is not None else SupplyMailbox(supply_token)
             lf("需要邮箱验证码，正在通过 supply.ink 获取新邮件…")
             try:
                 while time.monotonic() < deadline:
@@ -187,6 +189,9 @@ def make_otp_poller(
                 mailbox.close()
             raise RuntimeError("获取 supply.ink 邮件验证码超时，请检查邮箱是否收到 Adobe 新邮件")
 
+        if routed is not None:
+            supply_poll.prepare = routed.prepare
+            supply_poll.close = routed.close
         return supply_poll, holder
     default_wait_s = max(90, min(int(timeout or 180), 300))
     req_timeout = _GRAPH_REQ_TIMEOUT

@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, quote, urlparse
 import requests
 
 from app.crud import setting as setting_crud
-from app.services import mail_test, supply_mail
+from app.services import mail_test, supply_mail, supply_mail_tokens
 
 
 class MailReadError(RuntimeError):
@@ -174,10 +174,9 @@ def list_messages(db, member):
 
     if member.otp_mode == 'vietnam':
         raise MailReadError('该账号仅配置了越南验证码接收，未配置可查看正文的邮箱取信接口')
-    token = supply_mail.get_token(db)
-    if not token:
+    if not supply_mail_tokens.configured(db):
         raise MailReadError('请先在导入外部子号的邮件配置中保存 supply.ink Token，或为该账号提供邮箱取信配置')
-    mailbox = supply_mail.SupplyMailbox(token)
+    mailbox = supply_mail_tokens.mailbox(db, member.email)
     try:
         return dict(email=member.email, source='supply', source_label='supply.ink', messages=mailbox.messages(member.email))
     except supply_mail.SupplyMailError as exc:

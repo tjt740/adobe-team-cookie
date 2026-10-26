@@ -190,3 +190,13 @@ docker compose logs --tail=100 app
 项目设置的 Clash 订阅代理上方常驻「Supply 邮件 Token」模块，默认中性背景、明文回显 Token，无说明文字。测试成功显示绿色方框、SVG 对勾图标和「token 正常」水印，失败显示红色方框、SVG 叉号图标和「token 异常」水印，不使用 emoji；更换或清除 Token 后恢复中性。后端每小时检测已保存的 Token，结果和下次检测时间持久化，关闭页面或重启服务不丢失进度；页面自动读取最近结果。与外部子号共用同一份配置。验证：后端 `tests/test_supply_mail.py`、`tests/test_supply_mail_health.py`；浏览器 `payload/frontend-v2/tests/supply_settings_ui.py`，覆盖根路径、`/okad/`、桌面、手机、明文回显、三种状态、水印、定时刷新及页面切换。
 
 已于 2026-10-24 10:40:53（上海时间）发布主服务器，功能提交 `c1aa445`。公网验证确认 Token 正常、明文回显、SVG 水印和每小时检测生效；发布与备份详见 [发布记录](deploy/primary/supply-token-settings-20261024.md)。
+
+## 多 Supply Token 与邮箱匹配
+
+项目设置保留原有默认 Token，支持添加多条明文 Token，逐条命名、保存、测试、停用、清除或删除额外条目。每条配置保留独立的中性／绿色／红色状态、SVG 水印和每小时检测时间；单条检测不会锁住其他条目的保存与测试。原有 `/api/external/mail/config` 表单继续只修改默认 Token。
+
+额外配置通过 `/api/external/mail/tokens` 新增，`/{id}` 独立更新或删除，`/{id}/test` 测试已保存的条目。旧 `supply_mail_token` 原值及其健康记录保持，额外 Token、各自的检测结果和邮箱匹配信息使用独立设置键保存，无需改动账号表。Token 重复、格式错误、失效与配置不存在均明确报错；测试期间更换 Token 后，旧请求的结果不会覆盖新状态。
+
+登录和查看邮件按完整邮箱匹配账号库，优先复用上次成功的 Token；账号库编号只缓存在当前 Token 的取信客户端中。一轮登录固定配置快照与匹配成功的 Token，修改设置不替换运行中任务的凭据。匹配有总时间上限，失效 Token 不阻止查询其他配置；确定无匹配时短暂阻止自动恢复重试，网络／权限异常不会误记为邮箱不存在，新 Token 会使旧的未匹配缓存失效。默认单 Token 沿用原取码路径，手动验证码、越南登录和已有邮箱凭据保持优先级。
+
+保存和测试 Token 不触发 Adobe 登录或 Sub2 推送，不改变账号编号、来源键、Cookie 或 Sub2 关联。取码失败保留已有 Cookie；登录成功继续沿用原 Sub2 联动。验证：`test_supply_multiple_tokens.py` 与取码、邮件、登录、手动／越南验证码、Sub2、可靠联动及分页回归共 197 项后端检查；`payload/frontend-v2/tests/supply_settings_ui.py` 覆盖根路径和 `/okad/` 的桌面／手机四个场景。

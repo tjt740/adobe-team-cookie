@@ -20,7 +20,8 @@ from app.services import external_login, external_sub2, external_sub2_stock, sub
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
 from app.schemas.external_member import AccountState, CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
-from app.services import supply_mail, supply_mail_health, manual_otp, external_mail
+from app.services import supply_mail, supply_mail_health, supply_mail_tokens, manual_otp, external_mail
+from app.schemas.external_member import SupplyTokenCreate, SupplyTokenUpdate
 from app.crud.setting import _set
 
 router = APIRouter(
@@ -75,30 +76,72 @@ def mail_config(response: Response, db: Session = Depends(get_db)) -> dict:
     response.headers["Cache-Control"] = "no-store"
     with supply_mail_health.LOCK:
         token = supply_mail.get_token(db)
-        return {"configured": bool(token), "token": token, "api_base": supply_mail.API_BASE,
+        items = [{"id": item.id, "name": item.name, "token": item.token, "enabled": item.enabled,
+                  "configured": bool(item.token),
+                  "health": supply_mail_health.snapshot(db, item.token, token_id=item.id)}
+                 for item in supply_mail_tokens.entries(db)]
+        return {"configured": any(item["enabled"] and item["configured"] for item in items),
+                "token": token, "api_base": supply_mail.API_BASE, "tokens": items,
                 "health": supply_mail_health.snapshot(db, token)}
 
 
 @router.put("/mail/config", summary="保存 supply.ink 取信 Token")
 def save_mail_config(payload: SupplyMailConfigUpdate, response: Response, db: Session = Depends(get_db)) -> dict:
-    import re
-    token = re.sub(r"^Bearer\s+", "", (payload.token or "").strip(), flags=re.I)
-    if token and not re.fullmatch(r"[A-Za-z0-9._\-]+", token):
-        raise HTTPException(status_code=400, detail="Token 格式无效，请粘贴 Token 裸串")
-    if payload.clear_token or token:
+    return save_supply_token("default", SupplyTokenUpdate(**payload.model_dump(exclude_unset=True)), response, db)
+
+
+@router.post("/mail/tokens", summary="新增 Supply Token")
+def create_supply_token(payload: SupplyTokenCreate, response: Response, db: Session = Depends(get_db)) -> dict:
+    try:
         with supply_mail_health.LOCK:
-            next_token = "" if payload.clear_token else token
-            if next_token != supply_mail.get_token(db):
-                supply_mail_health.reset(db, next_token)
-            _set(db, supply_mail.TOKEN_KEY, next_token)
+            item, _ = supply_mail_tokens.save(db, "", payload.model_dump(), create=True)
+            supply_mail_health.reset(db, item.token, token_id=item.id)
             db.commit()
-    return mail_config(response, db)
+        result = mail_config(response, db)
+        result["created_id"] = item.id
+        return result
+    except supply_mail_tokens.TokenConfigError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.put("/mail/tokens/{token_id}", summary="独立保存 Supply Token")
+def save_supply_token(token_id: str, payload: SupplyTokenUpdate, response: Response,
+                      db: Session = Depends(get_db)) -> dict:
+    try:
+        with supply_mail_health.LOCK:
+            item, changed = supply_mail_tokens.save(db, token_id, payload.model_dump(exclude_unset=True))
+            if changed:
+                supply_mail_health.reset(db, item.token, token_id=item.id)
+            db.commit()
+        return mail_config(response, db)
+    except supply_mail_tokens.TokenConfigError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.delete("/mail/tokens/{token_id}", summary="删除额外的 Supply Token")
+def delete_supply_token(token_id: str, response: Response, db: Session = Depends(get_db)) -> dict:
+    try:
+        with supply_mail_health.LOCK:
+            supply_mail_tokens.remove(db, token_id)
+            db.commit()
+        return mail_config(response, db)
+    except supply_mail_tokens.TokenConfigError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@router.post("/mail/tokens/{token_id}/test", summary="独立测试 Supply Token")
+def test_supply_token(token_id: str, db: Session = Depends(get_db)) -> dict:
+    try:
+        return supply_mail_health.check(db, token_id=token_id)
+    except supply_mail.SupplyMailError as exc:
+        raise HTTPException(400, str(exc)) from None
 
 
 @router.post("/mail/test", summary="测试 supply.ink 邮件连接")
 def test_mail(db: Session = Depends(get_db)) -> dict:
     try:
-        return supply_mail_health.check(db)
+        active = supply_mail_tokens.entries(db, active_only=True)
+        return supply_mail_health.check(db, token_id=active[0].id if active else "default")
     except supply_mail.SupplyMailError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 

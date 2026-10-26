@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from html import unescape
 import re
+import time
 from zoneinfo import ZoneInfo
 
 import requests
@@ -16,6 +17,10 @@ TOKEN_KEY = "supply_mail_token"
 
 
 class SupplyMailError(RuntimeError):
+    pass
+
+
+class SupplyAccountNotFound(SupplyMailError):
     pass
 
 
@@ -53,6 +58,7 @@ class SupplyMailbox:
         self.token = re.sub(r"^Bearer\s+", "", token.strip(), flags=re.I)
         self.http = http or requests.Session()
         self.account_ids: dict[str, object] = {}
+        self.deadline = None
 
     def close(self):
         self.http.close()
@@ -60,10 +66,13 @@ class SupplyMailbox:
     def _post(self, path: str, body: dict) -> dict:
         if not self.token:
             raise SupplyMailError("需要邮箱验证码，请先在外部子号的邮件配置中保存 supply.ink Token")
+        timeout = min(12, self.deadline - time.monotonic()) if self.deadline is not None else 12
+        if timeout <= 0:
+            raise SupplyMailError("supply.ink 邮箱匹配超时，请稍后重试")
         try:
             response = self.http.post(API_BASE + path, json=body,
                                       headers={"Token": self.token, "Accept": "application/json"},
-                                      timeout=12, allow_redirects=False)
+                                      timeout=timeout, allow_redirects=False)
         except requests.RequestException:
             raise SupplyMailError("supply.ink 邮件接口连接失败，请稍后重试") from None
         if response.status_code in (401, 403):
@@ -109,6 +118,7 @@ class SupplyMailbox:
         if found is not None:
             return found
         # 与用户脚本一致，不带 status 过滤，只扫描 require 的 id。
+        complete = False
         for page in range(1, 6):
             data = self._post("/require", {"page": page, "limit": 200}).get("data") or {}
             found, rows = find(data)
@@ -116,8 +126,11 @@ class SupplyMailbox:
                 return found
             total = data.get("total")
             if len(rows) < 200 or (isinstance(total, (int, float)) and page * 200 >= total):
+                complete = True
                 break
-        raise SupplyMailError("该邮箱不在 supply.ink 可取信账号库中，请检查 Token 所属账号或提供原取信配置")
+        if not complete:
+            raise SupplyMailError("supply.ink 账号库查询尚未完成，请稍后重试")
+        raise SupplyAccountNotFound("该邮箱不在 supply.ink 可取信账号库中，请检查 Token 所属账号或提供原取信配置")
 
     def messages(self, email: str, *, limit: int = 5) -> list[dict]:
         payload = self._post("/getMail", {"id": self._account_id(email)})

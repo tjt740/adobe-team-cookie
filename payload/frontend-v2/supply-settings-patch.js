@@ -6,9 +6,10 @@
   var ID = 'okad-supply-mail-settings';
   var style = document.createElement('style');
   style.textContent = `
-    #${ID}{--sm-accent:#2080f0;--sm-line:var(--ws-line,#e8edf4);--sm-bg:var(--ws-paper,#fff);--sm-input:var(--ws-paper,#fff);box-sizing:border-box;position:relative;isolation:isolate;width:100%;min-width:0;padding:22px 24px;margin-bottom:20px;border:2px solid var(--sm-line);border-radius:12px;background:var(--sm-bg);color:var(--ws-text,#273342);font:14px/1.6 system-ui,-apple-system,'PingFang SC',sans-serif;scroll-margin-top:20px}
-    #${ID}[data-health="ok"]{--sm-accent:#168252;--sm-line:#70c59c;--sm-bg:#f0fbf5}
-    #${ID}[data-health="error"]{--sm-accent:#c9344d;--sm-line:#e58c9d;--sm-bg:#fff5f5}
+    #${ID} .sm-token-card{--sm-accent:#2080f0;--sm-line:var(--ws-line,#e8edf4);--sm-bg:var(--ws-paper,#fff);--sm-input:var(--ws-paper,#fff);box-sizing:border-box;position:relative;isolation:isolate;width:100%;min-width:0;padding:22px 24px;margin-bottom:20px;border:2px solid var(--sm-line);border-radius:12px;background:var(--sm-bg);color:var(--ws-text,#273342);font:14px/1.6 system-ui,-apple-system,'PingFang SC',sans-serif;scroll-margin-top:20px}
+    #${ID} .sm-token-card[data-health="ok"]{--sm-accent:#168252;--sm-line:#70c59c;--sm-bg:#f0fbf5}
+    #${ID} .sm-token-card[data-health="error"]{--sm-accent:#c9344d;--sm-line:#e58c9d;--sm-bg:#fff5f5}
+    #${ID}{--sm-accent:#2080f0;--sm-line:var(--ws-line,#e8edf4);--sm-input:var(--ws-paper,#fff);width:100%;min-width:0;margin-bottom:20px}#${ID} .sm-titlebar .sm-actions{margin-top:0}#${ID} .sm-titlebar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}#${ID} .sm-titlebar h3{font-size:18px}#${ID} .sm-token-card{margin-bottom:14px}#${ID} .sm-name{margin-bottom:10px}#${ID} .sm-load-result{color:#c9344d;font-size:13px;margin:10px 0}#${ID} .sm-load-result:empty{display:none}
     #${ID} .sm-head,#${ID} form{position:relative;z-index:1}
     #${ID} .sm-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
     #${ID} h3{margin:0;color:inherit;font-size:18px;font-weight:600}
@@ -29,12 +30,12 @@
     #${ID} .sm-result.error{color:#c9344d}
     #${ID} .sm-result:empty,#${ID} [hidden]{display:none!important}
     .okad-panel-active #${ID}{display:none!important}
-    html.dark #${ID}[data-health="ok"]{--sm-accent:#70d6a2;--sm-line:#357e5b;--sm-bg:#20362b}
-    html.dark #${ID}[data-health="error"]{--sm-accent:#f18da0;--sm-line:#a64b60;--sm-bg:#33252b}
-    html.dark #${ID}[data-health="ok"] .sm-save{background:#168252;border-color:#168252;color:#fff}
-    html.dark #${ID}[data-health="error"] .sm-save{background:#bd3650;border-color:#bd3650;color:#fff}
+    html.dark #${ID} .sm-token-card[data-health="ok"]{--sm-accent:#70d6a2;--sm-line:#357e5b;--sm-bg:#20362b}
+    html.dark #${ID} .sm-token-card[data-health="error"]{--sm-accent:#f18da0;--sm-line:#a64b60;--sm-bg:#33252b}
+    html.dark #${ID} .sm-token-card[data-health="ok"] .sm-save{background:#168252;border-color:#168252;color:#fff}
+    html.dark #${ID} .sm-token-card[data-health="error"] .sm-save{background:#bd3650;border-color:#bd3650;color:#fff}
     html.dark #${ID} .sm-result:not(.error){color:#70d6a2}
-    @media(max-width:800px){#${ID}{padding:18px 16px}#${ID} form{grid-template-columns:minmax(0,1fr);gap:6px}#${ID} label{text-align:left;line-height:1.6}#${ID} input,#${ID} button{min-height:44px}#${ID} input{font-size:16px}#${ID} .sm-watermark{font-size:28px}}
+    @media(max-width:800px){#${ID} .sm-token-card{padding:18px 16px}#${ID} form{grid-template-columns:minmax(0,1fr);gap:6px}#${ID} label{text-align:left;line-height:1.6}#${ID} input,#${ID} button{min-height:44px}#${ID} input{font-size:16px}#${ID} .sm-watermark{font-size:28px}}
   `;
   document.head.appendChild(style);
 
@@ -50,113 +51,137 @@
   }
 
   function create() {
-    var card = document.createElement('section');
-    card.id = ID;
-    card.dataset.health = 'neutral';
-    card.setAttribute('aria-labelledby', 'sm-title');
-    card.innerHTML = `
-      <div class="sm-head"><h3 id="sm-title">Supply 邮件 Token</h3><span class="sm-state">读取中…</span></div>
-      <form>
-        <label for="sm-token">Supply Token</label>
-        <div class="sm-field">
-          <input id="sm-token" type="text" autocomplete="off" spellcheck="false" maxlength="512" placeholder="粘贴 supply.ink Token" disabled>
-          <div class="sm-actions"><button class="sm-save" type="submit" disabled>保存 Token</button><button class="sm-test" type="button" disabled>测试连接</button><button class="sm-clear" type="button" disabled>清除 Token</button><button class="sm-retry" type="button" hidden>重新加载</button></div>
-          <div class="sm-result" role="status" aria-live="polite"></div>
-        </div>
-      </form>
-      <div class="sm-watermark" role="status" aria-live="polite" hidden><span data-sm-status="ok" hidden>${window.OKAD_ICONS.svg('check', 36)}</span><span data-sm-status="error" hidden>${window.OKAD_ICONS.svg('error', 36)}</span><span class="sm-watermark-label"></span></div>
-    `;
-    var q = function (selector) { return card.querySelector(selector); };
-    var configured = null, savedToken = '', health = 'untested', busy = false;
-    function message(value, error) {
-      q('.sm-result').textContent = value;
-      q('.sm-result').classList.toggle('error', !!error);
+    var root = document.createElement('section');
+    root.id = ID;
+    root.setAttribute('aria-labelledby', 'sm-title');
+    root.innerHTML = '<div class="sm-titlebar"><h3 id="sm-title">Supply 邮件 Token</h3><div class="sm-actions"><button class="sm-add" type="button" disabled>添加 Token</button><button class="sm-retry" type="button" hidden>重新加载</button></div></div><div class="sm-load-result" role="status" aria-live="polite"></div><div class="sm-list"></div>';
+    var rows = new Map(), draftCount = 0, loading = false;
+    function dirty(row) {
+      return row.token.value.trim() !== (row.config.token || '') || row.name.value.trim() !== (row.config.name || '');
     }
-    function controls() {
-      var dirty = q('#sm-token').value.trim() !== savedToken;
-      q('#sm-token').disabled = busy || configured === null;
-      q('.sm-save').disabled = busy || configured === null;
-      q('.sm-test').disabled = busy || !configured || dirty;
-      q('.sm-clear').disabled = busy || !configured;
-      q('.sm-retry').disabled = busy;
-      var tone = !dirty && configured && (health === 'ok' || health === 'error') ? health : 'neutral';
-      card.dataset.health = tone;
-      q('.sm-watermark').hidden = tone === 'neutral';
-      q('[data-sm-status="ok"]').hidden = tone !== 'ok';
-      q('[data-sm-status="error"]').hidden = tone !== 'error';
-      q('.sm-watermark-label').textContent = tone === 'ok' ? 'token 正常' : tone === 'error' ? 'token 异常' : '';
+    function message(row, value, error) {
+      row.result.textContent = value;
+      row.result.classList.toggle('error', !!error);
     }
-    function render(config, replaceInput) {
-      var dirty = configured !== null && q('#sm-token').value.trim() !== savedToken;
-      savedToken = config.token || '';
-      configured = !!config.configured;
-      health = config.health && config.health.status || 'untested';
-      if (replaceInput || !dirty) q('#sm-token').value = savedToken;
-      q('.sm-state').textContent = configured ? '已配置' : '未配置';
-      q('.sm-save').textContent = configured ? '更新 Token' : '保存 Token';
-      q('.sm-retry').hidden = true;
-      controls();
+    function controls(row) {
+      var editedToken = row.token.value.trim() !== (row.config.token || '');
+      var configured = !!row.config.token;
+      row.el.querySelectorAll('input,button').forEach(function (el) { el.disabled = row.busy; });
+      row.test.disabled = row.busy || row.draft || !configured || editedToken;
+      row.clear.disabled = row.busy || !configured;
+      row.toggle.disabled = row.busy || row.draft;
+      row.save.textContent = row.busy && row.action === 'save' ? '保存中…' : row.draft || !configured ? '保存 Token' : '更新 Token';
+      row.test.textContent = row.busy && row.action === 'test' ? '测试中…' : '测试连接';
+      row.toggle.textContent = row.config.enabled === false ? '启用' : '停用';
+      row.el.querySelector('.sm-state').textContent = row.draft ? '未保存' : row.config.enabled === false ? '已停用' : configured ? '已配置' : '未配置';
+      var health = row.config.health && row.config.health.status;
+      var tone = configured && !editedToken && row.config.enabled !== false && (health === 'ok' || health === 'error') ? health : 'neutral';
+      row.el.dataset.health = tone;
+      row.el.setAttribute('aria-busy', String(row.busy));
+      row.el.querySelector('.sm-watermark').hidden = tone === 'neutral';
+      row.el.querySelector('[data-sm-status="ok"]').hidden = tone !== 'ok';
+      row.el.querySelector('[data-sm-status="error"]').hidden = tone !== 'error';
+      row.el.querySelector('.sm-watermark-label').textContent = tone === 'ok' ? 'token 正常' : tone === 'error' ? 'token 异常' : '';
     }
-    async function run(button, pending, operation) {
-      if (busy) return;
-      busy = true; controls(); card.setAttribute('aria-busy', 'true');
-      var label = button.textContent;
-      button.textContent = pending; message('');
-      try {
-        await operation();
-      } catch (error) {
-        if (card.isConnected) message(error.message || '操作失败，请稍后重试', true);
-      } finally {
-        busy = false; button.textContent = label;
-        q('.sm-save').textContent = configured ? '更新 Token' : '保存 Token';
-        card.setAttribute('aria-busy', 'false'); controls();
+    function apply(row, config, force) {
+      var editToken = row.token.value.trim() !== (row.config.token || '');
+      var editName = row.name.value.trim() !== (row.config.name || '');
+      if (!row.busy && row.errorAction === 'test' && config.health && config.health.status === 'ok') message(row,'');
+      row.config = config;
+      if (force || !editToken) row.token.value = config.token || '';
+      if (force || !editName) row.name.value = config.name || '';
+      row.el.querySelector('h4').textContent = config.name || 'Supply Token';
+      controls(row);
+    }
+    function render(data, forceId, replaceInputs) {
+      if (!root.isConnected) return;
+      var list = data.tokens || [{id:'default', name:'默认 Token', token:data.token || '', configured:data.configured, enabled:true, health:data.health}];
+      var seen = new Set();
+      list.forEach(function (config) {
+        seen.add(config.id);
+        var row = rows.get(config.id);
+        if (!row) row = createRow(config, false);
+        if (!row.busy || config.id === forceId) apply(row, config, config.id === forceId && replaceInputs !== false);
+      });
+      rows.forEach(function (row, key) {
+        if (!seen.has(key) && !row.draft && !row.busy) {
+          if (dirty(row)) { message(row, '配置已在其他页面删除，请重新添加', true); return; }
+          row.el.remove(); rows.delete(key);
+        }
+      });
+      root.querySelector('.sm-add').disabled = false;
+      root.querySelector('.sm-retry').hidden = true;
+      root.querySelector('.sm-load-result').textContent = '';
+    }
+    function createRow(config, draft) {
+      var card = document.createElement('article');
+      card.className = 'sm-token-card'; card.dataset.tokenId = config.id;
+      var suffix = config.id === 'default' ? '' : '-' + config.id;
+      card.innerHTML = '<div class="sm-head"><h4 style="margin:0;font-size:16px"></h4><span class="sm-state"></span></div><form><label for="sm-name' + suffix + '">名称</label><div class="sm-field sm-name"><input id="sm-name' + suffix + '" type="text" maxlength="80" autocomplete="off"></div><label for="sm-token' + suffix + '">Supply Token</label><div class="sm-field"><input id="sm-token' + suffix + '" type="text" autocomplete="off" spellcheck="false" maxlength="512" placeholder="粘贴 supply.ink Token"><div class="sm-actions"><button class="sm-save" type="submit">保存 Token</button><button class="sm-test" type="button">测试连接</button><button class="sm-toggle" type="button">停用</button><button class="sm-clear" type="button">清除 Token</button>' + (config.id !== 'default' ? '<button class="sm-remove" type="button">删除</button>' : '') + '</div><div class="sm-result" role="status" aria-live="polite"></div></div></form><div class="sm-watermark" role="status" aria-live="polite" hidden><span data-sm-status="ok" hidden>' + window.OKAD_ICONS.svg('check',36) + '</span><span data-sm-status="error" hidden>' + window.OKAD_ICONS.svg('error',36) + '</span><span class="sm-watermark-label"></span></div>';
+      var row = {el:card, config:{}, draft:draft, busy:false, action:'', token:card.querySelector('[id^="sm-token"]'), name:card.querySelector('[id^="sm-name"]'), result:card.querySelector('.sm-result'), save:card.querySelector('.sm-save'), test:card.querySelector('.sm-test'), toggle:card.querySelector('.sm-toggle'), clear:card.querySelector('.sm-clear')};
+      rows.set(config.id, row); root.querySelector('.sm-list').appendChild(card); apply(row,config,true);
+      row.token.oninput = row.name.oninput = function () { controls(row); };
+      async function run(action, operation) {
+        if (row.busy) return;
+        row.busy = true; row.action = action; message(row,''); controls(row);
+        try { await operation(); }
+        catch (error) { row.errorAction = action; if (root.isConnected) message(row,error.message || '操作失败，请稍后重试',true); }
+        finally { row.busy = false; row.action = ''; controls(row); }
       }
+      card.querySelector('form').onsubmit = function (event) {
+        event.preventDefault();
+        if (!row.token.value.trim()) { message(row,'请先粘贴 supply.ink Token',true); row.token.focus(); return; }
+        run('save',async function () {
+          var payload = {token:row.token.value.trim(), name:row.name.value.trim()};
+          var data = await request(row.draft ? 'tokens' : 'tokens/' + row.config.id, row.draft ? 'POST' : 'PUT', payload);
+          if (row.draft) {
+            rows.delete(row.config.id); row.config.id = data.created_id; row.draft = false;
+            card.dataset.tokenId = data.created_id; rows.set(data.created_id,row);
+          }
+          render(data,row.config.id); message(row,'已保存');
+        });
+      };
+      row.test.onclick = function () {
+        run('test',async function () {
+          try {
+            var result = await request('tokens/' + row.config.id + '/test','POST');
+            row.config.health = result.health || {status:result.ok ? 'ok' : 'error'};
+          } catch (error) { row.config.health = {status:'error'}; throw error; }
+        });
+      };
+      row.clear.onclick = function () {
+        run('clear',async function () { render(await request('tokens/' + row.config.id,'PUT',{clear_token:true}),row.config.id); message(row,'已清除'); });
+      };
+      row.toggle.onclick = function () {
+        run('toggle',async function () { render(await request('tokens/' + row.config.id,'PUT',{enabled:row.config.enabled === false}),row.config.id,false); });
+      };
+      var remove = card.querySelector('.sm-remove');
+      if (remove) remove.onclick = function () {
+        if (row.draft) { rows.delete(row.config.id); card.remove(); return; }
+        run('remove',async function () {
+          var data = await request('tokens/' + row.config.id,'DELETE');
+          rows.delete(row.config.id); card.remove(); render(data);
+        });
+      };
+      return row;
     }
-    function load() {
-      return run(q('.sm-retry'), '读取中…', async function () {
-        try {
-          var config = await request('config');
-          if (card.isConnected) render(config);
-        } catch (error) {
-          q('.sm-state').textContent = '配置读取失败'; q('.sm-retry').hidden = false;
-          throw error;
-        }
-      });
+    async function load() {
+      if (loading) return;
+      loading = true;
+      try { render(await request('config')); }
+      catch (error) {
+        root.querySelector('.sm-load-result').textContent = error.message || '配置读取失败';
+        root.querySelector('.sm-retry').hidden = false;
+      } finally { loading = false; }
     }
-    q('#sm-token').oninput = controls;
-    q('form').onsubmit = function (event) {
-      event.preventDefault();
-      var token = q('#sm-token').value.trim();
-      if (!token) { message('请先粘贴 supply.ink Token', true); q('#sm-token').focus(); return; }
-      run(q('.sm-save'), '保存中…', async function () {
-        var replacing = configured;
-        var config = await request('config', 'PUT', {token:token});
-        if (card.isConnected) { render(config, true); message(replacing ? '已更新' : '已保存'); }
-      });
+    root.querySelector('.sm-add').onclick = function () {
+      var row = createRow({id:'draft-' + (++draftCount), name:'Token ' + (rows.size + 1), token:'', enabled:true},true);
+      row.token.focus();
     };
-    q('.sm-test').onclick = function () {
-      run(this, '测试中…', async function () {
-        try {
-          var result = await request('test', 'POST');
-          health = result.ok ? 'ok' : 'error';
-          if (card.isConnected) controls();
-        } catch (error) {
-          health = 'error';
-          if (card.isConnected) controls();
-          throw error;
-        }
-      });
-    };
-    q('.sm-clear').onclick = function () {
-      run(this, '清除中…', async function () {
-        var config = await request('config', 'PUT', {clear_token:true});
-        if (card.isConnected) { render(config, true); message('已清除'); }
-      });
-    };
-    q('.sm-retry').onclick = load;
-    card.addEventListener('okad-supply-refresh', function () { if (!busy) load(); });
-    setTimeout(load, 0);
-    return card;
+    root.querySelector('.sm-retry').onclick = load;
+    root.addEventListener('okad-supply-refresh',load);
+    setTimeout(load,0);
+    return root;
   }
 
   function install() {

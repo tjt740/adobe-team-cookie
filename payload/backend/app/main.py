@@ -73,7 +73,7 @@ async def _on_http_exception(request: Request, exc: StarletteHTTPException):
 async def _on_validation_error(request: Request, exc: RequestValidationError):
     if request.url.path.startswith(settings.API_PREFIX + "/external/members/") and request.url.path.endswith("/otp"):
         return JSONResponse(status_code=422, content={"detail": "请输入本次请求对应的 6 位数字验证码"})
-    if request.url.path == settings.API_PREFIX + "/external/mail/config":
+    if request.url.path == settings.API_PREFIX + "/external/mail/config" or request.url.path.startswith(settings.API_PREFIX + "/external/mail/tokens"):
         return JSONResponse(status_code=422, content={"detail": "请检查邮件配置参数：Token 最多 512 字符"})
     if request.url.path.startswith("/api/integration"):
         return JSONResponse(status_code=422, content={"detail": "请检查联动配置参数"})

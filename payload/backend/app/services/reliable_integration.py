@@ -136,8 +136,9 @@ def check_capability(db,key,row,cfg,automatic=True,supply_available=None):
     if key.startswith('external:'):
         if row.otp_mode == 'manual' and automatic:
             raise IntegrationError('needs_manual', '此账号需要手动验证码，请到 Okad 发起登录')
-        from app.services.supply_mail import get_token
-        if supply_available is None:supply_available=bool(get_token(db))
+        from app.services import supply_mail_tokens
+        if not isinstance(supply_available, bool):
+            supply_available = supply_mail_tokens.available(db, row.email, supply_available)
         if row.otp_mode != 'manual' and not (row.mail_url or (row.refresh_token and row.client_id) or supply_available):
             raise IntegrationError('missing_mail', '缺少取信配置，请补充后恢复')
     else:

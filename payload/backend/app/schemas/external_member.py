@@ -97,6 +97,17 @@ class SupplyMailConfigUpdate(BaseModel):
     clear_token: bool = False
 
 
+class SupplyTokenCreate(BaseModel):
+    name: str = Field(default="", max_length=80)
+    token: str = Field(min_length=1, max_length=512)
+    enabled: bool = True
+
+
+class SupplyTokenUpdate(SupplyMailConfigUpdate):
+    name: str | None = Field(default=None, max_length=80)
+    enabled: bool | None = None
+
+
 class ExternalBatchProfilePreferenceUpdate(ExternalProfilePreferenceUpdate):
     ids: list[int] = Field(min_length=1)
 
