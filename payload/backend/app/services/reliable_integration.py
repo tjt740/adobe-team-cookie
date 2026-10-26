@@ -529,6 +529,7 @@ def login_pool(mid, session_factory=None, *, request_started_at=None, automatic=
                     member.refresh_token=refresh_token;db.commit()
         rec=firefly.register_account(email=email,refresh_token=rt,client_id=cid,mail_url=mail_url,
                 on_credentials=save_rotation,
+                **({"use_default_profile": True} if automatic else {}),
                 proxy_url=proxy_pool.next_proxy(cfg.proxy_url if cfg.proxy_enabled else ''),otp_timeout=180)
         if not rec.get('cookie'):
             return {'ok':False,'code':'login_failed','cookie':''}

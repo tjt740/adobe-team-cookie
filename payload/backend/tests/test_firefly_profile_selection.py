@@ -300,3 +300,29 @@ def test_verified_otp_can_login_despite_enforced_incomplete_profile(monkeypatch)
     assert saved == []
     # ProfileClient rejects any unexpected password validation or account PUT.
     assert client.switches == [PERSON]
+
+
+@pytest.mark.parametrize("default_id", [PERSON, ORG])
+def test_automatic_default_keeps_adobe_session_without_profile_switch(default_id):
+    client = ProfileClient([link()])
+    client.selected = default_id
+    auth = auth_for(client)
+    token = firefly._finish_firefly_token(auth, auth, "test@example.com", lambda _: None,
+                                         lambda r: None, use_default_profile=True)
+    snapshot = build_profile_snapshot(auth._firefly_context, auth._enterprise_account_id)
+    assert client.switches == []
+    assert token == "token:" + default_id
+    assert snapshot["current_profile_id"] == snapshot["credits_account_id"] == default_id
+    assert snapshot["requested_preference"] == ""
+    assert snapshot["profiles_complete"] is True
+    assert {p["profile_id"] for p in snapshot["profiles"]} == {PERSON, ORG}
+
+
+def test_default_exchange_does_not_activate_pending_organization():
+    client = ProfileClient([link(status="pending")])
+    client.selected = PERSON
+    auth = auth_for(client)
+    firefly._finish_firefly_token(auth, auth, "test@example.com", lambda _: None,
+                                 lambda r: None, use_default_profile=True)
+    assert client.switches == []
+    assert auth._enterprise_account_id == PERSON

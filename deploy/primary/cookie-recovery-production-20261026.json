@@ -1,0 +1,14 @@
+{
+  "backend/app/services/external_login.py": {
+    "before": "a3e23c7793285d87a6e073d927edb1b8ae53d5346e47aece5fd79a99c77967aa",
+    "candidate": "dad2ac2658276c8d0b494f621823cb8024a4bfc588795f49c14ddd3cb94b2d7b"
+  },
+  "backend/app/services/firefly.py": {
+    "before": "72f1ff0e11941547eb9dae8d5576670f1fdaf30ac47c889990ffda02685812d0",
+    "candidate": "5abe3e78f960a84707e3d6e09ec8bbc7b5aee5986056e589e904000e82fcca80"
+  },
+  "backend/app/services/reliable_integration.py": {
+    "before": "e461891fe613f175231274bebd6f94dab659bc5d3600d808b3f4ed227bd4139d",
+    "candidate": "7373f143a25ebcf5ddab61c756ea31aedad9083f81f6439bc40bc1ccdaf5bb04"
+  }
+}

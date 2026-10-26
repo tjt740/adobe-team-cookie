@@ -1,0 +1,304 @@
+--- a/payload/backend/app/services/external_login.py
++++ b/payload/backend/app/services/external_login.py
+@@ -78,6 +78,7 @@
+     otp_poller=None,
+     password_only: bool = False,
+     profile_preference: ProfilePreference = "",
++    use_default_profile: bool = False,
+     on_credentials=None,
+     check_cancelled=None,
+     network_retries: int = MAX_NETWORK_RETRIES,
+@@ -119,6 +120,7 @@
+                 adobe_password=adobe_password,
+                 supply_token=supply_token,
+                 profile_preference=profile_preference,
++                **({"use_default_profile": True} if use_default_profile else {}),
+                 force_code_login=(force_code_login or FORCE_CODE_LOGIN) and not password_only,
+                 log=lambda mm: lf(f"[{email}] {mm}"),
+                 on_credentials=update_credentials,
+@@ -160,6 +162,10 @@
+         member = crud.get(db, member_id)
+         return {"cookie": member.cookie or "", "credits_available": member.credits_available,
+                 "credits_total": member.credits_total} if member else {}
++    if automatic:
++        # Cookie recovery follows Adobe's default session profile. Keep the
++        # saved preference for later explicit, human-initiated logins.
++        options.update(profile_preference="", use_default_profile=True)
+     with reliable_integration.login_destination(destination):
+         return login_coordinator.run(f'external:{member_id}', email,
+             lambda: _login_and_store(member_id, **options), SessionLocal, saved,
+@@ -169,6 +175,7 @@
+ 
+ def _login_and_store(member_id: int, *, log=None, check_cancelled=None,
+                     profile_preference: ProfilePreference | None = None,
++                    use_default_profile: bool = False,
+                     force_code_login: bool | None = None,
+                     otp_mode: str | None = None,
+                     discover_existing_sub2: bool = False,
+@@ -204,7 +211,7 @@
+     # 网络原因挂掉时换一个出口 IP 再试一次(见 _login_with_proxy_retry)
+     proxy_raw = (settings.proxy_url or "") if settings.proxy_enabled else ""
+     label = {'personal': '个人配置', 'organization': '组织配置（无可用组织时回退个人）'}.get(profile_preference, '未指定，沿用原逻辑')
+-    lf(f"[{email}] 本次登录配置：{label}")
++    lf(f"[{email}] 本次登录配置：{'Adobe 默认配置' if use_default_profile else label}")
+     if otp_mode != "vietnam" and (force_code_login or FORCE_CODE_LOGIN):
+         lf(f"[{email}] 本次使用邮箱验证码登录")
+     otp_poller = None
+@@ -232,6 +239,7 @@
+             otp_poller=otp_poller,
+             password_only=otp_mode == "vietnam",
+             profile_preference=profile_preference,
++            **({"use_default_profile": True} if use_default_profile else {}),
+             on_credentials=lambda **values: _save_credentials(member_id, **values),
+             check_cancelled=check_cancelled,
+             network_retries=network_retries,
+--- a/payload/backend/app/services/firefly.py
++++ b/payload/backend/app/services/firefly.py
+@@ -567,6 +567,7 @@
+                            force_code_login: bool = False,
+                            password_only: bool = False,
+                            profile_preference: ProfilePreference = "",
++                           use_default_profile: bool = False,
+                            reuse_only: bool = False) -> str:
+     """优先沿用已验证的登录会话;会话失效时才重新认证。
+ 
+@@ -583,7 +584,8 @@
+         while True:
+             try:
+                 return _finish_firefly_token(auth, current, email, lf, capture,
+-                                             profile_preference=profile_preference)
++                                             profile_preference=profile_preference,
++                                             use_default_profile=use_default_profile)
+             except _OrganizationProfileActivated:
+                 # Some Adobe sessions survive activation. Recheck that session
+                 # first: immediately sending another OTP can be rejected with
+@@ -622,6 +624,7 @@
+                         auth, email, lf, poll=poll, password=password, otp_timeout=otp_timeout,
+                         force_code_login=force_code_login, password_only=password_only,
+                         profile_preference=profile_preference, reuse_only=True,
++                        **({"use_default_profile": True} if use_default_profile else {}),
+                     )
+                 except _CleanupSessionRecoveryFailed:
+                     raise
+@@ -640,6 +643,7 @@
+                     auth, email, lf, poll=poll, password=password, otp_timeout=otp_timeout,
+                     force_code_login=force_code_login, password_only=password_only,
+                     profile_preference=profile_preference,
++                    **({"use_default_profile": True} if use_default_profile else {}),
+                 )
+ 
+     if auth.susi_token:
+@@ -966,7 +970,8 @@
+ 
+ 
+ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
+-                          lf: LogFn, cap, *, profile_preference: ProfilePreference = "") -> str:
++                          lf: LogFn, cap, *, profile_preference: ProfilePreference = "",
++                          use_default_profile: bool = False) -> str:
+     """优先保留正常企业配置;疑似删除或明确过期时使用个人配置。"""
+     r = a2.client.get(
+         f"{_p.AUTH_HOST}/signin/v2/accounts/filtered_profiles?filter=isSessionForwardProfile%28%29",
+@@ -980,7 +985,21 @@
+                           and (p.get("userId") or "").endswith("@AdobeID")), "")
+     lf(f"firefly:filtered_profiles status={r.status_code} personal_guid={personal_guid or '-'}")
+     org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps,
+-                                                select_organization=not profile_preference)
++                                                select_organization=not (profile_preference or use_default_profile))
++    if use_default_profile:
++        lf("firefly:沿用 Adobe 登录会话的默认配置")
++        token, context = _read_firefly_profile(auth, a2, "", lf, cap)
++        if context.get("check_account_type") == "type1":
++            from app.services.personal_organizations import fetch_personal_organizations
++            context.update(fetch_personal_organizations(auth.client, token, lf))
++        current_id = context["check_user_id"]
++        context.update(available_profiles=a2._available_profiles,
++                       profiles_complete=a2._profiles_complete and r.status_code == 200,
++                       profile_preference="")
++        auth.susi_token = token
++        auth._enterprise_account_id = current_id
++        auth._firefly_context = context
++        return token
+     a2._profiles_complete = a2._profiles_complete and r.status_code == 200
+     ent_guid = org_guid or personal_guid
+     if profile_preference == "personal":
+@@ -1076,69 +1095,7 @@
+     if not 200 <= r.status_code < 300:
+         raise _ProfileSwitchRejected(f"配置切换失败（HTTP {r.status_code}）", r.status_code)
+ 
+-    # ims/tokens force
+-    try:
+-        r = a2.client.post(
+-            f"{_p.AUTH_HOST}/signin/v1/ims/tokens", headers=a2.headers(),
+-            json={"rememberMe": True, "reauthenticate": "force"}, timeout=25)
+-        cap(r)
+-        t2 = _p.extract_token_from_obj(r.json()) if r.status_code == 200 else ""
+-        if t2:
+-            a2.susi_token = t2
+-    except Exception as e:  # noqa: BLE001
+-        lf(f"firefly type2e:ims/tokens 异常:{e}")
+-
+-    # Clio's fromSusi can keep the default personal identity even after a T2E
+-    # mapping. Sunbreak establishes the enterprise IMS cookie using the same
+-    # verified SUSI token, without another login or email challenge.
+-    try:
+-        session_auth = a2
+-        if not ent_guid.endswith("@AdobeID") and a2.client_id == CLIO_CLIENT_ID:
+-            session_auth = AdminAuth(auth.client, client_id=SUNBREAK_CLIENT_ID,
+-                                     scope=SUNBREAK_SCOPE, redirect=SUNBREAK_REDIRECT)
+-            session_auth.susi_token = a2.susi_token
+-        session_auth.from_susi_token(None)
+-    except Exception as e:  # noqa: BLE001
+-        lf(f"firefly type2e:fromSusi 异常:{e}")
+-
+-    # clio check/v6/token(无 Bearer,靠 cookie)-> type2e firefly token
+-    r = auth.client.post(
+-        f"{_p.IMS_BACKEND}/ims/check/v6/token?jslVersion=v2-v0.54.0-3-g58cfcb7",
+-        headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+-                 "client_id": CLIO_CLIENT_ID, "Origin": "https://firefly.adobe.com",
+-                 "Referer": "https://firefly.adobe.com/"},
+-        data=urlencode({"client_id": CLIO_CLIENT_ID, "guest_allowed": "true",
+-                        "scope": FIREFLY_SCOPE}), timeout=25,
+-    )
+-    try:
+-        data = r.json() if isinstance(r.json(), dict) else {}
+-    except Exception:
+-        data = {}
+-    tok3 = data.get("access_token") or ""
+-    acct = data.get("account_type") or ""
+-    lf(f"firefly type2e:check/v6/token account_type={acct} got_token={bool(tok3)}")
+-    if r.status_code != 200 or not tok3:
+-        if r.status_code != 200:
+-            raise _ProfileSwitchRejected(f"获取配置 Token 失败（HTTP {r.status_code}）", r.status_code)
+-        raise _adm.AdminError("firefly check/v6/token 未返回 token status=200")
+-    actual_id = data.get("userId") or extract_account_id(tok3)
+-    expected_type = "type1" if ent_guid.endswith("@AdobeID") else "type2e"
+-    if actual_id != ent_guid or acct != expected_type:
+-        lf(f"firefly:配置身份核对失败 expected={ent_guid} actual={actual_id or '-'} type={acct or '-'}")
+-        raise _adm.AdminError("firefly 配置切换后身份不一致,停止保存 Cookie 和积分")
+-    context = {
+-        "check_status": r.status_code,
+-        "check_account_type": acct,
+-        "check_user_id": actual_id,
+-        "check_owner_org": data.get("ownerOrg") or "",
+-        "check_client_id": data.get("client_id") or CLIO_CLIENT_ID,
+-        "token_claims": _token_diagnostics(tok3),
+-    }
+-    try:
+-        context.update(_prepare_firefly_context(auth, tok3, lf))
+-    except Exception:
+-        pass
+-    return tok3, context
++    return _read_firefly_profile(auth, a2, ent_guid, lf, cap)
+ 
+ 
+ def _personal_otp_login(auth, email, lf, *, poll, otp_timeout):
+@@ -1209,6 +1166,7 @@
+     force_code_login: bool = False,
+     password_only: bool = False,
+     profile_preference: ProfilePreference = "",
++    use_default_profile: bool = False,
+     log: Optional[LogFn] = None,
+     on_credentials: Optional[Callable[..., None]] = None,
+ ) -> dict[str, Any]:
+@@ -1275,6 +1233,7 @@
+                 otp_timeout=otp_timeout, force_code_login=force_code_login,
+                 password_only=password_only,
+                 profile_preference=profile_preference, reuse_only=True,
++                **({"use_default_profile": True} if use_default_profile else {}),
+             )
+             cookie = _adm._session_cookie_str(client)
+             if not cookie:
+@@ -1303,6 +1262,7 @@
+                     otp_timeout=otp_timeout, force_code_login=force_code_login,
+                     password_only=password_only,
+                     profile_preference=profile_preference,
++                    **({"use_default_profile": True} if use_default_profile else {}),
+                 )
+                 cookie = _adm._session_cookie_str(client)
+                 if not cookie:
+@@ -1415,3 +1375,75 @@
+             client.close()
+         except Exception:
+             pass
++
++
++def _read_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
++                          lf: LogFn, cap) -> tuple[str, dict]:
++    """Exchange the current session; an empty guid keeps Adobe's default profile."""
++    # ims/tokens force
++    try:
++        r = a2.client.post(
++            f"{_p.AUTH_HOST}/signin/v1/ims/tokens", headers=a2.headers(),
++            json={"rememberMe": True, "reauthenticate": "force"}, timeout=25)
++        cap(r)
++        t2 = _p.extract_token_from_obj(r.json()) if r.status_code == 200 else ""
++        if t2:
++            a2.susi_token = t2
++    except Exception as e:  # noqa: BLE001
++        lf(f"firefly type2e:ims/tokens 异常:{e}")
++
++    # Clio's fromSusi can keep the default personal identity even after a T2E
++    # mapping. Sunbreak establishes the enterprise IMS cookie using the same
++    # verified SUSI token, without another login or email challenge.
++    try:
++        session_auth = a2
++        if ent_guid and not ent_guid.endswith("@AdobeID") and a2.client_id == CLIO_CLIENT_ID:
++            session_auth = AdminAuth(auth.client, client_id=SUNBREAK_CLIENT_ID,
++                                     scope=SUNBREAK_SCOPE, redirect=SUNBREAK_REDIRECT)
++            session_auth.susi_token = a2.susi_token
++        session_auth.from_susi_token(None)
++    except Exception as e:  # noqa: BLE001
++        lf(f"firefly type2e:fromSusi 异常:{e}")
++
++    # clio check/v6/token(无 Bearer,靠 cookie)-> type2e firefly token
++    r = auth.client.post(
++        f"{_p.IMS_BACKEND}/ims/check/v6/token?jslVersion=v2-v0.54.0-3-g58cfcb7",
++        headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
++                 "client_id": CLIO_CLIENT_ID, "Origin": "https://firefly.adobe.com",
++                 "Referer": "https://firefly.adobe.com/"},
++        data=urlencode({"client_id": CLIO_CLIENT_ID, "guest_allowed": "true",
++                        "scope": FIREFLY_SCOPE}), timeout=25,
++    )
++    try:
++        data = r.json() if isinstance(r.json(), dict) else {}
++    except Exception:
++        data = {}
++    tok3 = data.get("access_token") or ""
++    acct = data.get("account_type") or ""
++    lf(f"firefly type2e:check/v6/token account_type={acct} got_token={bool(tok3)}")
++    if r.status_code != 200 or not tok3:
++        if r.status_code != 200:
++            raise _ProfileSwitchRejected(f"获取配置 Token 失败（HTTP {r.status_code}）", r.status_code)
++        raise _adm.AdminError("firefly check/v6/token 未返回 token status=200")
++    actual_id = data.get("userId") or extract_account_id(tok3)
++    expected_type = "type1" if (ent_guid or actual_id).endswith("@AdobeID") else "type2e"
++    claimed_id = extract_account_id(tok3)
++    if (not actual_id or acct != expected_type
++            or (claimed_id and claimed_id != actual_id)
++            or (ent_guid and actual_id != ent_guid)):
++        lf(f"firefly:配置身份核对失败 expected={ent_guid} actual={actual_id or '-'} type={acct or '-'}")
++        raise _adm.AdminError("firefly 配置切换后身份不一致,停止保存 Cookie 和积分")
++    context = {
++        "check_status": r.status_code,
++        "check_account_type": acct,
++        "check_user_id": actual_id,
++        "check_owner_org": data.get("ownerOrg") or "",
++        "check_client_id": data.get("client_id") or CLIO_CLIENT_ID,
++        "token_claims": _token_diagnostics(tok3),
++    }
++    try:
++        context.update(_prepare_firefly_context(auth, tok3, lf))
++    except Exception:
++        pass
++    return tok3, context
++
+--- a/payload/backend/app/services/reliable_integration.py
++++ b/payload/backend/app/services/reliable_integration.py
+@@ -530,6 +530,7 @@
+                     member.refresh_token=refresh_token;db.commit()
+         rec=firefly.register_account(email=email,refresh_token=rt,client_id=cid,mail_url=mail_url,
+                 on_credentials=save_rotation,
++                **({"use_default_profile": True} if automatic else {}),
+                 proxy_url=proxy_pool.next_proxy(cfg.proxy_url if cfg.proxy_enabled else ''),otp_timeout=180)
+         if not rec.get('cookie'):
+             return {'ok':False,'code':'login_failed','cookie':''}

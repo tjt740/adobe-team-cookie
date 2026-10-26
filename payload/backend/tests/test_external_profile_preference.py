@@ -185,3 +185,22 @@ def test_migration_preserves_existing_accounts_and_saved_preference(tmp_path, mo
     with engine.connect() as c:
         assert tuple(c.execute(text('SELECT email,profile_preference FROM external_members')).one()) == ('keep@example.com', 'personal')
     engine.dispose()
+
+
+@pytest.mark.parametrize("saved_preference", ["personal", "organization", ""])
+@pytest.mark.parametrize("automatic", [False, True])
+def test_recovery_uses_default_without_overwriting_manual_choice(db, monkeypatch, SessionLocal,
+                                                                saved_preference, automatic):
+    from app.services import login_coordinator
+    monkeypatch.setattr(external_login, "SessionLocal", SessionLocal)
+    member = ExternalMember(email="automatic@example.test", profile_preference=saved_preference,
+                            cookie="keep-until-success")
+    db.add(member); db.commit()
+    seen = []
+    monkeypatch.setattr(external_login, "_login_and_store", lambda mid, **kw: seen.append(kw) or {"ok": False})
+    monkeypatch.setattr(login_coordinator, "run", lambda key, email, action, *a, **kw: action())
+    external_login.login_and_store(member.id, automatic=automatic)
+    assert seen == ([{"profile_preference": "", "use_default_profile": True}] if automatic else [{}])
+    db.refresh(member)
+    assert member.profile_preference == saved_preference
+    assert member.cookie == "keep-until-success"

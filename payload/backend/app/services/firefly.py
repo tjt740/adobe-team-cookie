@@ -548,6 +548,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
                            force_code_login: bool = False,
                            password_only: bool = False,
                            profile_preference: ProfilePreference = "",
+                           use_default_profile: bool = False,
                            reuse_only: bool = False) -> str:
     """优先沿用已验证的登录会话;会话失效时才重新认证。
 
@@ -564,7 +565,8 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
         while True:
             try:
                 return _finish_firefly_token(auth, current, email, lf, capture,
-                                             profile_preference=profile_preference)
+                                             profile_preference=profile_preference,
+                                             use_default_profile=use_default_profile)
             except _OrganizationProfileActivated:
                 # Some Adobe sessions survive activation. Recheck that session
                 # first: immediately sending another OTP can be rejected with
@@ -582,6 +584,7 @@ def _acquire_firefly_token(auth: "AdminAuth", email: str, lf: LogFn, *,
                     auth, email, lf, poll=poll, password=password, otp_timeout=otp_timeout,
                     force_code_login=force_code_login, password_only=password_only,
                     profile_preference=profile_preference,
+                    **({"use_default_profile": True} if use_default_profile else {}),
                 )
 
     if auth.susi_token:
@@ -857,7 +860,8 @@ def _prefer_organization_profile(auth, a2, personal_guid, lf, cap):
 
 
 def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
-                          lf: LogFn, cap, *, profile_preference: ProfilePreference = "") -> str:
+                          lf: LogFn, cap, *, profile_preference: ProfilePreference = "",
+                          use_default_profile: bool = False) -> str:
     """优先保留正常企业配置;疑似删除或明确过期时使用个人配置。"""
     r = a2.client.get(
         f"{_p.AUTH_HOST}/signin/v2/accounts/filtered_profiles?filter=isSessionForwardProfile%28%29",
@@ -871,7 +875,18 @@ def _finish_firefly_token(auth: "AdminAuth", a2: "AdminAuth", email: str,
                           and (p.get("userId") or "").endswith("@AdobeID")), "")
     lf(f"firefly:filtered_profiles status={r.status_code} personal_guid={personal_guid or '-'}")
     org_guid, org_desc = _pick_enterprise_profile(a2, lf, fps,
-                                                select_organization=not profile_preference)
+                                                select_organization=not (profile_preference or use_default_profile))
+    if use_default_profile:
+        lf("firefly:沿用 Adobe 登录会话的默认配置")
+        token, context = _read_firefly_profile(auth, a2, "", lf, cap)
+        current_id = context["check_user_id"]
+        context.update(available_profiles=a2._available_profiles,
+                       profiles_complete=a2._profiles_complete and r.status_code == 200,
+                       profile_preference="")
+        auth.susi_token = token
+        auth._enterprise_account_id = current_id
+        auth._firefly_context = context
+        return token
     a2._profiles_complete = a2._profiles_complete and r.status_code == 200
     ent_guid = org_guid or personal_guid
     if profile_preference == "personal":
@@ -922,6 +937,12 @@ def _switch_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
     if not 200 <= r.status_code < 300:
         raise _ProfileSwitchRejected(f"配置切换失败（HTTP {r.status_code}）", r.status_code)
 
+    return _read_firefly_profile(auth, a2, ent_guid, lf, cap)
+
+
+def _read_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
+                          lf: LogFn, cap) -> tuple[str, dict]:
+    """Exchange the current session; an empty guid keeps Adobe's default profile."""
     # ims/tokens force
     try:
         r = a2.client.post(
@@ -961,8 +982,11 @@ def _switch_firefly_profile(auth: "AdminAuth", a2: "AdminAuth", ent_guid: str,
             raise _ProfileSwitchRejected(f"获取配置 Token 失败（HTTP {r.status_code}）", r.status_code)
         raise _adm.AdminError("firefly check/v6/token 未返回 token status=200")
     actual_id = data.get("userId") or extract_account_id(tok3)
-    expected_type = "type1" if ent_guid.endswith("@AdobeID") else "type2e"
-    if actual_id != ent_guid or acct != expected_type:
+    expected_type = "type1" if (ent_guid or actual_id).endswith("@AdobeID") else "type2e"
+    claimed_id = extract_account_id(tok3)
+    if (not actual_id or acct != expected_type
+            or (claimed_id and claimed_id != actual_id)
+            or (ent_guid and actual_id != ent_guid)):
         raise _adm.AdminError("firefly 配置切换后身份不一致,停止保存 Cookie 和积分")
     context = {
         "check_status": r.status_code,
@@ -1028,6 +1052,7 @@ def register_account(
     force_code_login: bool = False,
     password_only: bool = False,
     profile_preference: ProfilePreference = "",
+    use_default_profile: bool = False,
     log: Optional[LogFn] = None,
     on_credentials: Optional[Callable[..., None]] = None,
 ) -> dict[str, Any]:
@@ -1091,6 +1116,7 @@ def register_account(
                 otp_timeout=otp_timeout, force_code_login=force_code_login,
                 password_only=password_only,
                 profile_preference=profile_preference, reuse_only=True,
+                **({"use_default_profile": True} if use_default_profile else {}),
             )
             cookie = _adm._session_cookie_str(client)
             if not cookie:
@@ -1117,6 +1143,7 @@ def register_account(
                     otp_timeout=otp_timeout, force_code_login=force_code_login,
                     password_only=password_only,
                     profile_preference=profile_preference,
+                    **({"use_default_profile": True} if use_default_profile else {}),
                 )
                 cookie = _adm._session_cookie_str(client)
                 if not cookie:
