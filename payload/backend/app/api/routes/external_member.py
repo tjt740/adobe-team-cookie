@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from threading import Lock
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
@@ -19,7 +20,7 @@ from app.services import external_login, external_sub2, external_sub2_stock, sub
 from app.services.job_manager import JOBS
 from app.services.email_export import XLSX_MEDIA_TYPE, emails_xlsx
 from app.schemas.external_member import AccountState, CreditsField, CurrentProfileKind, Sub2SyncStatus, SupplyMailConfigUpdate, ExternalOtpModeUpdate, ExternalOtpSubmit
-from app.services import supply_mail, supply_mail_health, manual_otp
+from app.services import supply_mail, supply_mail_health, manual_otp, external_mail
 from app.crud.setting import _set
 
 router = APIRouter(
@@ -102,18 +103,31 @@ def test_mail(db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
-@router.get("/members/{member_id}/mail", summary="查看外部子号最近五封 supply.ink 邮件")
-def member_mail(member_id: int, db: Session = Depends(get_db)) -> dict:
+@router.get("/members/{member_id}/mail", summary="按账号取信配置查看最近五封邮件")
+def member_mail(member_id: int, response: Response, db: Session = Depends(get_db)) -> dict:
     member = crud.get(db, member_id)
     if not member:
         raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
-    mailbox = supply_mail.SupplyMailbox(supply_mail.get_token(db))
+    response.headers["Cache-Control"] = "no-store"
     try:
-        return {"email": member.email, "messages": mailbox.messages(member.email)}
-    except supply_mail.SupplyMailError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    finally:
-        mailbox.close()
+        return external_mail.list_messages(db, member)
+    except external_mail.MailReadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc), headers={"Cache-Control": "no-store"}) from None
+
+
+@router.get("/members/{member_id}/mail/message", summary="查看外部子号邮件正文")
+def member_mail_detail(member_id: int, response: Response,
+                       message_id: str = Query(..., min_length=1, max_length=2048),
+                       source: Literal['graph', 'imap', 'moemail'] = Query(...),
+                       db: Session = Depends(get_db)) -> dict:
+    member = crud.get(db, member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail="账号不存在，请刷新后重试")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return external_mail.message_detail(db, member, message_id, source)
+    except external_mail.MailReadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc), headers={"Cache-Control": "no-store"}) from None
 
 
 def _to_out(m, latest_job=None, sub2_target="") -> ExternalMemberOut:
