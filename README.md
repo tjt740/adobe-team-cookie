@@ -208,3 +208,5 @@ docker compose logs --tail=100 app
 外部子号管理新增「最后登录时间」起止日期，可与现有条件组合使用，按北京时间包含结束当天，也支持只填写一侧。范围按列表的 `last_login_at` 字段筛选；没有最后登录时间的账号不匹配已设置的范围。筛选后返回第一页，分页总数、Cookie 导出和按筛选批量重登使用相同范围，重置会清除日期。无需数据库迁移。
 
 验证：后端 `tests/test_external_last_login_filter.py`，浏览器 `payload/frontend-v2/tests/external_last_login_ui.py` 覆盖日期边界、时区、空时间、分页、组合条件、导出、批量重登、非法区间、重置及桌面／手机的根路径与 `/okad/`。
+
+已于 2026-10-28 11:36:12（上海时间）发布，功能提交 `28985c8`。线上列表与导出范围、数据库与既有 Sub2 关联、桌面／手机日期筛选及重置已核验，详见 [最后登录筛选发布记录](deploy/primary/last-login-filter-20261028.md)。
