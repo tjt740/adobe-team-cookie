@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import capture_job_request, get_current_user
 from app.crud import external_member as crud
 from app.db.session import get_db
+from app.schemas.external_member import MemberSort, SortDirection
 from app.models.user import User
 from app.models.external_member import ExternalMember, ExternalMemberGroup
 from app.schemas.external_member import AccountType, ExternalGroupCreate, ExternalGroupAssignment
@@ -317,13 +318,14 @@ def list_members(
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
     account_type: AccountType | None = None, group_id: int | None = Query(None, ge=0),
+    sort_by: MemberSort = "id", sort_order: SortDirection = "desc",
 ) -> Page[ExternalMemberOut]:
     target = external_sub2.destination(external_sub2.config(db))
     items, total = crud.list_members(
         db, page=page, size=size, login_status=login_status,
         subscription_ok=subscription_ok, keyword=keyword,
         credits_field=credits_field, current_profile=current_profile, is_company=is_company, account_type=account_type, group_id=group_id,
-        sub2_status=sub2_status, sub2_target=target,
+        sub2_status=sub2_status, sub2_target=target, sort_by=sort_by, sort_order=sort_order,
         **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
                           last_login_from=last_login_from, last_login_before=last_login_before,
                           credits_min=credits_min, credits_max=credits_max),
@@ -521,11 +523,12 @@ def export_members(
     credits_max: float | None = Query(default=None, ge=0, allow_inf_nan=False),
     current_profile: CurrentProfileKind | None = None, is_company: bool | None = None,
     account_type: AccountType | None = None, group_id: int | None = Query(None, ge=0),
+    sort_by: MemberSort = "id", sort_order: SortDirection = "desc",
 ) -> list[dict]:
     target = external_sub2.destination(external_sub2.config(db)) if sub2_status is not None else ""
     return crud.export_cookies(db, login_status=login_status, subscription_ok=subscription_ok, keyword=keyword,
                                credits_field=credits_field, current_profile=current_profile, is_company=is_company, account_type=account_type, group_id=group_id,
-                               sub2_status=sub2_status, sub2_target=target,
+                               sub2_status=sub2_status, sub2_target=target, sort_by=sort_by, sort_order=sort_order,
                                **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
                                                  imported_before=imported_before,
                                                  last_login_from=last_login_from, last_login_before=last_login_before,

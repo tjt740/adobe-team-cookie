@@ -6,8 +6,8 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261028-last-login-filter', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", lastLoginFrom: "", lastLoginBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var viewURL = new URL('./external-members-view.js?v=20261029-time-sort', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", stoppingAll: false, sortBy: "id", sortOrder: "desc", importedFrom: "", importedBefore: "", lastLoginFrom: "", lastLoginBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -166,15 +166,48 @@
   }
 
   // ---------- 页面主体(route 与 overlay 共用) ----------
+  function timeHeader(key, label) {
+    return '<th data-sort-column="' + key + '" aria-sort="none">' + sortButton(key, label) + '</th>';
+  }
+  function sortButton(key, label) {
+    return '<button type="button" class="extm-sort" data-sort="' + key + '" data-label="' + label + '">' + label + '<span class="extm-sort-icon" aria-hidden="true"></span></button>';
+  }
+  function paintSort() {
+    var host = el('extm-embed'); if (!host) return;
+    host.querySelectorAll('[data-sort-column]').forEach(function (th) {
+      th.setAttribute('aria-sort', th.dataset.sortColumn === st.sortBy ? (st.sortOrder === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+    host.querySelectorAll('[data-sort]').forEach(function (button) {
+      var active = button.dataset.sort === st.sortBy;
+      button.dataset.order = active ? st.sortOrder : '';
+      button.setAttribute('aria-label', button.dataset.label + (active ? (st.sortOrder === 'asc' ? '，当前正序，点击倒序' : '，当前倒序，点击正序') : '，点击正序排序'));
+    });
+  }
+  function changeSort(event) {
+    var button = event.target.closest('[data-sort]'); if (!button) return;
+    var key = button.dataset.sort;
+    if (!['created_at', 'last_login_at'].includes(key)) return;
+    st.sortOrder = st.sortBy === key && st.sortOrder === 'asc' ? 'desc' : 'asc';
+    st.sortBy = key; resetPage(1); paintSort(); load();
+  }
+  function sortParams() { return st.sortBy === 'id' ? {} : {sort_by:st.sortBy, sort_order:st.sortOrder}; }
+  function sortQuery() { var params = sortParams(); return Object.keys(params).map(function (key) { return key + '=' + params[key]; }); }
+  function timeCell(value, cls) {
+    var text = fmtTime(value, true), parts = text.split(' ');
+    return '<td class="cr extm-time-cell ' + cls + '">' + (value ? '<time datetime="' + esc(value) + '" aria-label="' + esc(text) + '"><span>' + esc(parts[0]) + '</span><small>' + esc(parts[1] || '') + '</small></time>' : '—') + '</td>';
+  }
+
   function buildBody(host, mount) {
     var tableHTML =
-      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div><div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:34px"><col style="width:280px"><col style="width:110px"><col style="width:120px"><col><col style="width:168px"><col style="width:158px"><col style="width:158px"><col style="width:180px"><col style="width:270px"></colgroup><thead><tr>' +
-          '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
-          '<th>邮箱</th><th>积分(可用/总)</th><th>当前配置</th><th>登录状态</th><th>订阅</th><th>邮箱导入时间</th><th>最后登录</th><th title="最后一次成功推送 Cookie 到当前 Sub2 的时间">最后推送cookie 时间</th><th>操作</th>' +
-        '</tr></thead><tbody id="extm-tbody"><tr><td colspan="11" class="extm-empty">加载中…</td></tr></tbody></table></div>' ;
+      '<div id="extm-otp-notice" class="extm-otp-notice" role="status" hidden></div>' +
+      '<div class="extm-mobile-sort" role="group" aria-label="按时间排序">' + sortButton('last_login_at', '最后登录') + sortButton('created_at', '导入时间') + '</div>' +
+      '<div class="extm-tw"><table class="extm-t"><colgroup><col class="extm-select-col" style="width:38px"><col style="width:30px"><col style="width:240px"><col style="width:100px"><col style="width:100px"><col><col style="width:120px"><col style="width:116px"><col style="width:116px"><col style="width:160px"></colgroup><thead><tr>' +
+      '<th class="extm-select-cell"><input type="checkbox" id="extm-ckall" aria-label="选择本页全部账号"></th><th></th>' +
+      '<th>邮箱</th><th>积分 <span class="extm-th-hint">可用 / 总</span></th><th>当前配置</th><th>登录 / Sub2 状态</th><th>订阅</th>' + timeHeader('last_login_at', '最后登录') + timeHeader('created_at', '导入时间') + '<th>操作</th>' +
+      '</tr></thead><tbody id="extm-tbody"><tr><td colspan="10" class="extm-empty">加载中…</td></tr></tbody></table></div>';
     view = mount(host, {
       filter: function (filters) {
-        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health; st.statesF = filters.states || [];
+        st.statusF = filters.status; st.subF = filters.sub; st.stockF = filters.stock; st.syncF = filters.sync; st.healthF = filters.health;
         st.profileF = filters.profile; st.companyF = filters.company; st.groupF = filters.group;
         st.creditsField = filters.creditsField;
         st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
@@ -183,6 +216,7 @@
         st.lastLoginFrom = dateBoundary(filters.lastLoginFrom, false); st.lastLoginBefore = dateBoundary(filters.lastLoginTo, true);
         st.q = filters.keyword; resetPage(1); load();
       },
+      resetSort: function () { st.sortBy = "id"; st.sortOrder = "desc"; paintSort(); },
       refresh: function () {
         view.button('extm-refresh', {loading:true, disabled:true});
         return Promise.all([refreshStock(true), loadGroups()]).then(function () { return refreshAll(true); }).finally(function () {
@@ -204,20 +238,22 @@
       Array.prototype.forEach.call(document.querySelectorAll(".extm-rowck"), function (c) { c.checked = on; });
       updSel();
     };
+    host.querySelector(".extm-t thead").onclick = changeSort;
+    host.querySelector(".extm-mobile-sort").onclick = changeSort;
+    paintSort();
     loadMailConfig(); loadGroups(); load();
   }
 
-  function dateBoundary(value, nextDay) {
+  function dateBoundary(value, includeSecond) {
     if (!value) return "";
-    var date = new Date(value + 'T00:00:00+08:00');
-    if (nextDay) date.setUTCDate(date.getUTCDate() + 1);
+    var date = new Date(value + (value.length === 16 ? ':00' : '') + '+08:00');
+    if (includeSecond) date.setUTCSeconds(date.getUTCSeconds() + 1);
     return date.toISOString();
   }
   function extraFilters() {
     var filters = {};
     if (st.stockF !== "") filters.in_stock = st.stockF === "true";
     if (st.syncF) filters.sub2_status = st.syncF;
-    if (st.statesF.length) filters.account_states = st.statesF;
     if (st.healthF) filters.sub2_health = st.healthF;
     if (st.importedFrom) filters.imported_from = st.importedFrom;
     if (st.importedBefore) filters.imported_before = st.importedBefore;
@@ -308,8 +344,8 @@
     var controller = st.loadController = new AbortController();
     if (!silent) st.loadingSeq = seq;
     renderPagination();
-    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="11" class="extm-empty" aria-hidden="true"></td></tr>';
-    return api("/members?" + qs().concat(["page=" + st.page, "size=" + st.size]).join("&"), {controller:controller}).then(function (d) {
+    if (!st.rows.length && !silent) body.innerHTML = '<tr><td colspan="10" class="extm-empty" aria-hidden="true"></td></tr>';
+    return api("/members?" + qs().concat(sortQuery(), ["page=" + st.page, "size=" + st.size]).join("&"), {controller:controller}).then(function (d) {
       if (seq !== st.loadSeq) return;
       st.loadError = "";
       st.total = d.total != null ? d.total : (d.items || []).length;
@@ -371,12 +407,13 @@
   }
 
   function renderRows() {
+    paintSort();
     var body = el("extm-tbody"); if (!body) return;
     var waiting = st.rows.filter(function (r) { return !!r.otp_challenge; }).length;
     el('extm-otp-notice').hidden = !waiting;
     setText(el('extm-otp-notice'), '当前列表有 ' + waiting + ' 个账号等待手动验证码，请点击账号行的「填验证码」继续登录。');
     updateOtpDialog();
-    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="11" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || (st.loadingSeq ? '' : '暂无匹配的外部子号')) + '</td></tr>'; updSel(); return; }
+    if (!st.rows.length) { body.innerHTML = '<tr><td colspan="10" class="extm-empty"' + (st.loadError ? ' style="color:#d03050"' : '') + '>' + esc(st.loadError || (st.loadingSeq ? '' : '暂无匹配的外部子号')) + '</td></tr>'; updSel(); return; }
     Array.prototype.forEach.call(body.querySelectorAll(":scope > tr"), function (tr) {
       var id = Number(tr.dataset.member || tr.dataset.detail);
       if (!rowById(id) || (tr.dataset.detail && !st.expanded.has(id) && !detailState(id).closing)) tr.remove();
@@ -401,8 +438,7 @@
           (progress ? '<span class="extm-pill ' + progress.tone + '">' + esc(progress.label) + '</span>' : r.login_status === 'ok' ? '<button class="extm-pill ok extm-success" data-expand="' + r.id + '" title="' + esc(r.message || '登录成功，展开查看任务详情') + '">' + window.OKAD_ICONS.svg('check', 14) + '登录成功</button>' : statusPill(r.login_status)) +
           (hideMessage ? '' : '<button class="extm-link extm-clip" data-expand="' + r.id + '" title="' + esc(message || "展开查看任务详情") + '">' + esc(message || "展开查看详情") + '</button>') + '</div></td>' +
         '<td data-subscription>' + subPill(r) + '</td>' +
-        '<td class="cr">' + esc(fmtTime(r.created_at)) + '</td><td class="cr">' + esc(fmtTime(r.last_login_at)) + '</td>' +
-        '<td class="cr" data-sub2-pushed-at>' + esc(fmtTime(r.sub2_synced_at, true)) + '</td>' +
+        timeCell(r.last_login_at, 'extm-last-login') + timeCell(r.created_at, 'extm-imported-at') +
         '<td><div class="extm-actions"><button class="extm-btn dft sm" data-note="' + r.id + '" aria-label="编辑 ' + esc(r.email) + ' 的备注">备注</button><button class="extm-btn dft sm" data-mail="' + r.id + '" aria-label="查看 ' + esc(r.email) + ' 的邮件">邮件</button>' + (r.otp_challenge ? '<button class="extm-btn sm" data-otp="' + r.id + '">填验证码</button>' : '<button class="extm-btn o sm" data-login="' + r.id + '" aria-busy="' + !!(progress && progress.spinning) + '"' + (busy || saving ? ' disabled' : '') + '>' + (busy ? (progress && progress.spinning ? spinner() : '') + (progress ? progress.label : '排队中') : '重登') + '</button>') +
         '<button class="extm-btn del sm" data-del="' + r.id + '"' + (busy || saving ? ' disabled' : '') + '>删除</button></div></td>');
       var cb = tr.querySelector(".extm-rowck"); cb.checked = st.sel.has(r.id);
@@ -412,7 +448,7 @@
         var fresh = false;
         var detail = body.querySelector('tr[data-detail="' + r.id + '"]');
         if (!detail) { fresh = true; detail = document.createElement("tr"); detail.dataset.detail = r.id; detail.className = "extm-detail-row"; detail.innerHTML = '<td><div class="extm-fold is-closed"><div class="extm-fold-clip"><div class="extm-detail" id="extm-detail-' + r.id + '"></div></div></div></td>'; }
-        detail.firstElementChild.colSpan = 11;
+        detail.firstElementChild.colSpan = 10;
         if (detail !== cursor) body.insertBefore(detail, cursor);
         cursor = detail.nextElementSibling;
         renderDetail(r.id);
@@ -1154,7 +1190,7 @@
 
   async function loginAll() {
     if (st.loginAllSubmitting || st.stoppingAll || st.pending.size || st.profileSaving.size) return;
-    var filters = Object.assign({ login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q }, extraFilters());
+    var filters = Object.assign({ login_status: st.statusF || null, subscription_ok: st.subF === '' ? null : st.subF === 'true', keyword: st.q }, extraFilters(), sortParams());
     var ids = st.rows.filter(function (r) { return !running(r); }).map(function (r) { return r.id; });
     st.loginAllSubmitting = true;
     ids.forEach(function (id) { st.pending.add(id); });
@@ -1205,7 +1241,7 @@
 
   function exportCookies() {
     if (st.exporting) return;
-    var ids = selIds(), filters = qs();
+    var ids = selIds(), filters = qs().concat(sortQuery());
     st.exporting = true; updSel();
     api("/members/export" + (!ids.length && filters.length ? "?" + filters.join("&") : ""), ids.length ? { method: "POST", body: { ids: ids } } : {}).then(function (data) {
       if (!data.length) { toast("warning", ids.length ? "选中账号暂无可导出的 Cookie" : "当前范围暂无可导出的 Cookie"); return; }

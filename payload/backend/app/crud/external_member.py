@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.crud.email import _parse_email_line
 from app.models.external_member import ExternalMember
 from app.schemas.account_profile import ProfilePreference
-from app.schemas.external_member import AccountType, CreditsField, CurrentProfileKind, OtpMode, Sub2SyncStatus
+from app.schemas.external_member import MemberSort, SortDirection, AccountType, CreditsField, CurrentProfileKind, OtpMode, Sub2SyncStatus
 
 
 def get(db: Session, mid: int) -> ExternalMember | None:
@@ -186,6 +186,17 @@ def _filtered_members(
     return stmt
 
 
+def _member_order(sort_by: MemberSort, sort_order: SortDirection):
+    column = {"id": ExternalMember.id, "created_at": ExternalMember.created_at,
+              "last_login_at": ExternalMember.last_login_at}[sort_by]
+    direction = column.asc() if sort_order == "asc" else column.desc()
+    if sort_by == "id":
+        return (direction,)
+    # Unknown login times stay last in both directions; ID breaks timestamp ties.
+    identity = ExternalMember.id.asc() if sort_order == "asc" else ExternalMember.id.desc()
+    return (column.is_(None).asc(), direction, identity)
+
+
 def list_members(
     db: Session,
     *,
@@ -208,6 +219,8 @@ def list_members(
     group_id: int | None = None,
     sub2_status: Sub2SyncStatus | None = None,
     sub2_target: str = "",
+    sort_by: MemberSort = "id",
+    sort_order: SortDirection = "desc",
 ) -> tuple[list[ExternalMember], int]:
     stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
                              keyword=keyword, ids=ids, imported_from=imported_from,
@@ -220,7 +233,7 @@ def list_members(
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = list(
         db.scalars(
-            stmt.order_by(ExternalMember.id.desc()).offset((page - 1) * size if size is not None else 0).limit(size)
+            stmt.order_by(*_member_order(sort_by, sort_order)).offset((page - 1) * size if size is not None else 0).limit(size)
         )
     )
     return items, total
@@ -246,6 +259,8 @@ def export_cookies(
     group_id: int | None = None,
     sub2_status: Sub2SyncStatus | None = None,
     sub2_target: str = "",
+    sort_by: MemberSort = "id",
+    sort_order: SortDirection = "desc",
 ) -> list[dict]:
     stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
                              keyword=keyword, ids=ids, imported_from=imported_from,
@@ -255,7 +270,7 @@ def export_cookies(
                              current_profile=current_profile, is_company=is_company,
                              account_type=account_type, group_id=group_id,
                              sub2_status=sub2_status, sub2_target=sub2_target).where(ExternalMember.cookie != "")
-    rows = db.scalars(stmt.order_by(ExternalMember.id.desc())).all()
+    rows = db.scalars(stmt.order_by(*_member_order(sort_by, sort_order))).all()
     return [{"cookie": r.cookie} for r in rows if (r.cookie or "").strip()]
 
 

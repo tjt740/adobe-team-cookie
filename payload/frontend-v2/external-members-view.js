@@ -6,7 +6,7 @@ import {b as Select} from './assets/text-C52gYURp.js';
 import {N as Spin} from './assets/Spin-DXy_lfOs.js';
 
 const options = entries => entries.map(([value, label]) => ({value, label}));
-const defaults = () => ({status:'', sub:'', stock:'', sync:'', health:'', states:[], profile:'', company:'', group:'', creditsField:'available', creditsMin:null, creditsMax:null, from:'', to:'', lastLoginFrom:'', lastLoginTo:'', keyword:''});
+const defaults = () => ({status:'', sub:'', stock:'', sync:'', health:'', profile:'', company:'', group:'', creditsField:'available', creditsMin:null, creditsMax:null, from:'', to:'', lastLoginFrom:'', lastLoginTo:'', keyword:''});
 const filterOptions = {
   status: options([['','全部状态'],['ok','正常'],['never','未登录'],['login_failed','登录失败'],['account_disabled','已停用'],['rate_limited','频繁登录限流'],['internal','内部错误']]),
   sub: options([['','全部订阅'],['true','订阅正常'],['false','掉订阅']]),
@@ -17,13 +17,6 @@ const filterOptions = {
   company: options([['','全部类型'],['true','公司'],['vietnam','越南账号'],['false','非公司']]),
   creditsField: options([['available','可用积分'],['total','总积分']])
 };
-
-const stateChoices = [
-  {type:'group',label:'Sub2 账号状态',key:'sub2',children:filterOptions.health.filter(o=>o.value).map(o=>({...o,value:'sub2_'+o.value,label:'Sub2 '+o.label}))},
-  {type:'group',label:'Cookie 与密码',key:'credentials',children:options([['has_cookie','有 Cookie'],['no_cookie','无 Cookie'],['has_password','有密码'],['no_password','无密码']])},
-  {type:'group',label:'本轮任务状态',key:'tasks',children:options([['task_pending','排队中'],['task_running','登录中'],['task_otp','等待验证码'],['task_done','本轮成功'],['task_failed','本轮失败'],['task_pausing','暂停中'],['task_paused','已暂停'],['task_cancelling','终止中'],['task_cancelled','已终止'],['task_interrupted','已中断']])},
-  {type:'group',label:'登录结果',key:'login',children:filterOptions.status.filter(o=>o.value)}
-];
 
 export function mountExternalMembers(host, actions, tableHTML) {
   const form = ref({content:'', duplicate:'skip', otpMode:'', mailToken:'', group:'', groupName:''});
@@ -62,20 +55,21 @@ export function mountExternalMembers(host, actions, tableHTML) {
   function apply() {
     const f = filters.value;
     errors.value.credits = f.creditsMin != null && f.creditsMax != null && f.creditsMin > f.creditsMax ? '积分最大值不能小于最小值' : '';
-    errors.value.dates = f.from && f.to && f.from > f.to ? '结束日期不能早于开始日期' : '';
-    errors.value.lastLogin = f.lastLoginFrom && f.lastLoginTo && f.lastLoginFrom > f.lastLoginTo ? '最后登录时间的结束日期不能早于开始日期' : '';
+    const valid = value => !value || (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value) && Number.isFinite(Date.parse(value+'+08:00')));
+    errors.value.dates = !valid(f.from) || !valid(f.to) ? '请输入有效的导入日期和时间，精确到秒' : f.from && f.to && f.from > f.to ? '导入结束时间不能早于开始时间' : '';
+    errors.value.lastLogin = !valid(f.lastLoginFrom) || !valid(f.lastLoginTo) ? '请输入有效的最后登录日期和时间，精确到秒' : f.lastLoginFrom && f.lastLoginTo && f.lastLoginFrom > f.lastLoginTo ? '最后登录结束时间不能早于开始时间' : '';
     if (errors.value.credits || errors.value.dates || errors.value.lastLogin) return;
     clearTimeout(keywordTimer);
     actions.filter({...f, keyword:f.keyword.trim()});
   }
-  function reset() { clearTimeout(keywordTimer); filters.value = defaults(); errors.value = {credits:'',dates:'',lastLogin:''}; apply(); }
+  function reset() { actions.resetSort(); clearTimeout(keywordTimer); filters.value = defaults(); errors.value = {credits:'',dates:'',lastLogin:''}; apply(); }
   const button = (id, label, onClick, props={}) => {
     const state = ui.value.buttons[id] || {};
     return h(Button, {id, ...props, disabled:!!state.disabled, loading:!!state.loading, 'aria-busy':String(!!state.loading), onClick}, () => state.text || label);
   };
   const field = (label, id, child, cls='') => h('div', {class:'extv-field '+cls}, [h('label', {id:id+'-label', for:id}, label), child]);
   const input = (id, value, update, props={}) => h(Input, {value, 'onUpdate:value':update, ...props, inputProps:{id, 'aria-labelledby':id+'-label', ...props.inputProps}});
-  const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':value=>{if(!props.multiple)openSelect.value=null;update(value);}, virtualScroll:!["extm-f-health","extm-f-states"].includes(id),show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
+  const select = (id, value, list, update, props={}) => h(Select, {id, value, options:list, 'onUpdate:value':value=>{if(!props.multiple)openSelect.value=null;update(value);}, virtualScroll:id!=="extm-f-health",show:openSelect.value===id, 'onUpdate:show':show=>openSelect.value=show?id:null, 'aria-labelledby':id+'-label', to:host, ...props});
   const filterSelect = (key, label, suffix=key) => field(label, 'extm-f-'+suffix, select('extm-f-'+suffix, filters.value[key], filterOptions[key], value => {filters.value[key]=value; apply();}));
   const groupOptions = () => groups.value.map(g=>({value:String(g.id),label:g.name}));
   async function createGroup() {
@@ -149,20 +143,20 @@ export function mountExternalMembers(host, actions, tableHTML) {
             h('div',{class:'extv-filter-grid'},[
               field('邮箱','extm-f-kw',input('extm-f-kw',f.keyword,v=>{f.keyword=v;clearTimeout(keywordTimer);keywordTimer=setTimeout(apply,300);},{clearable:true,placeholder:'搜索邮箱…',onKeyup:e=>{if(e.key==='Enter')apply();}}),'extv-span-2'),
               filterSelect('status','登录状态'),filterSelect('sub','订阅状态'),
-              field('账号状态','extm-f-states',select('extm-f-states',f.states,stateChoices,v=>{f.states=v;apply();},{multiple:true,clearable:true,placeholder:'选择一个或多个状态'}),'extv-span-2'),
               field('积分范围','extm-f-credits-field',h('div',{class:'extv-credit-range'},[
                 select('extm-f-credits-field',f.creditsField,filterOptions.creditsField,v=>{f.creditsField=v;apply();}),
                 h('div',{class:'extv-range'},[credit('creditsMin','min','最小值'),h('span',{},'至'),credit('creditsMax','max','最大值')])
               ]),'extv-span-2'),filterSelect('profile','当前配置'),filterSelect('company','账号类型'),
+              filterSelect('stock','Sub2 库存'),filterSelect('sync','Sub2 同步状态'),filterSelect('health','Sub2 状态'),
+              field('自定义分组','extm-f-group',select('extm-f-group',f.group,[{value:'',label:'全部分组'},{value:'0',label:'未分组'},...groupOptions()],v=>{f.group=v;apply();},{filterable:true})),
               field('导入时间','extm-f-import-from',h('div',{class:'extv-range'},[
-                input('extm-f-import-from',f.from,v=>{f.from=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':'导入开始日期'},status:errors.value.dates?'error':undefined}),h('span',{},'至'),
-                input('extm-f-import-to',f.to,v=>{f.to=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':'导入结束日期'},status:errors.value.dates?'error':undefined})
-              ]),'extv-span-2'),
+                input('extm-f-import-from',f.from,v=>{f.from=v;apply();},{type:'datetime-local',placeholder:'',inputProps:{step:1,title:'北京时间，精确到秒','aria-label':'导入开始时间'},status:errors.value.dates?'error':undefined}),h('span',{},'至'),
+                input('extm-f-import-to',f.to,v=>{f.to=v;apply();},{type:'datetime-local',placeholder:'',inputProps:{step:1,title:'北京时间，精确到秒','aria-label':'导入结束时间'},status:errors.value.dates?'error':undefined})
+              ]),'extv-span-2 extv-time-field'),
               field('最后登录时间','extm-f-last-login-from',h('div',{class:'extv-range'},[
-                input('extm-f-last-login-from',f.lastLoginFrom,v=>{f.lastLoginFrom=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':'最后登录开始日期'},status:errors.value.lastLogin?'error':undefined}),h('span',{},'至'),
-                input('extm-f-last-login-to',f.lastLoginTo,v=>{f.lastLoginTo=v;apply();},{type:'date',placeholder:'',inputProps:{'aria-label':'最后登录结束日期'},status:errors.value.lastLogin?'error':undefined})
-              ]),'extv-span-2'),filterSelect('stock','Sub2 库存'),filterSelect('sync','Sub2 同步状态'),filterSelect('health','Sub2 状态'),
-              field('自定义分组','extm-f-group',select('extm-f-group',f.group,[{value:'',label:'全部分组'},{value:'0',label:'未分组'},...groupOptions()],v=>{f.group=v;apply();},{filterable:true}))
+                input('extm-f-last-login-from',f.lastLoginFrom,v=>{f.lastLoginFrom=v;apply();},{type:'datetime-local',placeholder:'',inputProps:{step:1,title:'北京时间，精确到秒','aria-label':'最后登录开始时间'},status:errors.value.lastLogin?'error':undefined}),h('span',{},'至'),
+                input('extm-f-last-login-to',f.lastLoginTo,v=>{f.lastLoginTo=v;apply();},{type:'datetime-local',placeholder:'',inputProps:{step:1,title:'北京时间，精确到秒','aria-label':'最后登录结束时间'},status:errors.value.lastLogin?'error':undefined})
+              ]),'extv-span-2 extv-time-field')
             ]),
             ui.value.groupsError?h('p',{class:'extv-filter-error',role:'alert'},[ui.value.groupsError,h(Button,{text:true,onClick:actions.loadGroups},()=> '重新加载分组')]):null,
             errors.value.credits?h('p',{id:'extv-credit-error',class:'extv-filter-error',role:'alert'},errors.value.credits):null,

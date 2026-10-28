@@ -10,6 +10,8 @@ AccountState = Annotated[str, StringConstraints(pattern=r"^(ok|never|login_faile
 
 OtpMode = Literal["auto", "manual", "vietnam"]
 CreditsField = Literal["available", "total"]
+MemberSort = Literal["id", "created_at", "last_login_at"]
+SortDirection = Literal["asc", "desc"]
 Sub2SyncStatus = Literal["not_pushed", "pending", "syncing", "synced", "failed"]
 CurrentProfileKind = Literal["personal", "organization", "unknown"]
 AccountType = Literal["company", "vietnam", "non_company"]
@@ -113,6 +115,8 @@ class ExternalBatchProfilePreferenceUpdate(ExternalProfilePreferenceUpdate):
 
 
 class ExternalLoginFilter(BaseModel):
+    sort_by: MemberSort = "id"
+    sort_order: SortDirection = "desc"
     account_states: list[AccountState] = Field(default_factory=list, max_length=32)
     login_status: str | None = None
     subscription_ok: bool | None = None

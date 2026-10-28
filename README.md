@@ -210,3 +210,11 @@ docker compose logs --tail=100 app
 验证：后端 `tests/test_external_last_login_filter.py`，浏览器 `payload/frontend-v2/tests/external_last_login_ui.py` 覆盖日期边界、时区、空时间、分页、组合条件、导出、批量重登、非法区间、重置及桌面／手机的根路径与 `/okad/`。
 
 已于 2026-10-28 11:36:12（上海时间）发布，功能提交 `28985c8`。线上列表与导出范围、数据库与既有 Sub2 关联、桌面／手机日期筛选及重置已核验，详见 [最后登录筛选发布记录](deploy/primary/last-login-filter-20261028.md)。
+
+## 外部子号精确时间与排序
+
+外部子号筛选移除「账号状态」多选，保留登录状态和 Sub2 状态等独立条件。导入时间、最后登录时间改为北京时间的日期和时分秒，支持单侧范围、包含结束秒及重置，列表与展开详情也显示到秒。导入时间沿用已有创建时间，无数据库迁移。
+
+列表显示导入时间和最后登录两列，点击相应表头在正序／倒序间切换；手机卡片上方提供同样的排序按钮。排序在服务端分页之前执行，与筛选组合，修改排序回到第一页，重置恢复默认顺序；空的最后登录时间始终排在末尾，同时间按账号编号稳定排列。Cookie 导出和按筛选重登保持相同排序及范围。
+
+验证：`tests/test_external_time_sort.py`、`tests/test_external_last_login_filter.py`；浏览器 `payload/frontend-v2/tests/external_last_login_ui.py` 覆盖精确秒、同秒边界、跨页顺序、双向排序、重置、组合范围、导出与重登参数、根路径／`/okad/`、桌面／手机及 Chromium／WebKit。
