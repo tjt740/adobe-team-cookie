@@ -262,8 +262,8 @@ def submit_otp(member_id: int, payload: ExternalOtpSubmit,
 
 
 def _member_filters(db, *, account_states=None, in_stock=None, sub2_health=None, imported_from=None, imported_before=None,
-                    credits_min=None, credits_max=None):
-    # created_at is stored as UTC without a timezone; accept browser-local
+                    last_login_from=None, last_login_before=None, credits_min=None, credits_max=None):
+    # Timestamps are stored as UTC without a timezone; accept browser-local
     # date boundaries with their offset and compare them in UTC.
     def utc(value):
         if value is not None and value.tzinfo is not None:
@@ -273,6 +273,9 @@ def _member_filters(db, *, account_states=None, in_stock=None, sub2_health=None,
     imported_from, imported_before = utc(imported_from), utc(imported_before)
     if imported_from is not None and imported_before is not None and imported_from >= imported_before:
         raise HTTPException(status_code=422, detail="导入时间的结束日期不能早于开始日期")
+    last_login_from, last_login_before = utc(last_login_from), utc(last_login_before)
+    if last_login_from is not None and last_login_before is not None and last_login_from >= last_login_before:
+        raise HTTPException(status_code=422, detail="最后登录时间的结束日期不能早于开始日期")
     if credits_min is not None and credits_max is not None and credits_min > credits_max:
         raise HTTPException(status_code=422, detail="积分最大值不能小于最小值")
     ids = None
@@ -294,6 +297,7 @@ def _member_filters(db, *, account_states=None, in_stock=None, sub2_health=None,
         matched = account_state_filter.match_ids(db, account_states, stock)
         ids = sorted(matched if ids is None else matched.intersection(ids))
     return dict(ids=ids, imported_from=imported_from, imported_before=imported_before,
+                last_login_from=last_login_from, last_login_before=last_login_before,
                 credits_min=credits_min, credits_max=credits_max)
 
 
@@ -304,6 +308,7 @@ def list_members(
     keyword: str = "", db: Session = Depends(get_db),
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    last_login_from: datetime | None = None, last_login_before: datetime | None = None,
     sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
     sub2_status: Sub2SyncStatus | None = None,
     account_states: list[AccountState] | None = Query(None, max_length=32),
@@ -320,6 +325,7 @@ def list_members(
         credits_field=credits_field, current_profile=current_profile, is_company=is_company, account_type=account_type, group_id=group_id,
         sub2_status=sub2_status, sub2_target=target,
         **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from, imported_before=imported_before,
+                          last_login_from=last_login_from, last_login_before=last_login_before,
                           credits_min=credits_min, credits_max=credits_max),
     )
     jobs = JOBS.external_member_jobs([m.id for m in items])
@@ -463,6 +469,8 @@ def batch_login_filter(payload: ExternalLoginFilter, db: Session = Depends(get_d
                                    sub2_health=filters.pop("sub2_health"),
                                    imported_from=filters.pop("imported_from"),
                                    imported_before=filters.pop("imported_before"),
+                                   last_login_from=filters.pop("last_login_from"),
+                                   last_login_before=filters.pop("last_login_before"),
                                    credits_min=filters.pop("credits_min"),
                                    credits_max=filters.pop("credits_max")))
     with _login_lock:
@@ -504,6 +512,7 @@ def export_members(
     db: Session = Depends(get_db),
     in_stock: bool | None = None, imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    last_login_from: datetime | None = None, last_login_before: datetime | None = None,
     sub2_health: str | None = Query(None, pattern=sub2_account_health.FILTER_PATTERN),
     sub2_status: Sub2SyncStatus | None = None,
     account_states: list[AccountState] | None = Query(None, max_length=32),
@@ -519,6 +528,7 @@ def export_members(
                                sub2_status=sub2_status, sub2_target=target,
                                **_member_filters(db, account_states=account_states, in_stock=in_stock, sub2_health=sub2_health, imported_from=imported_from,
                                                  imported_before=imported_before,
+                                                 last_login_from=last_login_from, last_login_before=last_login_before,
                                                  credits_min=credits_min, credits_max=credits_max))
 
 

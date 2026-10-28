@@ -202,3 +202,9 @@ docker compose logs --tail=100 app
 保存和测试 Token 不触发 Adobe 登录或 Sub2 推送，不改变账号编号、来源键、Cookie 或 Sub2 关联。取码失败保留已有 Cookie；登录成功继续沿用原 Sub2 联动。验证：`test_supply_multiple_tokens.py` 与取码、邮件、登录、手动／越南验证码、Sub2、可靠联动及分页回归共 197 项后端检查；`payload/frontend-v2/tests/supply_settings_ui.py` 覆盖根路径和 `/okad/` 的桌面／手机四个场景。
 
 已于 2026-10-26 14:27:37（上海时间）发布主服务器，提交 `79382b0`。原 Token、Sub2 固定关联和 Cookie 版本完整性已核验；公网默认 Token 正常，详见 [多 Token 发布记录](deploy/primary/multiple-supply-tokens-20261026.md)。
+
+## 最后登录时间筛选
+
+外部子号管理新增「最后登录时间」起止日期，可与现有条件组合使用，按北京时间包含结束当天，也支持只填写一侧。范围按列表的 `last_login_at` 字段筛选；没有最后登录时间的账号不匹配已设置的范围。筛选后返回第一页，分页总数、Cookie 导出和按筛选批量重登使用相同范围，重置会清除日期。无需数据库迁移。
+
+验证：后端 `tests/test_external_last_login_filter.py`，浏览器 `payload/frontend-v2/tests/external_last_login_ui.py` 覆盖日期边界、时区、空时间、分页、组合条件、导出、批量重登、非法区间、重置及桌面／手机的根路径与 `/okad/`。

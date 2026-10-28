@@ -122,6 +122,8 @@ class ExternalLoginFilter(BaseModel):
     sub2_health: str | None = Field(default=None, pattern=r"^(error|other|recovered|unknown|[45][0-9]{2})$")
     imported_from: datetime | None = None
     imported_before: datetime | None = None
+    last_login_from: datetime | None = None
+    last_login_before: datetime | None = None
     credits_field: CreditsField = "available"
     credits_min: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     credits_max: float | None = Field(default=None, ge=0, allow_inf_nan=False)

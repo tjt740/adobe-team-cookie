@@ -124,6 +124,8 @@ def _filtered_members(
     ids: list[int] | None = None,
     imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    last_login_from: datetime | None = None,
+    last_login_before: datetime | None = None,
     credits_field: CreditsField = "available",
     credits_min: float | None = None,
     credits_max: float | None = None,
@@ -141,6 +143,10 @@ def _filtered_members(
         stmt = stmt.where(ExternalMember.created_at >= imported_from)
     if imported_before is not None:
         stmt = stmt.where(ExternalMember.created_at < imported_before)
+    if last_login_from is not None:
+        stmt = stmt.where(ExternalMember.last_login_at >= last_login_from)
+    if last_login_before is not None:
+        stmt = stmt.where(ExternalMember.last_login_at < last_login_before)
     if login_status:
         stmt = stmt.where(ExternalMember.login_status == login_status)
     if subscription_ok is not None:
@@ -191,6 +197,8 @@ def list_members(
     ids: list[int] | None = None,
     imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    last_login_from: datetime | None = None,
+    last_login_before: datetime | None = None,
     credits_field: CreditsField = "available",
     credits_min: float | None = None,
     credits_max: float | None = None,
@@ -203,7 +211,8 @@ def list_members(
 ) -> tuple[list[ExternalMember], int]:
     stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
                              keyword=keyword, ids=ids, imported_from=imported_from,
-                             imported_before=imported_before, credits_field=credits_field,
+                             imported_before=imported_before, last_login_from=last_login_from,
+                             last_login_before=last_login_before, credits_field=credits_field,
                              credits_min=credits_min, credits_max=credits_max,
                              current_profile=current_profile, is_company=is_company,
                              account_type=account_type, group_id=group_id,
@@ -226,6 +235,8 @@ def export_cookies(
     ids: list[int] | None = None,
     imported_from: datetime | None = None,
     imported_before: datetime | None = None,
+    last_login_from: datetime | None = None,
+    last_login_before: datetime | None = None,
     credits_field: CreditsField = "available",
     credits_min: float | None = None,
     credits_max: float | None = None,
@@ -238,7 +249,8 @@ def export_cookies(
 ) -> list[dict]:
     stmt = _filtered_members(login_status=login_status, subscription_ok=subscription_ok,
                              keyword=keyword, ids=ids, imported_from=imported_from,
-                             imported_before=imported_before, credits_field=credits_field,
+                             imported_before=imported_before, last_login_from=last_login_from,
+                             last_login_before=last_login_before, credits_field=credits_field,
                              credits_min=credits_min, credits_max=credits_max,
                              current_profile=current_profile, is_company=is_company,
                              account_type=account_type, group_id=group_id,

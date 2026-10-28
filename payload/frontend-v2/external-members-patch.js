@@ -6,8 +6,8 @@
   var TK = "okad_token";
   var NAV_ID = "extm-nav";
   var view = null, mounting = null;
-  var viewURL = new URL('./external-members-view.js?v=20261020-custom-groups', document.currentScript.src).href;
-  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
+  var viewURL = new URL('./external-members-view.js?v=20261028-last-login-filter', document.currentScript.src).href;
+  var st = { rows: [], sel: new Set(), page: 1, size: 200, total: 0, loadingSeq: 0, loadError: "", statusF: "", subF: "", stockF: "", syncF: "", healthF: "", statesF: [], stoppingAll: false, importedFrom: "", importedBefore: "", lastLoginFrom: "", lastLoginBefore: "", creditsField: "available", creditsMin: "", creditsMax: "", profileF: "", companyF: "", groupF: "", groups: [], q: "", busy: false, open: false, expanded: new Set(), pending: new Set(), profileSaving: new Set(), noteSaving: false, details: {}, loadSeq: 0, polling: false, stock: null, stockPromise: null, stockEpoch: 0 };
 
   var CSS = [
     // 嵌入右侧内容区:按实际布局测量定位(left=菜单右缘, top=顶栏下缘),只盖内容区、不动左侧菜单/顶栏
@@ -180,6 +180,7 @@
         st.creditsMin = filters.creditsMin == null ? '' : String(filters.creditsMin);
         st.creditsMax = filters.creditsMax == null ? '' : String(filters.creditsMax);
         st.importedFrom = dateBoundary(filters.from, false); st.importedBefore = dateBoundary(filters.to, true);
+        st.lastLoginFrom = dateBoundary(filters.lastLoginFrom, false); st.lastLoginBefore = dateBoundary(filters.lastLoginTo, true);
         st.q = filters.keyword; resetPage(1); load();
       },
       refresh: function () {
@@ -220,6 +221,8 @@
     if (st.healthF) filters.sub2_health = st.healthF;
     if (st.importedFrom) filters.imported_from = st.importedFrom;
     if (st.importedBefore) filters.imported_before = st.importedBefore;
+    if (st.lastLoginFrom) filters.last_login_from = st.lastLoginFrom;
+    if (st.lastLoginBefore) filters.last_login_before = st.lastLoginBefore;
     if (st.creditsMin !== "" || st.creditsMax !== "") {
       filters.credits_field = st.creditsField;
       if (st.creditsMin !== "") filters.credits_min = Number(st.creditsMin);
