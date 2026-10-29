@@ -1,0 +1,72 @@
+{
+  "release": "external-time-sort-20261028185658",
+  "feature_commit": "e8938b4a20425a83556c4f9d14adaffa0b437904",
+  "deployed_at_shanghai": "2026-10-29T09:34:54.108363+08:00",
+  "image": "adobe-team-cookie:e8938b4a20425a83556c4f9d14adaffa0b437904",
+  "image_id": "sha256:a028b8dbe026bd82a986cdcee1bb2fb5dcaac1c1866d616b15a596970bf231e8",
+  "changed_files": [
+    "backend/app/api/routes/external_member.py",
+    "backend/app/crud/external_member.py",
+    "backend/app/schemas/external_member.py",
+    "frontend-v2/external-members-patch.js",
+    "frontend-v2/external-members-view.css",
+    "frontend-v2/external-members-view.js",
+    "frontend-v2/index-okad.html",
+    "frontend-v2/index.html"
+  ],
+  "accounts_preserved": 1021,
+  "other_containers_preserved": true,
+  "settings_preserved": true,
+  "database_integrity": "ok",
+  "cookie_version_integrity": "ok",
+  "existing_sub2_links_preserved": true,
+  "verification": {
+    "timestamp_order": "ok",
+    "import_second_scope": "ok",
+    "export_scope": "ok",
+    "invalid_sort": "rejected",
+    "matching_import_second": 1
+  },
+  "rollback_image": "adobe-team-cookie:before-external-time-sort-20261028185658",
+  "rollback_image_id": "sha256:5c67421ce0d1b12828acf0a741ccb48941d06673c46ef941db7c4c036eb24f3e",
+  "public_ui": {
+    "checked_at": "2026-10-29T09:36:45.763531+08:00",
+    "public_ui": "ok",
+    "checks": [
+      {
+        "width": 1440,
+        "account_state_removed": true,
+        "second_precision": true,
+        "beijing_boundaries": true,
+        "timestamp_order": "asc/desc",
+        "import_column": true,
+        "reset": "ok",
+        "page_errors": 0,
+        "unexpected_writes": 0
+      },
+      {
+        "width": 390,
+        "account_state_removed": true,
+        "second_precision": true,
+        "beijing_boundaries": true,
+        "timestamp_order": "asc/desc",
+        "import_column": true,
+        "reset": "ok",
+        "page_errors": 0,
+        "unexpected_writes": 0
+      }
+    ]
+  },
+  "backend_checks_per_source_version": 67,
+  "source_versions": [
+    "feature branch",
+    "production overlay candidate"
+  ],
+  "synthetic_browser_checks": [
+    "Chromium root/okad desktop/mobile",
+    "WebKit root/okad desktop/mobile"
+  ],
+  "remote_audit_directory": "/opt/adobe-team-cookie/.local/external-time-sort-20261028185658",
+  "exit_code": 0,
+  "automatic_rollback": false
+}

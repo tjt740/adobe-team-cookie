@@ -218,3 +218,5 @@ docker compose logs --tail=100 app
 列表显示导入时间和最后登录两列，点击相应表头在正序／倒序间切换；手机卡片上方提供同样的排序按钮。排序在服务端分页之前执行，与筛选组合，修改排序回到第一页，重置恢复默认顺序；空的最后登录时间始终排在末尾，同时间按账号编号稳定排列。Cookie 导出和按筛选重登保持相同排序及范围。
 
 验证：`tests/test_external_time_sort.py`、`tests/test_external_last_login_filter.py`；浏览器 `payload/frontend-v2/tests/external_last_login_ui.py` 覆盖精确秒、同秒边界、跨页顺序、双向排序、重置、组合范围、导出与重登参数、根路径／`/okad/`、桌面／手机及 Chromium／WebKit。
+
+已于 2026-10-29 09:34:54（上海时间）发布，功能提交 `e8938b4`。67 项相关后端检查及公网桌面／手机验收通过；账号状态筛选已移除，秒级北京时间范围、导入列和双向排序生效，1021 个既有账号、Sub2 固定关联及 Cookie 版本完整性保持，详见 [精确时间与排序发布记录](deploy/primary/external-time-sort-20261029.md)。
